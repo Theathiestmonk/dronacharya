@@ -1,12 +1,23 @@
 import os
 import json
 from app.core.openai_client import get_openai_client
-from rapidfuzz import fuzz
+from dotenv import load_dotenv
+
+# Ensure environment variables are loaded
+load_dotenv()
+
+# Note: rapidfuzz is optional, we'll handle it gracefully
+try:
+    from rapidfuzz import fuzz
+    RAPIDFUZZ_AVAILABLE = True
+except ImportError:
+    RAPIDFUZZ_AVAILABLE = False
+    print("Warning: rapidfuzz not available, fuzzy matching disabled")
 
 # Path to local knowledge base JSON
 KB_PATH = os.path.join(os.path.dirname(__file__), '../../core/knowledge_base.json')
 
-async def retrieve_from_json(query: str, threshold: int = 50) -> str | None:
+def retrieve_from_json(query: str, threshold: int = 50) -> str | None:
     """Fuzzy match the user query to questions in the local JSON KB."""
     try:
         with open(KB_PATH, 'r', encoding='utf-8') as f:
@@ -24,7 +35,7 @@ async def retrieve_from_json(query: str, threshold: int = 50) -> str | None:
         print(f"[Chatbot] Error reading KB: {e}")
     return None
 
-async def generate_chatbot_response(request):
+def generate_chatbot_response(request):
     """
     Use OpenAI GPT-4 to generate a chatbot response with RAG logic and fuzzy matching.
     """
@@ -67,9 +78,9 @@ async def generate_chatbot_response(request):
             f"A user asked about the type of school Prakriti is. Here is the official answer: {canonical_answer}\n"
             "Please explain this in your own words, elaborate, or summarize as needed."
         )
-        response = await openai_client.chat.completions.create(
+        response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot."},
+            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
                       {"role": "user", "content": prompt}],
             max_tokens=400,
             temperature=0.7,
@@ -101,9 +112,9 @@ async def generate_chatbot_response(request):
             f"A user asked about the teaching philosophy at Prakriti. Here is the official answer: {canonical_answer}\n"
             "Please explain this in your own words, elaborate, or summarize as needed."
         )
-        response = await openai_client.chat.completions.create(
+        response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot."},
+            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
                       {"role": "user", "content": prompt}],
             max_tokens=400,
             temperature=0.7,
@@ -142,9 +153,9 @@ async def generate_chatbot_response(request):
             f"A user asked about the subjects available for IGCSE and AS/A Level. Here is the official answer: {canonical_answer}\n"
             "Please explain this in your own words, elaborate, or summarize as needed."
         )
-        response = await openai_client.chat.completions.create(
+        response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot."},
+            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
                       {"role": "user", "content": prompt}],
             max_tokens=400,
             temperature=0.7,
@@ -178,9 +189,9 @@ async def generate_chatbot_response(request):
             f"A user asked about support for learners with special needs. Here is the official answer: {canonical_answer}\n"
             "Please explain this in your own words, elaborate, or summarize as needed."
         )
-        response = await openai_client.chat.completions.create(
+        response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot."},
+            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
                       {"role": "user", "content": prompt}],
             max_tokens=400,
             temperature=0.7,
@@ -220,9 +231,9 @@ async def generate_chatbot_response(request):
             f"A user asked about sports, arts, and enrichment activities at Prakriti. Here is the official answer: {canonical_answer}\n"
             "Please explain this in your own words, elaborate, or summarize as needed."
         )
-        response = await openai_client.chat.completions.create(
+        response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot."},
+            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
                       {"role": "user", "content": prompt}],
             max_tokens=400,
             temperature=0.7,
@@ -269,9 +280,9 @@ async def generate_chatbot_response(request):
             f"A user asked about the fees for different grades. Here is the official answer (including a table):\n{canonical_answer}\n"
             "Please explain this in your own words, summarize the fee structure, and mention the admission charges."
         )
-        response = await openai_client.chat.completions.create(
+        response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot."},
+            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
                       {"role": "user", "content": prompt}],
             max_tokens=500,
             temperature=0.7,
@@ -304,9 +315,9 @@ async def generate_chatbot_response(request):
             f"A user asked about the location of Prakriti School. Here is the official answer: {canonical_answer}\n"
             "Please explain this in your own words, elaborate, or summarize as needed."
         )
-        response = await openai_client.chat.completions.create(
+        response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot."},
+            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
                       {"role": "user", "content": prompt}],
             max_tokens=400,
             temperature=0.7,
@@ -319,9 +330,9 @@ async def generate_chatbot_response(request):
     # Step 2: Fallback to LLM
     print("[Chatbot] Answer from GPT-4")
     prompt = f"User: {user_query}\nAI:"
-    response = await openai_client.chat.completions.create(
+    response = openai_client.chat.completions.create(
         model="gpt-3.5-turbo",
-        messages=[{"role": "system", "content": "You are a helpful school assistant chatbot."},
+        messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
                   {"role": "user", "content": user_query}],
         max_tokens=400,
         temperature=0.7,

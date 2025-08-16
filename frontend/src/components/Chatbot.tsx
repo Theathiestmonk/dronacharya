@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useState as useCopyState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 type Message =
   | { sender: 'user' | 'bot'; text: string }
@@ -24,7 +26,11 @@ const CopyIcon = ({ copied }: { copied: boolean }) => (
   )
 );
 
-const Chatbot: React.FC = () => {
+interface ChatbotProps {
+  clearChat?: () => void;
+}
+
+const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -32,10 +38,12 @@ const Chatbot: React.FC = () => {
   const [micPlaceholder, setMicPlaceholder] = useState<string>('Ask me anything...');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const typingRef = useRef<HTMLDivElement>(null);
   const [displayedBotText, setDisplayedBotText] = useState<string>('');
   const [isTyping, setIsTyping] = useState(false);
   // For copy feedback per message
   const [copiedIdx, setCopiedIdx] = useCopyState<number | null>(null);
+  const [showClearedMessage, setShowClearedMessage] = useState(false);
 
   // Speech-to-text logic
   const handleMic = () => {
@@ -70,26 +78,44 @@ const Chatbot: React.FC = () => {
         })
           .then((res) => res.json())
           .then((data) => {
-            if (data && typeof data === 'object' && data.type === 'calendar' && data.url) {
-              setMessages((msgs) => [...msgs, { sender: 'bot', type: 'calendar', url: data.url }]);
+            // Check for structured responses with type field
+            if (data.type === 'calendar' && data.response && data.response.url) {
+              setMessages((msgs) => [...msgs, { sender: 'bot', type: 'calendar', url: data.response.url }]);
               setIsTyping(false);
               setDisplayedBotText('');
-            } else {
-              const fullText = data.response;
-              let idx = 0;
-              setIsTyping(true);
-              function typeChar() {
-                setDisplayedBotText(fullText.slice(0, idx + 1));
-                if (idx < fullText.length - 1) {
-                  idx++;
-                  setTimeout(typeChar, 18);
-                } else {
-                  setIsTyping(false);
-                  setMessages((msgs) => [...msgs, { sender: 'bot', text: fullText }]);
-                }
-              }
-              typeChar();
+              return;
+            } else if (data.type === 'map' && data.response && data.response.url) {
+              setMessages((msgs) => [...msgs, { sender: 'bot', type: 'map', url: data.response.url }]);
+              setIsTyping(false);
+              setDisplayedBotText('');
+              return;
+            } else if (data.type === 'mixed' && Array.isArray(data.response)) {
+              // Handle mixed responses (like location with map)
+              setMessages((msgs) => [
+                ...msgs,
+                { sender: 'bot', text: data.response[0] },
+                data.response[1]?.type === 'map' ? { sender: 'bot', type: 'map', url: data.response[1].url } : null
+              ].filter(Boolean) as Message[]);
+              setIsTyping(false);
+              setDisplayedBotText('');
+              return;
             }
+            
+            // Handle regular text responses
+            const fullText = data.response;
+            let idx = 0;
+            setIsTyping(true);
+            function typeChar() {
+              setDisplayedBotText(fullText.slice(0, idx + 1));
+              if (idx < fullText.length - 1) {
+                idx++;
+                setTimeout(typeChar, 18);
+              } else {
+                setIsTyping(false);
+                setMessages((msgs) => [...msgs, { sender: 'bot', text: fullText }]);
+              }
+            }
+            typeChar();
           })
           .catch(() => {
             setMessages((msgs) => [...msgs, { sender: 'bot', text: 'Error: Could not get response.' }]);
@@ -127,41 +153,46 @@ const Chatbot: React.FC = () => {
         body: JSON.stringify({ message: input }),
       });
       const data = await res.json();
-      // If backend returns an array (AI text + map), handle both
-      if (Array.isArray(data)) {
-        // First element: AI text, Second: map object
+      
+      // Check for structured responses with type field
+      if (data.type === 'calendar' && data.response && data.response.url) {
+        setMessages((msgs) => [...msgs, { sender: 'bot', type: 'calendar', url: data.response.url }]);
+        setIsTyping(false);
+        setDisplayedBotText('');
+        return;
+      } else if (data.type === 'map' && data.response && data.response.url) {
+        setMessages((msgs) => [...msgs, { sender: 'bot', type: 'map', url: data.response.url }]);
+        setIsTyping(false);
+        setDisplayedBotText('');
+        return;
+      } else if (data.type === 'mixed' && Array.isArray(data.response)) {
+        // Handle mixed responses (like location with map)
         setMessages((msgs) => [
           ...msgs,
-          { sender: 'bot', text: data[0] },
-          data[1]?.type === 'map' ? { sender: 'bot', type: 'map', url: data[1].url } : null
+          { sender: 'bot', text: data.response[0] },
+          data.response[1]?.type === 'map' ? { sender: 'bot', type: 'map', url: data.response[1].url } : null
         ].filter(Boolean) as Message[]);
         setIsTyping(false);
         setDisplayedBotText('');
-      } else if (data && typeof data === 'object' && data.type === 'calendar' && data.url) {
-        setMessages((msgs) => [...msgs, { sender: 'bot', type: 'calendar', url: data.url }]);
-        setIsTyping(false);
-        setDisplayedBotText('');
-      } else if (data && typeof data === 'object' && data.type === 'map' && data.url) {
-        setMessages((msgs) => [...msgs, { sender: 'bot', type: 'map', url: data.url }]);
-        setIsTyping(false);
-        setDisplayedBotText('');
-      } else {
-        // Typing effect for bot response
-        const fullText = data.response;
-        let idx = 0;
-        setIsTyping(true);
-        function typeChar() {
-          setDisplayedBotText(fullText.slice(0, idx + 1));
-          if (idx < fullText.length - 1) {
-            idx++;
-            setTimeout(typeChar, 18); // speed of typing
-          } else {
-            setIsTyping(false);
-            setMessages((msgs) => [...msgs, { sender: 'bot', text: fullText }]);
-          }
-        }
-        typeChar();
+        return;
       }
+      
+      // Handle regular text responses (including Markdown)
+      const fullText = data.response;
+      let idx = 0;
+      setIsTyping(true);
+      function typeChar() {
+        setDisplayedBotText(fullText.slice(0, idx + 1));
+        if (idx < fullText.length - 1) {
+          idx++;
+          setTimeout(typeChar, 18); // speed of typing
+        } else {
+          setIsTyping(false);
+          // Store the full Markdown text for rendering
+          setMessages((msgs) => [...msgs, { sender: 'bot', text: fullText }]);
+        }
+      }
+      typeChar();
     } catch (err) {
       setMessages((msgs) => [...msgs, { sender: 'bot', text: 'Error: Could not get response.' }]);
     } finally {
@@ -177,10 +208,18 @@ const Chatbot: React.FC = () => {
     }
   };
 
-  // Auto-scroll to bottom when messages change
+  // Auto-scroll to bottom when messages change or when typing
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
+    if (isTyping && typingRef.current) {
+      // Scroll to typing text when it's active with a small delay for smooth rendering
+      setTimeout(() => {
+        typingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }, 50);
+    } else {
+      // Scroll to bottom for regular messages
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, loading, isTyping, displayedBotText]);
 
   // Auto-focus textarea when messages change, unless user clicked elsewhere
   useEffect(() => {
@@ -205,6 +244,31 @@ const Chatbot: React.FC = () => {
     setTimeout(() => setCopiedIdx(null), 1200);
   };
 
+  // Clear chat function
+  const handleClearChat = () => {
+    setMessages([]);
+    setInput('');
+    setLoading(false);
+    setListening(false);
+    setDisplayedBotText('');
+    setIsTyping(false);
+    setCopiedIdx(null);
+    
+    // Show cleared message briefly
+    setShowClearedMessage(true);
+    setTimeout(() => setShowClearedMessage(false), 2000);
+    
+    // Call parent clearChat function if provided
+    if (clearChat) {
+      clearChat();
+    }
+  };
+
+  // Expose clearChat function to parent
+  React.useImperativeHandle(clearChat, () => ({
+    clearChat: handleClearChat
+  }), []);
+
   return (
     <div className="flex flex-col h-[70vh] w-full max-w-xl mx-auto bg-transparent p-0">
       {messages.length === 0 && (
@@ -215,9 +279,18 @@ const Chatbot: React.FC = () => {
           </div>
           {/* Heading */}
           <div className="mb-6 text-center">
-            <h2 className="text-3xl font-normal text-gray-700 mb-2">What whispers are you following today?</h2>
+            <h2 className="text-3xl font-normal text-gray-700 mb-2">What <span className="text-blue-700">whispers</span> are you following today?</h2>
           </div>
         </>
+      )}
+      
+      {/* Show cleared message */}
+      {showClearedMessage && (
+        <div className="mb-4 text-center">
+          <div className="inline-block bg-green-100 text-green-800 px-4 py-2 rounded-lg text-sm">
+            ✨ Chat cleared! Starting fresh...
+          </div>
+        </div>
       )}
       <div className="flex-1 overflow-y-auto mb-4 space-y-2 pr-4" style={{ minHeight: 0 }}>
         {messages.map((msg, idx) => (
@@ -256,7 +329,32 @@ const Chatbot: React.FC = () => {
                 }`}
                 style={{ background: 'none', padding: '0.75rem 0', borderRadius: 0 }}
               >
-                {'text' in msg && <span>{msg.text}</span>}
+                {'text' in msg && (
+                  <div className="markdown-content">
+                    <ReactMarkdown 
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        // Custom styling for Markdown elements
+                        h1: ({node, ...props}) => <h1 className="text-xl font-bold mb-2 text-gray-800" {...props} />,
+                        h2: ({node, ...props}) => <h2 className="text-lg font-bold mb-2 text-gray-800" {...props} />,
+                        h3: ({node, ...props}) => <h3 className="text-base font-bold mb-2 text-gray-800" {...props} />,
+                        p: ({node, ...props}) => <p className="mb-2 text-gray-700 leading-relaxed" {...props} />,
+                        ul: ({node, ...props}) => <ul className="list-disc list-inside mb-2 text-gray-700 space-y-1" {...props} />,
+                        ol: ({node, ...props}) => <ol className="list-decimal list-inside mb-2 text-gray-700 space-y-1" {...props} />,
+                        li: ({node, ...props}) => <li className="mb-1 text-gray-700" {...props} />,
+                        strong: ({node, ...props}) => <strong className="font-bold text-gray-900" {...props} />,
+                        em: ({node, ...props}) => <em className="italic text-gray-700" {...props} />,
+                        code: ({node, ...props}) => <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-gray-800" {...props} />,
+                        blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-300 pl-4 italic text-gray-600 bg-blue-50 py-2 rounded-r" {...props} />,
+                        table: ({node, ...props}) => <table className="border-collapse border border-gray-300 w-full mb-2 text-sm" {...props} />,
+                        th: ({node, ...props}) => <th className="border border-gray-300 px-2 py-1 bg-gray-100 font-bold text-gray-800" {...props} />,
+                        td: ({node, ...props}) => <td className="border border-gray-300 px-2 py-1 text-gray-700" {...props} />,
+                      }}
+                    >
+                      {msg.text}
+                    </ReactMarkdown>
+                  </div>
+                )}
                 {'text' in msg && msg.sender === 'bot' && (
                   <div className="flex justify-start mt-2">
                     <button
@@ -275,8 +373,35 @@ const Chatbot: React.FC = () => {
         ))}
         {isTyping && (
           <div className="flex justify-start">
-            <div className="max-w-[80%] break-words text-gray-900 text-left" style={{ background: 'none', padding: '0.75rem 0', borderRadius: 0 }}>
-              {displayedBotText}
+            <div 
+              ref={typingRef}
+              className="max-w-[80%] break-words text-gray-900 text-left" 
+              style={{ background: 'none', padding: '0.75rem 0', borderRadius: 0 }}
+            >
+              <div className="markdown-content">
+                <ReactMarkdown 
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    // Custom styling for Markdown elements
+                    h1: ({node, ...props}) => <h1 className="text-xl font-bold mb-2 text-gray-800" {...props} />,
+                    h2: ({node, ...props}) => <h2 className="text-lg font-bold mb-2 text-gray-800" {...props} />,
+                    h3: ({node, ...props}) => <h3 className="text-base font-bold mb-2 text-gray-800" {...props} />,
+                    p: ({node, ...props}) => <p className="mb-2 text-gray-700 leading-relaxed" {...props} />,
+                    ul: ({node, ...props}) => <ul className="list-disc list-inside mb-2 text-gray-700 space-y-1" {...props} />,
+                    ol: ({node, ...props}) => <ol className="list-decimal list-inside mb-2 text-gray-700 space-y-1" {...props} />,
+                    li: ({node, ...props}) => <li className="mb-1 text-gray-700" {...props} />,
+                    strong: ({node, ...props}) => <strong className="font-bold text-gray-900" {...props} />,
+                    em: ({node, ...props}) => <em className="italic text-gray-700" {...props} />,
+                    code: ({node, ...props}) => <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-gray-800" {...props} />,
+                    blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-300 pl-4 italic text-gray-600 bg-blue-50 py-2 rounded-r" {...props} />,
+                    table: ({node, ...props}) => <table className="border-collapse border border-gray-300 w-full mb-2 text-sm" {...props} />,
+                    th: ({node, ...props}) => <th className="border border-gray-300 px-2 py-1 bg-gray-100 font-bold text-gray-800" {...props} />,
+                    td: ({node, ...props}) => <td className="border border-gray-300 px-2 py-1 text-gray-700" {...props} />,
+                  }}
+                >
+                  {displayedBotText}
+                </ReactMarkdown>
+              </div>
             </div>
           </div>
         )}

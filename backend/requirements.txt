@@ -1,6 +1,11 @@
 fastapi
 uvicorn[standard]
 openai>=1.0.0
-langgraph
+langgraph>=0.2.0
 pydantic
-python-dotenv 
+python-dotenv
+supabase
+requests
+typing-extensions
+python-multipart
+rapidfuzz 

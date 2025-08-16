@@ -1,8 +1,12 @@
 import os
 import json
 from langgraph.graph import StateGraph
-from langgraph.graph.graph import END
+from langgraph.graph import END
 from app.core.openai_client import get_openai_client
+from dotenv import load_dotenv
+
+# Ensure environment variables are loaded
+load_dotenv()
 
 # Step 1: Define all tool functions (responses)
 def answer_general_info(state):
@@ -47,28 +51,30 @@ def classify_intent(state):
     user_input = state["input"].lower()
 
     if any(w in user_input for w in ["where", "location", "what is prakriti", "type of school"]):
-        return "general_info"
+        return {"output": "general_info"}
     elif any(w in user_input for w in ["curriculum", "program", "subjects", "courses", "igcse", "a level"]):
-        return "academic_info"
+        return {"output": "academic_info"}
     elif "admission" in user_input or "how to apply" in user_input:
-        return "admission_info"
+        return {"output": "admission_info"}
     elif "fee" in user_input or "cost" in user_input or "charges" in user_input:
-        return "fee_info"
+        return {"output": "fee_info"}
     elif "activities" in user_input or "sports" in user_input or "co-curricular" in user_input:
-        return "activities_info"
+        return {"output": "activities_info"}
     elif "inclusive" in user_input or "special needs" in user_input or "bridge" in user_input:
-        return "inclusion_info"
+        return {"output": "inclusion_info"}
     elif "contact" in user_input or "email" in user_input or "how to reach" in user_input:
-        return "contact_info"
+        return {"output": "contact_info"}
     else:
-        return "fallback"
+        return {"output": "fallback"}
 
 # Step 3: Build the LangGraph
-graph = StateGraph()
+from typing import TypedDict
 
-# Register state keys
-graph.add_state("input", str)
-graph.add_state("output", str)
+class ChatState(TypedDict):
+    input: str
+    output: str
+
+graph = StateGraph(ChatState)
 
 # Add nodes
 graph.add_node("classify", classify_intent)
@@ -83,8 +89,11 @@ graph.add_node("fallback", answer_fallback)
 
 # Edges
 graph.set_entry_point("classify")
+
+# Add conditional edges using the new API
 graph.add_conditional_edges(
     "classify",
+    lambda x: x["output"],
     {
         "general_info": "general_info",
         "academic_info": "academic_info",

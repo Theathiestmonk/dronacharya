@@ -1,11 +1,37 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { UserCircleIcon, HomeIcon } from '@heroicons/react/24/solid';
 
-const LeftPanel: React.FC<{ user?: any }> = ({ user }) => (
+interface LeftPanelProps {
+  user?: any;
+  onLogoClick?: () => void;
+}
+
+const LeftPanel: React.FC<LeftPanelProps> = ({ user, onLogoClick }) => {
+  const [isLogoClicked, setIsLogoClicked] = useState(false);
+
+  const handleLogoClick = () => {
+    if (onLogoClick) {
+      setIsLogoClicked(true);
+      onLogoClick();
+      // Reset animation after a short delay
+      setTimeout(() => setIsLogoClicked(false), 300);
+    }
+  };
+
+  return (
   <aside className="flex flex-col items-center w-20 bg-white border-r border-gray-200 h-screen py-6 shadow-lg">
     {/* Logo at the top */}
     <div className="mb-6">
-      <img src="/prakriti_logo.webp" alt="Prakriti Visual" style={{ maxWidth: '50px', height: 'auto' }} />
+      <button
+        onClick={handleLogoClick}
+        className={`hover:scale-110 transition-all duration-200 focus:outline-none group ${
+          isLogoClicked ? 'scale-125 rotate-12' : ''
+        }`}
+        title="Click to start a fresh chat"
+        aria-label="Click to start a fresh chat"
+      >
+        <img src="/prakriti_logo.webp" alt="Prakriti Visual" style={{ maxWidth: '50px', height: 'auto' }} />
+      </button>
     </div>
     {/* User profile circle */}
     <div className="mb-8">
@@ -24,6 +50,7 @@ const LeftPanel: React.FC<{ user?: any }> = ({ user }) => (
       {/* Add more icons here as needed */}
     </nav>
   </aside>
-);
+  );
+};
 
 export default LeftPanel; 
