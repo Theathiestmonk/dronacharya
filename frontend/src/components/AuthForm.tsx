@@ -26,8 +26,9 @@ const AuthForm: React.FC = () => {
         result = await supabase.auth.signInWithPassword({ email, password });
       }
       if (result.error) setError(result.error.message);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -39,8 +40,9 @@ const AuthForm: React.FC = () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({ provider: 'google' });
       if (error) setError(error.message);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -60,6 +62,7 @@ const AuthForm: React.FC = () => {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-md rounded-xl shadow-lg p-8 border border-gray-200" style={{ background: 'transparent' }}>
         <div className="flex justify-center mb-6">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/prakriti_logo.webp" alt="Prakriti Logo" style={{ maxWidth: '90px', height: 'auto' }} />
         </div>
         <h2 className="text-2xl font-bold mb-6 text-center text-gray-900">{isSignup ? 'Sign Up' : 'Login'}</h2>

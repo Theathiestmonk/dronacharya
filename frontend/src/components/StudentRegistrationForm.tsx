@@ -351,7 +351,7 @@ const StudentRegistrationForm: React.FC<StudentRegistrationFormProps> = ({
           <textarea
             name="address"
             value={formData.address}
-            onChange={(e) => handleInputChange(e as any)}
+            onChange={(e) => handleInputChange(e as React.ChangeEvent<HTMLTextAreaElement>)}
             rows={3}
             className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
               errors.address ? 'border-red-500' : 'border-gray-300'

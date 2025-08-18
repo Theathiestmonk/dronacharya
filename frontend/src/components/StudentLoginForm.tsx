@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 
 interface StudentLoginFormProps {
-  onSuccess?: (studentData: any) => void;
+  onSuccess?: (studentData: { id?: number; student_id?: string; email?: string } | null) => void;
   onCancel?: () => void;
   onSwitchToRegister?: () => void;
 }

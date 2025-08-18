@@ -2,15 +2,14 @@
 import React, { useEffect, useState } from 'react';
 import Chatbot from '../components/Chatbot';
 import AuthForm from '../components/AuthForm';
-import StudentAuth from '../components/StudentAuth';
+
 import { useSupabase } from '../providers/SupabaseProvider';
+import type { Session } from '@supabase/supabase-js';
 import LeftPanel from "./components/LeftPanel";
 
 const HomePage: React.FC = () => {
   const supabase = useSupabase();
-  const [session, setSession] = useState<any>(null);
-  const [studentSession, setStudentSession] = useState<any>(null);
-  const [authMode, setAuthMode] = useState<'teacher' | 'student'>('teacher');
+  const [session, setSession] = useState<Session | null>(null);
   const [chatKey, setChatKey] = useState(0); // Key to force re-render of Chatbot
   useEffect(() => {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {

@@ -16,7 +16,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(req.body),
       });
-    } catch (fetchError) {
+    } catch {
       // Fallback to alternative connection method
       backendRes = await fetch(`http://127.0.0.1:8000/chatbot/`, {
         method: 'POST',

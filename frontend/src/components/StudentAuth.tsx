@@ -4,7 +4,7 @@ import StudentLoginForm from './StudentLoginForm';
 import StudentRegistrationForm from './StudentRegistrationForm';
 
 interface StudentAuthProps {
-  onSuccess?: (studentData: any) => void;
+  onSuccess?: (studentData: { id?: number; student_id?: string; email?: string } | null) => void;
   onCancel?: () => void;
 }
 
@@ -15,7 +15,7 @@ const StudentAuth: React.FC<StudentAuthProps> = ({ onSuccess, onCancel }) => {
     setIsLogin(!isLogin);
   };
 
-  const handleSuccess = (studentData: any) => {
+  const handleSuccess = (studentData: { id?: number; student_id?: string; email?: string } | null) => {
     if (onSuccess) {
       onSuccess(studentData);
     }

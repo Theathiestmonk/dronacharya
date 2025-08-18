@@ -1,5 +1,5 @@
 import './globals.css';
-import { createClient } from '@supabase/supabase-js';
+
 import { SupabaseProvider } from '../providers/SupabaseProvider';
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from "next/font/google";

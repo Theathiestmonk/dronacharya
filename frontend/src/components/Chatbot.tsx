@@ -51,7 +51,7 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
       alert('Speech recognition is not supported in this browser.');
       return;
     }
-    // @ts-ignore
+    // @ts-expect-error
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
     recognition.lang = 'en-US';
@@ -59,8 +59,11 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
     recognition.maxAlternatives = 1;
     setListening(true);
     setMicPlaceholder('Listening...');
-    recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
+    recognition.onresult = (event: unknown) => {
+      const typedEvent = event as SpeechRecognitionEvent;
+      // @ts-expect-error vendor prefix type
+      const results = (typedEvent.results || (event as any).results);
+      const transcript = results[0][0].transcript;
       setInput('');
       setListening(false);
       setMicPlaceholder('Ask me anything...');
@@ -275,6 +278,7 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
         <>
           {/* Image above heading */}
           <div className="flex justify-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/prakriti_logo.webp" alt="Prakriti Visual" style={{ maxWidth: '150px', height: 'auto', marginBottom: '1rem' }} />
           </div>
           {/* Heading */}

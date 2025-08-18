@@ -36,7 +36,7 @@ export default function PrivacyPolicy() {
           </ul>
 
           <h2 className="text-2xl font-semibold mt-8 mb-2">Changes to This Privacy Policy</h2>
-          <p className="mb-4">We may update this Privacy Policy from time to time. The updated version will be posted on our website, and the "Last Updated" date at the top will reflect the changes. By continuing to use our website or services after any changes to this policy, you acknowledge and agree to the updated terms.</p>
+          <p className="mb-4">We may update this Privacy Policy from time to time. The updated version will be posted on our website, and the &quot;Last Updated&quot; date at the top will reflect the changes. By continuing to use our website or services after any changes to this policy, you acknowledge and agree to the updated terms.</p>
 
           <h2 className="text-2xl font-semibold mt-8 mb-2">Intellectual Property Rights</h2>
           <p>All content included on this site, such as text, graphics, logos, button icons, images, and software, is the property of PRAKRITI. All content not owned by PRAKRITI is used with permission.</p>
