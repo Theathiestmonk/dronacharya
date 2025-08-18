@@ -1,5 +1,6 @@
 "use client";
 
+// LeftPanel component for navigation sidebar
 import React, { useState } from 'react';
 import { UserCircleIcon, HomeIcon } from '@heroicons/react/24/solid';
 
