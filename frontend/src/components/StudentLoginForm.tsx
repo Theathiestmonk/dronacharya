@@ -65,7 +65,7 @@ const StudentLoginForm: React.FC<StudentLoginFormProps> = ({
         const errorData = await response.json();
         setErrors({ submit: errorData.error || 'Login failed' });
       }
-    } catch (error) {
+    } catch {
       setErrors({ submit: 'Network error. Please try again.' });
     } finally {
       setLoading(false);
@@ -85,6 +85,7 @@ const StudentLoginForm: React.FC<StudentLoginFormProps> = ({
   return (
     <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-lg p-8 border border-gray-200">
       <div className="flex justify-center mb-6">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/prakriti_logo.webp" alt="Prakriti Logo" style={{ maxWidth: '90px', height: 'auto' }} />
       </div>
       

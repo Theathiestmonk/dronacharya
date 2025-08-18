@@ -37,7 +37,7 @@ const StudentAuth: React.FC<StudentAuthProps> = ({ onSuccess, onCancel }) => {
         />
       ) : (
         <StudentRegistrationForm
-          onSuccess={handleSuccess}
+          onSuccess={() => handleSuccess(null)}
           onCancel={handleCancel}
         />
       )}

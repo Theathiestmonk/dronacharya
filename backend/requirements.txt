@@ -8,4 +8,5 @@ supabase
 requests
 typing-extensions
 python-multipart
-rapidfuzz 
+rapidfuzz
+email-validator 

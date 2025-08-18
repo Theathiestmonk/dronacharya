@@ -135,14 +135,14 @@ const StudentRegistrationForm: React.FC<StudentRegistrationFormProps> = ({
         const errorData = await response.json();
         setErrors({ submit: errorData.error || 'Registration failed' });
       }
-    } catch (error) {
+    } catch {
       setErrors({ submit: 'Network error. Please try again.' });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     
@@ -170,6 +170,7 @@ const StudentRegistrationForm: React.FC<StudentRegistrationFormProps> = ({
   return (
     <div className="w-full max-w-2xl mx-auto bg-white rounded-xl shadow-lg p-8 border border-gray-200">
       <div className="flex justify-center mb-6">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/prakriti_logo.webp" alt="Prakriti Logo" style={{ maxWidth: '90px', height: 'auto' }} />
       </div>
       

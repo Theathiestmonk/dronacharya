@@ -51,7 +51,7 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
       alert('Speech recognition is not supported in this browser.');
       return;
     }
-    // @ts-expect-error
+    // @ts-expect-error - webkitSpeechRecognition is not in TypeScript types
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
     recognition.lang = 'en-US';
@@ -59,10 +59,8 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
     recognition.maxAlternatives = 1;
     setListening(true);
     setMicPlaceholder('Listening...');
-    recognition.onresult = (event: unknown) => {
-      const typedEvent = event as SpeechRecognitionEvent;
-      // @ts-expect-error vendor prefix type
-      const results = (typedEvent.results || (event as any).results);
+    recognition.onresult = (event: Event) => {
+      const results = (event as unknown as { results: SpeechRecognitionResultList }).results;
       const transcript = results[0][0].transcript;
       setInput('');
       setListening(false);
@@ -196,7 +194,7 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
         }
       }
       typeChar();
-    } catch (err) {
+    } catch {
       setMessages((msgs) => [...msgs, { sender: 'bot', text: 'Error: Could not get response.' }]);
     } finally {
       setLoading(false);
@@ -270,7 +268,7 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
   // Expose clearChat function to parent
   React.useImperativeHandle(clearChat, () => ({
     clearChat: handleClearChat
-  }), []);
+  }), [handleClearChat]);
 
   return (
     <div className="flex flex-col h-[70vh] w-full max-w-xl mx-auto bg-transparent p-0">
@@ -339,20 +337,20 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
                       remarkPlugins={[remarkGfm]}
                       components={{
                         // Custom styling for Markdown elements
-                        h1: ({node, ...props}) => <h1 className="text-xl font-bold mb-2 text-gray-800" {...props} />,
-                        h2: ({node, ...props}) => <h2 className="text-lg font-bold mb-2 text-gray-800" {...props} />,
-                        h3: ({node, ...props}) => <h3 className="text-base font-bold mb-2 text-gray-800" {...props} />,
-                        p: ({node, ...props}) => <p className="mb-2 text-gray-700 leading-relaxed" {...props} />,
-                        ul: ({node, ...props}) => <ul className="list-disc list-inside mb-2 text-gray-700 space-y-1" {...props} />,
-                        ol: ({node, ...props}) => <ol className="list-decimal list-inside mb-2 text-gray-700 space-y-1" {...props} />,
-                        li: ({node, ...props}) => <li className="mb-1 text-gray-700" {...props} />,
-                        strong: ({node, ...props}) => <strong className="font-bold text-gray-900" {...props} />,
-                        em: ({node, ...props}) => <em className="italic text-gray-700" {...props} />,
-                        code: ({node, ...props}) => <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-gray-800" {...props} />,
-                        blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-300 pl-4 italic text-gray-600 bg-blue-50 py-2 rounded-r" {...props} />,
-                        table: ({node, ...props}) => <table className="border-collapse border border-gray-300 w-full mb-2 text-sm" {...props} />,
-                        th: ({node, ...props}) => <th className="border border-gray-300 px-2 py-1 bg-gray-100 font-bold text-gray-800" {...props} />,
-                        td: ({node, ...props}) => <td className="border border-gray-300 px-2 py-1 text-gray-700" {...props} />,
+                        h1: ({...props}) => <h1 className="text-xl font-bold mb-2 text-gray-800" {...props} />,
+                        h2: ({...props}) => <h2 className="text-lg font-bold mb-2 text-gray-800" {...props} />,
+                        h3: ({...props}) => <h3 className="text-base font-bold mb-2 text-gray-800" {...props} />,
+                        p: ({...props}) => <p className="mb-2 text-gray-700 leading-relaxed" {...props} />,
+                        ul: ({...props}) => <ul className="list-disc list-inside mb-2 text-gray-700 space-y-1" {...props} />,
+                        ol: ({...props}) => <ol className="list-decimal list-inside mb-2 text-gray-700 space-y-1" {...props} />,
+                        li: ({...props}) => <li className="mb-1 text-gray-700" {...props} />,
+                        strong: ({...props}) => <strong className="font-bold text-gray-900" {...props} />,
+                        em: ({...props}) => <em className="italic text-gray-700" {...props} />,
+                        code: ({...props}) => <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-gray-800" {...props} />,
+                        blockquote: ({...props}) => <blockquote className="border-l-4 border-blue-300 pl-4 italic text-gray-600 bg-blue-50 py-2 rounded-r" {...props} />,
+                        table: ({...props}) => <table className="border-collapse border border-gray-300 w-full mb-2 text-sm" {...props} />,
+                        th: ({...props}) => <th className="border border-gray-300 px-2 py-1 bg-gray-100 font-bold text-gray-800" {...props} />,
+                        td: ({...props}) => <td className="border border-gray-300 px-2 py-1 text-gray-700" {...props} />,
                       }}
                     >
                       {msg.text}
@@ -387,20 +385,20 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
                   remarkPlugins={[remarkGfm]}
                   components={{
                     // Custom styling for Markdown elements
-                    h1: ({node, ...props}) => <h1 className="text-xl font-bold mb-2 text-gray-800" {...props} />,
-                    h2: ({node, ...props}) => <h2 className="text-lg font-bold mb-2 text-gray-800" {...props} />,
-                    h3: ({node, ...props}) => <h3 className="text-base font-bold mb-2 text-gray-800" {...props} />,
-                    p: ({node, ...props}) => <p className="mb-2 text-gray-700 leading-relaxed" {...props} />,
-                    ul: ({node, ...props}) => <ul className="list-disc list-inside mb-2 text-gray-700 space-y-1" {...props} />,
-                    ol: ({node, ...props}) => <ol className="list-decimal list-inside mb-2 text-gray-700 space-y-1" {...props} />,
-                    li: ({node, ...props}) => <li className="mb-1 text-gray-700" {...props} />,
-                    strong: ({node, ...props}) => <strong className="font-bold text-gray-900" {...props} />,
-                    em: ({node, ...props}) => <em className="italic text-gray-700" {...props} />,
-                    code: ({node, ...props}) => <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-gray-800" {...props} />,
-                    blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-300 pl-4 italic text-gray-600 bg-blue-50 py-2 rounded-r" {...props} />,
-                    table: ({node, ...props}) => <table className="border-collapse border border-gray-300 w-full mb-2 text-sm" {...props} />,
-                    th: ({node, ...props}) => <th className="border border-gray-300 px-2 py-1 bg-gray-100 font-bold text-gray-800" {...props} />,
-                    td: ({node, ...props}) => <td className="border border-gray-300 px-2 py-1 text-gray-700" {...props} />,
+                    h1: ({...props}) => <h1 className="text-xl font-bold mb-2 text-gray-800" {...props} />,
+                    h2: ({...props}) => <h2 className="text-lg font-bold mb-2 text-gray-800" {...props} />,
+                    h3: ({...props}) => <h3 className="text-base font-bold mb-2 text-gray-800" {...props} />,
+                    p: ({...props}) => <p className="mb-2 text-gray-700 leading-relaxed" {...props} />,
+                    ul: ({...props}) => <ul className="list-disc list-inside mb-2 text-gray-700 space-y-1" {...props} />,
+                    ol: ({...props}) => <ol className="list-decimal list-inside mb-2 text-gray-700 space-y-1" {...props} />,
+                    li: ({...props}) => <li className="mb-1 text-gray-700" {...props} />,
+                    strong: ({...props}) => <strong className="font-bold text-gray-900" {...props} />,
+                    em: ({...props}) => <em className="italic text-gray-700" {...props} />,
+                    code: ({...props}) => <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-gray-800" {...props} />,
+                    blockquote: ({...props}) => <blockquote className="border-l-4 border-blue-300 pl-4 italic text-gray-600 bg-blue-50 py-2 rounded-r" {...props} />,
+                    table: ({...props}) => <table className="border-collapse border border-gray-300 w-full mb-2 text-sm" {...props} />,
+                    th: ({...props}) => <th className="border border-gray-300 px-2 py-1 bg-gray-100 font-bold text-gray-800" {...props} />,
+                    td: ({...props}) => <td className="border border-gray-300 px-2 py-1 text-gray-700" {...props} />,
                   }}
                 >
                   {displayedBotText}
