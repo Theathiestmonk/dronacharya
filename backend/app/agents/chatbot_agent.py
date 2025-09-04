@@ -41,6 +41,7 @@ def generate_chatbot_response(request):
     """
     openai_client = get_openai_client()
     user_query = request.message
+    conversation_history = getattr(request, 'conversation_history', [])
 
     # Step 0: Intent detection for holiday calendar
     holiday_keywords = [
@@ -327,12 +328,22 @@ def generate_chatbot_response(request):
     max_attempts = 3
     for attempt in range(max_attempts):
         try:
+            # Build messages array with conversation history
+            messages = [
+                {"role": "system", "content": "You are a helpful school assistant chatbot. Provide a complete, comprehensive response. Always end with a proper conclusion. Use Markdown formatting with **bold**, *italic*, ### headings, and bullet points. You have access to the conversation history to provide context-aware responses."}
+            ]
+            
+            # Add conversation history (limit to last 10 messages to avoid token limits)
+            recent_history = conversation_history[-10:] if conversation_history else []
+            for msg in recent_history:
+                messages.append({"role": msg["role"], "content": msg["content"]})
+            
+            # Add current user query
+            messages.append({"role": "user", "content": f"Question: {user_query}\n\nPlease provide a complete answer that fully addresses this question. Make sure to end with a proper conclusion and do not cut off mid-sentence."})
+            
             response = openai_client.chat.completions.create(
                 model="gpt-4",
-                messages=[
-                    {"role": "system", "content": "You are a helpful school assistant chatbot. Provide a complete, comprehensive response. Always end with a proper conclusion. Use Markdown formatting with **bold**, *italic*, ### headings, and bullet points."},
-                    {"role": "user", "content": f"Question: {user_query}\n\nPlease provide a complete answer that fully addresses this question. Make sure to end with a proper conclusion and do not cut off mid-sentence."}
-                ],
+                messages=messages,
                 temperature=0.3,
             )
             

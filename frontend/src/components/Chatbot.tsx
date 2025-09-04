@@ -44,6 +44,8 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   // For copy feedback per message
   const [copiedIdx, setCopiedIdx] = useCopyState<number | null>(null);
   const [showClearedMessage, setShowClearedMessage] = useState(false);
+  // Conversation history for context
+  const [conversationHistory, setConversationHistory] = useState<Array<{role: 'user' | 'assistant', content: string}>>([]);
 
   // Dynamic welcome messages with focus words
   const welcomeMessages = [
@@ -207,6 +209,11 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     if (!input.trim()) return;
     const userMsg: Message = { sender: 'user', text: input };
     setMessages((msgs) => [...msgs, userMsg]);
+    
+    // Add user message to conversation history
+    const newHistory = [...conversationHistory, { role: 'user', content: input }];
+    setConversationHistory(newHistory);
+    
     setInput('');
     setLoading(true);
     setDisplayedBotText('');
@@ -224,7 +231,10 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       const res = await fetch('/api/chatbot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: input }),
+        body: JSON.stringify({ 
+          message: input,
+          conversation_history: newHistory
+        }),
       });
       const data = await res.json();
       
@@ -255,6 +265,10 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       const fullText = data.response;
       console.log('Frontend received response length:', fullText?.length);
       console.log('Frontend received response:', fullText);
+      
+      // Add bot response to conversation history
+      setConversationHistory(prev => [...prev, { role: 'assistant', content: fullText }]);
+      
       let idx = 0;
       setIsTyping(true);
       function typeChar() {
@@ -329,6 +343,9 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     setDisplayedBotText('');
     setIsTyping(false);
     setCopiedIdx(null);
+    
+    // Clear conversation history
+    setConversationHistory([]);
     
     // Generate a new random welcome message
     setWelcomeMessage(getRandomWelcomeMessage());
