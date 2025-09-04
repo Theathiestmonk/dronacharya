@@ -30,7 +30,7 @@ interface ChatbotProps {
   clearChat?: () => void;
 }
 
-const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
+const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ clearChat }, ref) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -341,10 +341,10 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
     if (clearChat) {
       clearChat();
     }
-  }, [clearChat]);
+  }, []);
 
   // Expose clearChat function to parent
-  React.useImperativeHandle(clearChat, () => ({
+  React.useImperativeHandle(ref, () => ({
     clearChat: handleClearChat
   }), [handleClearChat]);
 
@@ -538,6 +538,8 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
       </div>
     </div>
   );
-};
+});
+
+Chatbot.displayName = 'Chatbot';
 
 export default Chatbot; 

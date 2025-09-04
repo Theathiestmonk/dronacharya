@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import Chatbot from '../components/Chatbot';
 import AuthForm from '../components/AuthForm';
 
@@ -11,10 +11,14 @@ const HomePage: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [chatKey, setChatKey] = useState(0); // Key to force re-render of Chatbot
+  const chatbotRef = useRef<{ clearChat: () => void }>(null);
   
   // Function to clear chat and start fresh
   const handleClearChat = () => {
     setChatKey(prev => prev + 1); // Force re-render of Chatbot
+    if (chatbotRef.current) {
+      chatbotRef.current.clearChat();
+    }
   };
   
   useEffect(() => {
@@ -71,7 +75,7 @@ const HomePage: React.FC = () => {
     <div className="flex min-h-screen h-screen">
       <main className="flex-1 flex items-center justify-center h-screen">
         <div className="w-full max-w-2xl h-full flex flex-col justify-center">
-          <Chatbot key={chatKey} clearChat={handleClearChat} />
+          <Chatbot key={chatKey} ref={chatbotRef} />
         </div>
       </main>
     </div>
