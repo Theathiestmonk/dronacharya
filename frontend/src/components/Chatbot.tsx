@@ -67,7 +67,14 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
     return welcomeMessages[randomIndex];
   };
 
-  const [welcomeMessage, setWelcomeMessage] = useState(getRandomWelcomeMessage());
+  const [welcomeMessage, setWelcomeMessage] = useState<{ text: string; focusWord: string } | null>(null);
+
+  // Initialize welcome message on client side only
+  useEffect(() => {
+    if (!welcomeMessage) {
+      setWelcomeMessage(getRandomWelcomeMessage());
+    }
+  }, [welcomeMessage]);
 
   // Function to render welcome message with highlighted focus word
   const renderWelcomeMessage = (message: { text: string; focusWord: string }) => {
@@ -342,7 +349,7 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
           {/* Heading */}
           <div className="mb-6 text-center">
             <h2 className="text-5xl font-normal text-gray-500 mb-2">
-              {renderWelcomeMessage(welcomeMessage)}
+              {welcomeMessage ? renderWelcomeMessage(welcomeMessage) : "Loading..."}
             </h2>
           </div>
         </>
