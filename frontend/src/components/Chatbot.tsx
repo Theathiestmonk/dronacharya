@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useState as useCopyState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -71,7 +71,6 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
 
   // Function to render welcome message with highlighted focus word
   const renderWelcomeMessage = (message: { text: string; focusWord: string }) => {
-    const parts = message.text.split(new RegExp(`\\b${message.focusWord}\\b`, 'i'));
     const focusWordIndex = message.text.toLowerCase().indexOf(message.focusWord.toLowerCase());
     
     if (focusWordIndex === -1) {
@@ -304,7 +303,7 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
   };
 
   // Clear chat function
-  const handleClearChat = () => {
+  const handleClearChat = useCallback(() => {
     setMessages([]);
     setInput('');
     setLoading(false);
@@ -324,7 +323,7 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
     if (clearChat) {
       clearChat();
     }
-  };
+  }, [clearChat]);
 
   // Expose clearChat function to parent
   React.useImperativeHandle(clearChat, () => ({

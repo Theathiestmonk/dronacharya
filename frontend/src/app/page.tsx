@@ -1,5 +1,6 @@
 "use client";
 import React, { useEffect, useState } from 'react';
+import Image from 'next/image';
 import Chatbot from '../components/Chatbot';
 import AuthForm from '../components/AuthForm';
 
@@ -11,6 +12,11 @@ const HomePage: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [chatKey, setChatKey] = useState(0); // Key to force re-render of Chatbot
+  
+  // Function to clear chat and start fresh
+  const handleClearChat = () => {
+    setChatKey(prev => prev + 1); // Force re-render of Chatbot
+  };
   
   useEffect(() => {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -36,7 +42,13 @@ const HomePage: React.FC = () => {
         <main className="flex-1 flex items-center justify-center h-screen">
           <div className="w-full max-w-2xl h-full flex flex-col justify-center">
             <div className="flex justify-center mb-6">
-              <img src="/prakriti_logo.webp" alt="Prakriti Visual" style={{ maxWidth: '150px', height: 'auto' }} />
+              <Image 
+                src="/prakriti_logo.webp" 
+                alt="Prakriti Visual" 
+                width={150} 
+                height={150}
+                style={{ maxWidth: '150px', height: 'auto' }}
+              />
             </div>
             <div className="text-center">
               <span className="text-gray-600">Loading...</span>
@@ -61,7 +73,7 @@ const HomePage: React.FC = () => {
     <div className="flex min-h-screen h-screen">
       <main className="flex-1 flex items-center justify-center h-screen">
         <div className="w-full max-w-2xl h-full flex flex-col justify-center">
-          <Chatbot key={chatKey} />
+          <Chatbot key={chatKey} clearChat={handleClearChat} />
         </div>
       </main>
     </div>
