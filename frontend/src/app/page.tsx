@@ -11,7 +11,7 @@ const HomePage: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [chatKey, setChatKey] = useState(0); // Key to force re-render of Chatbot
-  const chatbotRef = useRef<{ clearChat: () => void }>(null);
+  const chatbotRef = useRef<{ clearChat: () => void }>(null); // Ref for chatbot component
   
   // Function to clear chat and start fresh
   const handleClearChat = () => {
