@@ -62,10 +62,10 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   ];
 
   // Get a random welcome message
-  const getRandomWelcomeMessage = () => {
+  const getRandomWelcomeMessage = useCallback(() => {
     const randomIndex = Math.floor(Math.random() * welcomeMessages.length);
     return welcomeMessages[randomIndex];
-  };
+  }, [welcomeMessages]);
 
   const [welcomeMessage, setWelcomeMessage] = useState<{ text: string; focusWord: string } | null>(null);
 
@@ -80,7 +80,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       // Fallback to first message if random generation fails
       setWelcomeMessage(welcomeMessages[0]);
     }
-  }, []);
+  }, [getRandomWelcomeMessage, welcomeMessages]);
 
   // Function to render welcome message with highlighted focus word
   const renderWelcomeMessage = (message: { text: string; focusWord: string }) => {
@@ -341,7 +341,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     if (clearChat) {
       clearChat();
     }
-  }, []);
+  }, [clearChat, getRandomWelcomeMessage, setCopiedIdx]);
 
   // Expose clearChat function to parent
   React.useImperativeHandle(ref, () => ({

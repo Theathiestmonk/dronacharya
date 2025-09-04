@@ -10,7 +10,7 @@ const HomePage: React.FC = () => {
   const supabase = useSupabase();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const [chatKey, setChatKey] = useState(0); // Key to force re-render of Chatbot
+  const [chatKey] = useState(0); // Key to force re-render of Chatbot
   const chatbotRef = useRef<{ clearChat: () => void }>(null); // Ref for chatbot component
   
   useEffect(() => {
