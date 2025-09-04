@@ -1,6 +1,5 @@
 "use client";
 import React, { useEffect, useState } from 'react';
-import Image from 'next/image';
 import Chatbot from '../components/Chatbot';
 import AuthForm from '../components/AuthForm';
 
@@ -42,12 +41,11 @@ const HomePage: React.FC = () => {
         <main className="flex-1 flex items-center justify-center h-screen">
           <div className="w-full max-w-2xl h-full flex flex-col justify-center">
             <div className="flex justify-center mb-6">
-              <Image 
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img 
                 src="/prakriti_logo.webp" 
                 alt="Prakriti Visual" 
-                width={150} 
-                height={150}
-                priority
+                style={{ maxWidth: '150px', height: 'auto' }}
               />
             </div>
             <div className="text-center">

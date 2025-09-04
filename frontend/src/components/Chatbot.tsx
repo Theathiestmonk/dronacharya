@@ -71,29 +71,40 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
 
   // Initialize welcome message on client side only
   useEffect(() => {
-    if (!welcomeMessage) {
-      setWelcomeMessage(getRandomWelcomeMessage());
+    try {
+      if (!welcomeMessage) {
+        setWelcomeMessage(getRandomWelcomeMessage());
+      }
+    } catch (error) {
+      console.error('Error setting welcome message:', error);
+      // Fallback to first message if random generation fails
+      setWelcomeMessage(welcomeMessages[0]);
     }
-  }, [welcomeMessage]);
+  }, []);
 
   // Function to render welcome message with highlighted focus word
   const renderWelcomeMessage = (message: { text: string; focusWord: string }) => {
-    const focusWordIndex = message.text.toLowerCase().indexOf(message.focusWord.toLowerCase());
-    
-    if (focusWordIndex === -1) {
+    try {
+      const focusWordIndex = message.text.toLowerCase().indexOf(message.focusWord.toLowerCase());
+      
+      if (focusWordIndex === -1) {
+        return message.text;
+      }
+      
+      const beforeFocus = message.text.substring(0, focusWordIndex);
+      const afterFocus = message.text.substring(focusWordIndex + message.focusWord.length);
+      
+      return (
+        <>
+          {beforeFocus}
+          <span className="font-bold" style={{ color: '#23479f' }}>{message.focusWord}</span>
+          {afterFocus}
+        </>
+      );
+    } catch (error) {
+      console.error('Error rendering welcome message:', error);
       return message.text;
     }
-    
-    const beforeFocus = message.text.substring(0, focusWordIndex);
-    const afterFocus = message.text.substring(focusWordIndex + message.focusWord.length);
-    
-    return (
-      <>
-        {beforeFocus}
-        <span className="font-bold" style={{ color: '#23479f' }}>{message.focusWord}</span>
-        {afterFocus}
-      </>
-    );
   };
 
   // Speech-to-text logic
