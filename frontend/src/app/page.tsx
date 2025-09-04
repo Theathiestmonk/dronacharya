@@ -13,14 +13,6 @@ const HomePage: React.FC = () => {
   const [chatKey, setChatKey] = useState(0); // Key to force re-render of Chatbot
   const chatbotRef = useRef<{ clearChat: () => void }>(null); // Ref for chatbot component
   
-  // Function to clear chat and start fresh
-  const handleClearChat = () => {
-    setChatKey(prev => prev + 1); // Force re-render of Chatbot
-    if (chatbotRef.current) {
-      chatbotRef.current.clearChat();
-    }
-  };
-  
   useEffect(() => {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
