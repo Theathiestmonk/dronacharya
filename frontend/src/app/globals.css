@@ -16,11 +16,11 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Helvetica, Arial, sans-serif;
-  /* Graph-like background - blue grid lines, 10% opacity */
+  /* Graph-like background - blue grid lines, 5% opacity */
   background-image:
-    linear-gradient(to right, rgba(37, 99, 235, 0.1) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(37, 99, 235, 0.1) 1px, transparent 1px);
-  background-size: 32px 32px;
+    linear-gradient(to right, rgba(37, 99, 235, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(37, 99, 235, 0.05) 1px, transparent 1px);
+  background-size: 16px 16px;
 }
 
 /* Tailwind base styles */

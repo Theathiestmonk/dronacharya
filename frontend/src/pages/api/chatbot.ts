@@ -26,6 +26,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
     
     const data = await backendRes.json();
+    console.log('API route received response length:', data?.response?.length);
+    console.log('API route received response:', data?.response);
     res.status(backendRes.status).json(data);
   } catch (error) {
     console.error('Chatbot API error:', error);

@@ -45,6 +45,51 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
   const [copiedIdx, setCopiedIdx] = useCopyState<number | null>(null);
   const [showClearedMessage, setShowClearedMessage] = useState(false);
 
+  // Dynamic welcome messages with focus words
+  const welcomeMessages = [
+    { text: "What curiosity leads the way?", focusWord: "curiosity" },
+    { text: "Which idea is lighting your path?", focusWord: "idea" },
+    { text: "What learning spark calls you onward?", focusWord: "spark" },
+    { text: "Which question opens your world?", focusWord: "question" },
+    { text: "What secret is the wind sharing?", focusWord: "secret" },
+    { text: "Which dream is calling your name?", focusWord: "dream" },
+    { text: "What story is unfolding around you?", focusWord: "story" },
+    { text: "Which adventure is waiting quietly?", focusWord: "adventure" },
+    { text: "What whispers guide your steps?", focusWord: "whispers" },
+    { text: "Which spark are you chasing?", focusWord: "spark" },
+    { text: "What gentle voice do you hear?", focusWord: "voice" },
+    { text: "Which call of wonder do you follow?", focusWord: "wonder" }
+  ];
+
+  // Get a random welcome message
+  const getRandomWelcomeMessage = () => {
+    const randomIndex = Math.floor(Math.random() * welcomeMessages.length);
+    return welcomeMessages[randomIndex];
+  };
+
+  const [welcomeMessage, setWelcomeMessage] = useState(getRandomWelcomeMessage());
+
+  // Function to render welcome message with highlighted focus word
+  const renderWelcomeMessage = (message: { text: string; focusWord: string }) => {
+    const parts = message.text.split(new RegExp(`\\b${message.focusWord}\\b`, 'i'));
+    const focusWordIndex = message.text.toLowerCase().indexOf(message.focusWord.toLowerCase());
+    
+    if (focusWordIndex === -1) {
+      return message.text;
+    }
+    
+    const beforeFocus = message.text.substring(0, focusWordIndex);
+    const afterFocus = message.text.substring(focusWordIndex + message.focusWord.length);
+    
+    return (
+      <>
+        {beforeFocus}
+        <span className="font-bold" style={{ color: '#23479f' }}>{message.focusWord}</span>
+        {afterFocus}
+      </>
+    );
+  };
+
   // Speech-to-text logic
   const handleMic = () => {
     if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
@@ -104,13 +149,15 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
             
             // Handle regular text responses
             const fullText = data.response;
+            console.log('Frontend speech received response length:', fullText?.length);
+            console.log('Frontend speech received response:', fullText);
             let idx = 0;
             setIsTyping(true);
             function typeChar() {
               setDisplayedBotText(fullText.slice(0, idx + 1));
               if (idx < fullText.length - 1) {
                 idx++;
-                setTimeout(typeChar, 18);
+                setTimeout(typeChar, 8);
               } else {
                 setIsTyping(false);
                 setMessages((msgs) => [...msgs, { sender: 'bot', text: fullText }]);
@@ -147,6 +194,15 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
     setLoading(true);
     setDisplayedBotText('');
     setIsTyping(false);
+    
+    // Show immediate loading feedback
+    setTimeout(() => {
+      if (loading) {
+        setDisplayedBotText('Thinking...');
+        setIsTyping(true);
+      }
+    }, 100);
+    
     try {
       const res = await fetch('/api/chatbot', {
         method: 'POST',
@@ -180,13 +236,15 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
       
       // Handle regular text responses (including Markdown)
       const fullText = data.response;
+      console.log('Frontend received response length:', fullText?.length);
+      console.log('Frontend received response:', fullText);
       let idx = 0;
       setIsTyping(true);
       function typeChar() {
         setDisplayedBotText(fullText.slice(0, idx + 1));
         if (idx < fullText.length - 1) {
           idx++;
-          setTimeout(typeChar, 18); // speed of typing
+          setTimeout(typeChar, 8); // speed of typing
         } else {
           setIsTyping(false);
           // Store the full Markdown text for rendering
@@ -255,6 +313,9 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
     setIsTyping(false);
     setCopiedIdx(null);
     
+    // Generate a new random welcome message
+    setWelcomeMessage(getRandomWelcomeMessage());
+    
     // Show cleared message briefly
     setShowClearedMessage(true);
     setTimeout(() => setShowClearedMessage(false), 2000);
@@ -281,7 +342,9 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
           </div>
           {/* Heading */}
           <div className="mb-6 text-center">
-            <h2 className="text-3xl font-normal text-gray-700 mb-2">What <span className="text-blue-700">whispers</span> are you following today?</h2>
+            <h2 className="text-5xl font-normal text-gray-500 mb-2">
+              {renderWelcomeMessage(welcomeMessage)}
+            </h2>
           </div>
         </>
       )}
@@ -419,7 +482,7 @@ const Chatbot: React.FC<ChatbotProps> = ({ clearChat }) => {
       <div className="relative flex items-end w-full mt-auto">
         <textarea
           ref={inputRef}
-          className="w-full border border-gray-300 rounded-[20px] px-5 py-3 pr-24 bg-gray-50 text-gray-900 placeholder-gray-400 focus:outline-none resize-none font-normal"
+          className="w-full border border-gray-300 rounded-[20px] px-5 py-3 pr-24 bg-transparent text-gray-900 placeholder-gray-400 focus:outline-none resize-none font-normal"
           style={{ height: 100 }}
           value={input}
           onChange={(e) => setInput(e.target.value)}

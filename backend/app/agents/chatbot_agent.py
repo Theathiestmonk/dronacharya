@@ -80,10 +80,9 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
+            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always provide complete, comprehensive responses. Do not truncate or cut off your answers. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability. Make sure to fully answer the user's question with all relevant details."},
                       {"role": "user", "content": prompt}],
-            max_tokens=400,
-            temperature=0.7,
+            temperature=0.3,
         )
         content = response.choices[0].message.content
         return content.strip() if content else canonical_answer
@@ -114,10 +113,9 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
+            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always provide complete, comprehensive responses. Do not truncate or cut off your answers. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability. Make sure to fully answer the user's question with all relevant details."},
                       {"role": "user", "content": prompt}],
-            max_tokens=400,
-            temperature=0.7,
+            temperature=0.3,
         )
         content = response.choices[0].message.content
         return content.strip() if content else canonical_answer
@@ -155,10 +153,9 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
+            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always provide complete, comprehensive responses. Do not truncate or cut off your answers. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability. Make sure to fully answer the user's question with all relevant details."},
                       {"role": "user", "content": prompt}],
-            max_tokens=400,
-            temperature=0.7,
+            temperature=0.3,
         )
         content = response.choices[0].message.content
         return content.strip() if content else canonical_answer
@@ -191,10 +188,9 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
+            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always provide complete, comprehensive responses. Do not truncate or cut off your answers. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability. Make sure to fully answer the user's question with all relevant details."},
                       {"role": "user", "content": prompt}],
-            max_tokens=400,
-            temperature=0.7,
+            temperature=0.3,
         )
         content = response.choices[0].message.content
         return content.strip() if content else canonical_answer
@@ -233,10 +229,9 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
+            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always provide complete, comprehensive responses. Do not truncate or cut off your answers. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability. Make sure to fully answer the user's question with all relevant details."},
                       {"role": "user", "content": prompt}],
-            max_tokens=400,
-            temperature=0.7,
+            temperature=0.3,
         )
         content = response.choices[0].message.content
         return content.strip() if content else canonical_answer
@@ -282,10 +277,9 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
+            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always provide complete, comprehensive responses. Do not truncate or cut off your answers. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability. Make sure to fully answer the user's question with all relevant details."},
                       {"role": "user", "content": prompt}],
-            max_tokens=500,
-            temperature=0.7,
+            temperature=0.3,
         )
         content = response.choices[0].message.content
         return content.strip() if content else canonical_answer
@@ -317,25 +311,54 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
+            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always provide complete, comprehensive responses. Do not truncate or cut off your answers. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability. Make sure to fully answer the user's question with all relevant details."},
                       {"role": "user", "content": prompt}],
-            max_tokens=400,
-            temperature=0.7,
+            temperature=0.3,
         )
         content = response.choices[0].message.content
         # Google Maps embed URL for Prakriti School
         map_url = "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3502.123456789!2d77.123456!3d28.123456!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x390ce4b123456789:0xabcdefabcdefabcd!2sPrakriti%20School!5e0!3m2!1sen!2sin!4v1710000000000!5m2!1sen!2sin"
         return [content.strip() if content else canonical_answer, {"type": "map", "url": map_url}]
 
-    # Step 2: Fallback to LLM
+    # Step 2: Fallback to LLM with streaming approach
     print("[Chatbot] Answer from GPT-4")
-    prompt = f"User: {user_query}\nAI:"
-    response = openai_client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
-                  {"role": "user", "content": user_query}],
-        max_tokens=400,
-        temperature=0.7,
-    )
-    content = response.choices[0].message.content
-    return content.strip() if content else "Sorry, I couldn't generate a response." 
+    
+    # Try multiple approaches to get complete response
+    max_attempts = 3
+    for attempt in range(max_attempts):
+        try:
+            response = openai_client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": "You are a helpful school assistant chatbot. Provide a complete, comprehensive response. Always end with a proper conclusion. Use Markdown formatting with **bold**, *italic*, ### headings, and bullet points."},
+                    {"role": "user", "content": f"Question: {user_query}\n\nPlease provide a complete answer that fully addresses this question. Make sure to end with a proper conclusion and do not cut off mid-sentence."}
+                ],
+                temperature=0.3,
+            )
+            
+            content = response.choices[0].message.content
+            finish_reason = response.choices[0].finish_reason
+            
+            print(f"[Chatbot] Attempt {attempt + 1} - Response length: {len(content) if content else 0} characters")
+            print(f"[Chatbot] Finish reason: {finish_reason}")
+            
+            # Check if response is complete
+            if content and finish_reason == "stop" and not content.strip().endswith(("of", "and", "the", "in", "to", "for", "with", "by")):
+                print(f"[Chatbot] Complete response received on attempt {attempt + 1}")
+                return content.strip()
+            elif content and finish_reason == "length":
+                print(f"[Chatbot] Response truncated due to length on attempt {attempt + 1}")
+                # Try with a more focused prompt
+                continue
+            else:
+                print(f"[Chatbot] Incomplete response on attempt {attempt + 1}, trying again...")
+                continue
+                
+        except Exception as e:
+            print(f"[Chatbot] Error on attempt {attempt + 1}: {e}")
+            if attempt == max_attempts - 1:
+                return "Sorry, I encountered an error while generating a response."
+            continue
+    
+    # If all attempts failed, return a basic response
+    return "I apologize, but I'm having trouble generating a complete response at the moment. Please try rephrasing your question or ask for more specific information." 
