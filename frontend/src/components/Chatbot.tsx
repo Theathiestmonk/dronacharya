@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useState as useCopyState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -6,7 +6,8 @@ import remarkGfm from 'remark-gfm';
 type Message =
   | { sender: 'user' | 'bot'; text: string }
   | { sender: 'bot'; type: 'calendar'; url: string }
-  | { sender: 'bot'; type: 'map'; url: string };
+  | { sender: 'bot'; type: 'map'; url: string }
+  | { sender: 'bot'; type: 'videos'; videos: Array<{video_id: string; title: string; description: string; category: string; duration: string; thumbnail_url: string}> };
 
 // Typing dots animation component
 const TypingDots: React.FC = () => (
@@ -45,10 +46,10 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   const [copiedIdx, setCopiedIdx] = useCopyState<number | null>(null);
   const [showClearedMessage, setShowClearedMessage] = useState(false);
   // Conversation history for context
-  const [conversationHistory, setConversationHistory] = useState<Array<{role: 'user' | 'assistant', content: string}>>([]);
+  const [conversationHistory, setConversationHistory] = useState<Array<{role: string, content: string}>>([]);
 
   // Dynamic welcome messages with focus words
-  const welcomeMessages = [
+  const welcomeMessages = useMemo(() => [
     { text: "What curiosity leads the way?", focusWord: "curiosity" },
     { text: "Which idea is lighting your path?", focusWord: "idea" },
     { text: "What learning spark calls you onward?", focusWord: "spark" },
@@ -61,7 +62,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     { text: "Which spark are you chasing?", focusWord: "spark" },
     { text: "What gentle voice do you hear?", focusWord: "voice" },
     { text: "Which call of wonder do you follow?", focusWord: "wonder" }
-  ];
+  ], []);
 
   // Get a random welcome message
   const getRandomWelcomeMessage = useCallback(() => {
@@ -82,7 +83,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       // Fallback to first message if random generation fails
       setWelcomeMessage(welcomeMessages[0]);
     }
-  }, [getRandomWelcomeMessage, welcomeMessages]);
+  }, [getRandomWelcomeMessage, welcomeMessages, welcomeMessage]);
 
   // Function to render welcome message with highlighted focus word
   const renderWelcomeMessage = (message: { text: string; focusWord: string }) => {
@@ -250,12 +251,22 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         setDisplayedBotText('');
         return;
       } else if (data.type === 'mixed' && Array.isArray(data.response)) {
-        // Handle mixed responses (like location with map)
-        setMessages((msgs) => [
-          ...msgs,
-          { sender: 'bot', text: data.response[0] },
-          data.response[1]?.type === 'map' ? { sender: 'bot', type: 'map', url: data.response[1].url } : null
-        ].filter(Boolean) as Message[]);
+        // Handle mixed responses (like location with map or videos)
+        const messages_to_add = [{ sender: 'bot', text: data.response[0] } as Message];
+        
+        if (data.response[1]?.type === 'map') {
+          messages_to_add.push({ sender: 'bot', type: 'map', url: data.response[1].url } as Message);
+        } else if (data.response[1]?.type === 'videos') {
+          messages_to_add.push({ sender: 'bot', type: 'videos', videos: data.response[1].videos } as Message);
+        }
+        
+        setMessages((msgs) => [...msgs, ...messages_to_add]);
+        setIsTyping(false);
+        setDisplayedBotText('');
+        return;
+      } else if (data.type === 'videos' && data.response && data.response.videos) {
+        // Handle video responses
+        setMessages((msgs) => [...msgs, { sender: 'bot', type: 'videos', videos: data.response.videos }]);
         setIsTyping(false);
         setDisplayedBotText('');
         return;
@@ -366,17 +377,21 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   }), [handleClearChat]);
 
   return (
-    <div className="flex flex-col h-[70vh] w-full max-w-xl mx-auto bg-transparent p-0">
+    <div className="flex flex-col h-[70vh] sm:h-[80vh] w-full max-w-xl mx-auto bg-transparent p-2 sm:p-0">
       {messages.length === 0 && (
         <>
           {/* Image above heading */}
-          <div className="flex justify-center">
+          <div className="flex justify-center mb-4 sm:mb-6">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/prakriti_logo.webp" alt="Prakriti Visual" style={{ maxWidth: '150px', height: 'auto', marginBottom: '1rem' }} />
+            <img 
+              src="/prakriti_logo.webp" 
+              alt="Prakriti Visual" 
+              className="w-20 h-20 sm:w-24 sm:h-24 md:w-32 md:h-32 object-contain" 
+            />
           </div>
           {/* Heading */}
-          <div className="mb-6 text-center">
-            <h2 className="text-5xl font-normal text-gray-500 mb-2">
+          <div className="mb-4 sm:mb-6 text-center px-2">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-normal text-gray-500 mb-2 leading-tight">
               {welcomeMessage ? renderWelcomeMessage(welcomeMessage) : "Loading..."}
             </h2>
           </div>
@@ -391,14 +406,15 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           </div>
         </div>
       )}
-      <div className="flex-1 overflow-y-auto mb-4 space-y-2 pr-4" style={{ minHeight: 0 }}>
+      <div className="flex-1 overflow-y-auto mb-4 space-y-2 pr-2 sm:pr-4" style={{ minHeight: 0 }}>
         {messages.map((msg, idx) => (
           'type' in msg && msg.type === 'calendar' ? (
             <div key={idx} className="flex justify-start">
-              <div className="max-w-[80%] w-full bg-white border border-blue-200 rounded-lg p-2 mt-2 flex justify-center">
+              <div className="max-w-[95%] sm:max-w-[80%] w-full bg-white border border-blue-200 rounded-lg p-2 mt-2 flex justify-center">
                 <iframe
                   src={msg.url}
-                  style={{ border: 0, width: '350px', minHeight: 250 }}
+                  className="w-full max-w-sm sm:max-w-none"
+                  style={{ border: 0, minHeight: '200px', height: 'auto' }}
                   title="Holiday Calendar"
                   allowFullScreen
                 />
@@ -406,13 +422,53 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             </div>
           ) : 'type' in msg && msg.type === 'map' ? (
             <div key={idx} className="flex justify-start">
-              <div className="max-w-[80%] w-full bg-white border border-blue-200 rounded-lg p-2 mt-2 flex justify-center">
+              <div className="max-w-[95%] sm:max-w-[80%] w-full bg-white border border-blue-200 rounded-lg p-2 mt-2 flex justify-center">
                 <iframe
                   src={msg.url}
-                  style={{ border: 0, width: '350px', minHeight: 250 }}
+                  className="w-full max-w-sm sm:max-w-none"
+                  style={{ border: 0, minHeight: '200px', height: 'auto' }}
                   title="Prakriti School Location"
                   allowFullScreen
                 />
+              </div>
+            </div>
+          ) : 'type' in msg && msg.type === 'videos' ? (
+            <div key={idx} className="flex justify-start">
+              <div className="max-w-[95%] sm:max-w-[90%] w-full space-y-3 sm:space-y-4">
+                {msg.videos.map((video, videoIdx) => (
+                  <div key={videoIdx} className="bg-white border border-gray-200 rounded-lg p-3 sm:p-4 shadow-sm">
+                    <div className="flex flex-col gap-3 sm:gap-4">
+                      <div className="flex-shrink-0">
+                        <img
+                          src={video.thumbnail_url}
+                          alt={video.title}
+                          className="w-full h-40 sm:h-32 object-cover rounded-lg"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2 line-clamp-2">{video.title}</h3>
+                        <p className="text-gray-600 text-xs sm:text-sm mb-2 line-clamp-2">{video.description}</p>
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-gray-500">
+                          <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">{video.category}</span>
+                          <span className="text-xs">{video.duration}</span>
+                        </div>
+                        <div className="mt-3">
+                          <a
+                            href={`https://www.youtube.com/watch?v=${video.video_id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center px-3 py-2 bg-red-600 text-white text-xs sm:text-sm font-medium rounded-lg hover:bg-red-700 transition-colors w-full sm:w-auto justify-center"
+                          >
+                            <svg className="w-3 h-3 sm:w-4 sm:h-4 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                            </svg>
+                            Watch on YouTube
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ) : (
@@ -421,7 +477,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               className={`flex ${'text' in msg && msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[80%] break-words ${
+                className={`max-w-[85%] sm:max-w-[80%] break-words ${
                   'text' in msg && msg.sender === 'user'
                     ? 'text-blue-900 text-right justify-end'
                     : 'text-gray-900 text-left'
@@ -513,11 +569,12 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         )}
         <div ref={messagesEndRef} />
       </div>
-      <div className="relative flex items-end w-full mt-auto">
+
+      <div className="relative flex items-end w-full mt-auto px-1 sm:px-0">
         <textarea
           ref={inputRef}
-          className="w-full border border-gray-300 rounded-[20px] px-5 py-3 pr-24 bg-transparent text-gray-900 placeholder-gray-400 focus:outline-none resize-none font-normal"
-          style={{ height: 100 }}
+          className="w-full border border-gray-300 rounded-[20px] px-4 sm:px-5 py-3 pr-20 sm:pr-24 bg-transparent text-gray-900 placeholder-gray-400 focus:outline-none resize-none font-normal text-sm sm:text-base"
+          style={{ height: 'auto', minHeight: '60px', maxHeight: '120px' }}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -528,7 +585,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         />
         {/* Microphone button inside textarea */}
         <button
-          className={`absolute right-14 bottom-2 p-2 rounded-full hover:bg-blue-50 transition ${listening ? 'animate-pulse border-blue-500' : ''}`}
+          className={`absolute right-12 sm:right-14 bottom-2 p-2 rounded-full hover:bg-blue-50 transition ${listening ? 'animate-pulse border-blue-500' : ''}`}
           onClick={handleMic}
           disabled={loading || listening}
           aria-label="Start voice input"
@@ -536,7 +593,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           style={{ zIndex: 2, background: 'transparent', border: 'none' }}
         >
           {/* Heroicons solid mic icon */}
-          <svg viewBox="0 0 20 20" fill="currentColor" className={`w-6 h-6 ${listening ? 'text-blue-600' : 'text-gray-500'}`}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
+          <svg viewBox="0 0 20 20" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${listening ? 'text-blue-600' : 'text-gray-500'}`}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
         </button>
         {/* Send button as icon inside textarea */}
         <button
@@ -548,10 +605,38 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           style={{ zIndex: 2, background: 'transparent', border: 'none' }}
         >
           {/* Telegram-style paper-plane icon */}
-          <svg viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7 text-gray-500">
+          <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 sm:w-6 sm:h-6 text-gray-500">
             <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
           </svg>
         </button>
+      </div>
+      
+      {/* Chat Shortcuts */}
+      <div className="mt-3 px-1 sm:px-0">
+        <div className="flex flex-wrap gap-2 justify-center">
+          {[
+            "Help with homework",
+            "Explain a concept",
+            "Study tips",
+            "School schedule",
+            "Assignment help",
+            "Math problems",
+            "Science questions",
+            "History facts"
+          ].map((shortcut, index) => (
+            <button
+              key={index}
+              onClick={() => {
+                setInput(shortcut);
+                inputRef.current?.focus();
+              }}
+              className="px-3 py-1.5 text-xs sm:text-sm bg-gray-100 hover:bg-blue-100 text-gray-700 hover:text-blue-700 rounded-full transition-colors duration-200 border border-gray-200 hover:border-blue-300"
+              disabled={loading}
+            >
+              {shortcut}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

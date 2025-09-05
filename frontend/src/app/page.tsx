@@ -65,7 +65,7 @@ const HomePage: React.FC = () => {
 
   return (
     <div className="flex min-h-screen h-screen">
-      <main className="flex-1 flex items-center justify-center h-screen">
+      <main className="flex-1 flex items-center justify-center h-screen px-2 sm:px-4">
         <div className="w-full max-w-2xl h-full flex flex-col justify-center">
           <Chatbot key={chatKey} ref={chatbotRef} />
         </div>

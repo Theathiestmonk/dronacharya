@@ -1,6 +1,7 @@
 import os
 import json
 from app.core.openai_client import get_openai_client
+from app.agents.youtube_intent_classifier import process_video_query
 from dotenv import load_dotenv
 
 # Ensure environment variables are loaded
@@ -81,7 +82,7 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always provide complete, comprehensive responses. Do not truncate or cut off your answers. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability. Make sure to fully answer the user's question with all relevant details."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
         )
@@ -114,7 +115,7 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always provide complete, comprehensive responses. Do not truncate or cut off your answers. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability. Make sure to fully answer the user's question with all relevant details."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
         )
@@ -154,7 +155,7 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always provide complete, comprehensive responses. Do not truncate or cut off your answers. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability. Make sure to fully answer the user's question with all relevant details."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
         )
@@ -189,7 +190,7 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always provide complete, comprehensive responses. Do not truncate or cut off your answers. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability. Make sure to fully answer the user's question with all relevant details."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
         )
@@ -230,7 +231,7 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always provide complete, comprehensive responses. Do not truncate or cut off your answers. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability. Make sure to fully answer the user's question with all relevant details."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
         )
@@ -242,6 +243,7 @@ def generate_chatbot_response(request):
         "what are the fees for different grades",
         "prakriti fee structure",
         "school fees",
+        "What is the school fees",
         "prakriti fees",
         "grade wise fees",
         "admission charges",
@@ -278,7 +280,7 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always provide complete, comprehensive responses. Do not truncate or cut off your answers. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability. Make sure to fully answer the user's question with all relevant details."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
         )
@@ -312,7 +314,7 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always provide complete, comprehensive responses. Do not truncate or cut off your answers. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability. Make sure to fully answer the user's question with all relevant details."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
         )
@@ -320,6 +322,28 @@ def generate_chatbot_response(request):
         # Google Maps embed URL for Prakriti School
         map_url = "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3502.123456789!2d77.123456!3d28.123456!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x390ce4b123456789:0xabcdefabcdefabcd!2sPrakriti%20School!5e0!3m2!1sen!2sin!4v1710000000000!5m2!1sen!2sin"
         return [content.strip() if content else canonical_answer, {"type": "map", "url": map_url}]
+
+    # Step 0.12: YouTube Video Intent Detection
+    video_keywords = [
+        "video", "show me", "watch", "see", "demonstration", "example", "gardening", "art", "sports", 
+        "science", "mindfulness", "meditation", "campus", "facilities", "tour", "performance", 
+        "exhibition", "workshop", "activity", "program", "class", "lesson"
+    ]
+    if any(kw in user_query.lower() for kw in video_keywords):
+        print("[Chatbot] Detected video intent, processing with LangGraph...")
+        try:
+            video_result = process_video_query(user_query)
+            if video_result["videos"]:
+                # Return mixed response with text and videos
+                response_text = video_result["response"]
+                videos = video_result["videos"]
+                return [response_text, {"type": "videos", "videos": videos}]
+            else:
+                # Fall through to regular LLM response
+                pass
+        except Exception as e:
+            print(f"[Chatbot] Error processing video query: {e}")
+            # Fall through to regular LLM response
 
     # Step 2: Fallback to LLM with streaming approach
     print("[Chatbot] Answer from GPT-4")
@@ -330,7 +354,31 @@ def generate_chatbot_response(request):
         try:
             # Build messages array with conversation history
             messages = [
-                {"role": "system", "content": "You are a helpful school assistant chatbot. Provide a complete, comprehensive response. Always end with a proper conclusion. Use Markdown formatting with **bold**, *italic*, ### headings, and bullet points. You have access to the conversation history to provide context-aware responses."}
+                {"role": "system", "content": """You are Prakriti School's official AI assistant chatbot. You represent Prakriti, an alternative/progressive K-12 school located on the Noida Expressway in Greater Noida, NCR, India.
+
+## About Prakriti School:
+- **Type**: Alternative/progressive K-12 school
+- **Location**: Noida Expressway, Greater Noida, NCR, India
+- **Philosophy**: "Learning for happiness" through deep experiential education
+- **Approach**: Compassionate, learner-centric model based on reconnecting with inner nature ("prakriti")
+- **Focus**: Joy, self-expression, and holistic development
+
+## Key Features:
+- **Bridge Programme**: Inclusive curriculum for children with diverse needs, supported by special educators, therapists, and parent support systems
+- **Curriculum**: IGCSE (Grades 9-10) and AS/A Level (Grades 11-12) with subjects including Design & Tech, History, Computer Science, Enterprise, Art & Design, Physics, Chemistry, Biology, Combined Sciences, English First & Second Language, French, and Math
+- **Activities**: Sports, visual & performing arts, music, theater, STEM/design labs, farm outings, meditation/mindfulness, and maker projects
+- **Fee Structure**: Monthly fees range from ₹21,000 (Pre-Nursery-KG) to ₹35,000 (Grade XI-XII), with one-time admission charges of ₹125,000
+
+## Your Role:
+- Always contextualize your responses specifically for Prakriti School
+- When discussing education, learning, or school-related topics, relate them to Prakriti's progressive, experiential approach
+- Emphasize Prakriti's unique philosophy of "learning for happiness" and holistic development
+- When appropriate, mention Prakriti's specific programs, activities, or features
+- Be warm, encouraging, and aligned with Prakriti's compassionate, learner-centric values
+- Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points)
+- End responses with proper conclusions that reinforce Prakriti's educational philosophy
+
+Remember: Every response should reflect Prakriti School's unique identity and educational approach."""}
             ]
             
             # Add conversation history (limit to last 10 messages to avoid token limits)
