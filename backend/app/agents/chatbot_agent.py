@@ -43,6 +43,7 @@ def generate_chatbot_response(request):
     openai_client = get_openai_client()
     user_query = request.message
     conversation_history = getattr(request, 'conversation_history', [])
+    user_profile = getattr(request, 'user_profile', None)
 
     # Step 0: Intent detection for holiday calendar
     holiday_keywords = [
@@ -352,9 +353,52 @@ def generate_chatbot_response(request):
     max_attempts = 3
     for attempt in range(max_attempts):
         try:
+            # Build personalized system prompt
+            personalization = ""
+            if user_profile:
+                role = user_profile.get('role', '')
+                first_name = user_profile.get('first_name', '')
+                grade = user_profile.get('grade', '')
+                subjects = user_profile.get('subjects', [])
+                learning_goals = user_profile.get('learning_goals', '')
+                interests = user_profile.get('interests', [])
+                learning_style = user_profile.get('learning_style', '')
+                department = user_profile.get('department', '')
+                subjects_taught = user_profile.get('subjects_taught', [])
+                relationship = user_profile.get('relationship_to_student', '')
+                
+                personalization = f"""
+
+## Current User Context:
+- **Name**: {first_name}
+- **Role**: {role.title()}
+"""
+                
+                if role == 'student':
+                    personalization += f"""- **Grade**: {grade}
+- **Subjects**: {', '.join(subjects) if subjects else 'Not specified'}
+- **Learning Goals**: {learning_goals if learning_goals else 'Not specified'}
+- **Interests**: {', '.join(interests) if interests else 'Not specified'}
+- **Learning Style**: {learning_style if learning_style else 'Not specified'}"""
+                elif role == 'teacher':
+                    personalization += f"""- **Department**: {department}
+- **Subjects Taught**: {', '.join(subjects_taught) if subjects_taught else 'Not specified'}"""
+                elif role == 'parent':
+                    personalization += f"""- **Relationship**: {relationship.title() if relationship else 'Not specified'}"""
+                
+                personalization += """
+
+## Personalization Guidelines:
+- Address the user by their first name when appropriate
+- Tailor responses to their specific role (student/teacher/parent)
+- Reference their grade, subjects, or department when relevant
+- Consider their learning goals and interests when providing advice
+- Use their preferred learning style when suggesting study methods
+- Be more specific and targeted in your responses based on their profile"""
+
             # Build messages array with conversation history
             messages = [
-                {"role": "system", "content": """You are Prakriti School's official AI assistant chatbot. You represent Prakriti, an alternative/progressive K-12 school located on the Noida Expressway in Greater Noida, NCR, India.
+                {"role": "system", "content": f"""You are Prakriti School's official AI assistant chatbot. You represent Prakriti, an alternative/progressive K-12 school located on the Noida Expressway in Greater Noida, NCR, India.
 
 ## About Prakriti School:
 - **Type**: Alternative/progressive K-12 school
@@ -367,7 +411,7 @@ def generate_chatbot_response(request):
 - **Bridge Programme**: Inclusive curriculum for children with diverse needs, supported by special educators, therapists, and parent support systems
 - **Curriculum**: IGCSE (Grades 9-10) and AS/A Level (Grades 11-12) with subjects including Design & Tech, History, Computer Science, Enterprise, Art & Design, Physics, Chemistry, Biology, Combined Sciences, English First & Second Language, French, and Math
 - **Activities**: Sports, visual & performing arts, music, theater, STEM/design labs, farm outings, meditation/mindfulness, and maker projects
-- **Fee Structure**: Monthly fees range from ₹21,000 (Pre-Nursery-KG) to ₹35,000 (Grade XI-XII), with one-time admission charges of ₹125,000
+- **Fee Structure**: Monthly fees range from ₹21,000 (Pre-Nursery-KG) to ₹35,000 (Grade XI-XII), with one-time admission charges of ₹125,000{personalization}
 
 ## Your Role:
 - Always contextualize your responses specifically for Prakriti School

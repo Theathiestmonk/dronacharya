@@ -1,34 +1,15 @@
 "use client";
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import Chatbot from '../components/Chatbot';
-import AuthForm from '../components/AuthForm';
-
-import { useSupabase } from '../providers/SupabaseProvider';
-import type { Session } from '@supabase/supabase-js';
+import AuthFormWithOnboarding from '../components/AuthFormWithOnboarding';
+import OnboardingForm from '../components/OnboardingForm';
+import { useAuth } from '../providers/AuthProvider';
 
 const HomePage: React.FC = () => {
-  const supabase = useSupabase();
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { user, loading, needsOnboarding, signOut } = useAuth();
   const [chatKey] = useState(0); // Key to force re-render of Chatbot
   const chatbotRef = useRef<{ clearChat: () => void }>(null); // Ref for chatbot component
-  
-  useEffect(() => {
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setLoading(false);
-    });
-    
-    // Get initial session
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoading(false);
-    });
-    
-    return () => {
-      listener?.subscription.unsubscribe();
-    };
-  }, [supabase]);
+  const [showAuthForm, setShowAuthForm] = useState(false);
 
   // Show loading state while checking authentication
   if (loading) {
@@ -53,18 +34,56 @@ const HomePage: React.FC = () => {
     );
   }
 
-  if (!session) {
+  // Show auth form if user clicked login and needs onboarding
+  if (showAuthForm && (!user || needsOnboarding)) {
     return (
-      <div className="flex flex-col min-h-screen items-center justify-center">
-        <div className="w-full max-w-2xl flex-1 flex flex-col justify-end">
-          <AuthForm />
-        </div>
-      </div>
+      <AuthFormWithOnboarding 
+        onBack={() => setShowAuthForm(false)}
+      />
     );
   }
 
+  // Show onboarding form if user is logged in but needs onboarding
+  if (user && needsOnboarding) {
+    return (
+      <OnboardingForm
+        user={user}
+        onComplete={() => setShowAuthForm(false)}
+        onBack={() => setShowAuthForm(false)}
+      />
+    );
+  }
+
+  // Show chatbot for all users (public access)
   return (
     <div className="flex min-h-screen h-screen">
+      {/* Header with login/logout button */}
+      <header className="absolute top-0 right-0 p-4 z-10">
+        {user ? (
+          <div className="flex items-center space-x-4">
+            <span className="text-sm text-gray-600">
+              Welcome, {user.user_metadata?.first_name || user.email}
+            </span>
+            <button
+              onClick={async () => {
+                await signOut();
+                setShowAuthForm(false);
+              }}
+              className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors"
+            >
+              Logout
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowAuthForm(true)}
+            className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+          >
+            Login
+          </button>
+        )}
+      </header>
+
       <main className="flex-1 flex items-center justify-center h-screen px-2 sm:px-4">
         <div className="w-full max-w-2xl h-full flex flex-col justify-center">
           <Chatbot key={chatKey} ref={chatbotRef} />

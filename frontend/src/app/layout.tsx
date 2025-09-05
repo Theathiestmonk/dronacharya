@@ -1,6 +1,7 @@
 import './globals.css';
 
 import { SupabaseProvider } from '../providers/SupabaseProvider';
+import { AuthProvider } from '../providers/AuthProvider';
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from "next/font/google";
 
@@ -34,9 +35,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-screen">
         <SupabaseProvider>
-          <div className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-            {children}
-          </div>
+          <AuthProvider>
+            <div className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+              {children}
+            </div>
+          </AuthProvider>
         </SupabaseProvider>
       </body>
     </html>

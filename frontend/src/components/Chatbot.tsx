@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useState as useCopyState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useAuth } from '@/providers/AuthProvider';
+import UserProfileIndicator from './UserProfileIndicator';
 
 type Message =
   | { sender: 'user' | 'bot'; text: string }
@@ -32,6 +34,7 @@ interface ChatbotProps {
 }
 
 const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ clearChat }, ref) => {
+  const { user, profile } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -140,7 +143,10 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         fetch('/api/chatbot', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: transcript }),
+          body: JSON.stringify({ 
+            message: transcript,
+            user_id: user?.id || null
+          }),
         })
           .then((res) => res.json())
           .then((data) => {
@@ -234,7 +240,8 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           message: input,
-          conversation_history: newHistory
+          conversation_history: newHistory,
+          user_id: user?.id || null
         }),
       });
       const data = await res.json();
@@ -378,35 +385,114 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
 
   return (
     <div className="flex flex-col h-[70vh] sm:h-[80vh] w-full max-w-xl mx-auto bg-transparent p-2 sm:p-0">
-      {messages.length === 0 && (
+      {messages.length === 0 ? (
         <>
-          {/* Image above heading */}
-          <div className="flex justify-center mb-4 sm:mb-6">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img 
-              src="/prakriti_logo.webp" 
-              alt="Prakriti Visual" 
-              className="w-20 h-20 sm:w-24 sm:h-24 md:w-32 md:h-32 object-contain" 
-            />
-          </div>
-          {/* Heading */}
-          <div className="mb-4 sm:mb-6 text-center px-2">
-            <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-normal text-gray-500 mb-2 leading-tight">
-              {welcomeMessage ? renderWelcomeMessage(welcomeMessage) : "Loading..."}
-            </h2>
+          {/* Welcome Screen - Centered Layout */}
+          <div className="flex-1 flex flex-col justify-center items-center">
+            {/* Image above heading */}
+            <div className="flex justify-center mb-4 sm:mb-6">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img 
+                src="/prakriti_logo.webp" 
+                alt="Prakriti Visual" 
+                className="w-20 h-20 sm:w-24 sm:h-24 md:w-32 md:h-32 object-contain" 
+              />
+            </div>
+            {/* Heading */}
+            <div className="mb-8 sm:mb-12 text-center px-2">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-normal text-gray-500 mb-2 leading-tight">
+                {welcomeMessage ? renderWelcomeMessage(welcomeMessage) : "Loading..."}
+              </h2>
+            </div>
+            
+            {/* Input Area - Centered */}
+            <div className="w-full max-w-lg">
+              <div className="relative flex items-end w-full px-1 sm:px-0">
+                <textarea
+                  ref={inputRef}
+                  className="w-full border border-gray-300 rounded-[20px] px-4 sm:px-5 py-3 pr-20 sm:pr-24 bg-transparent text-gray-900 placeholder-gray-400 focus:outline-none resize-none font-normal text-sm sm:text-base"
+                  style={{ height: 'auto', minHeight: '60px', maxHeight: '120px' }}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={micPlaceholder}
+                  disabled={loading}
+                  aria-label="Chat input"
+                  rows={1}
+                />
+                {/* Microphone button inside textarea */}
+                <button
+                  className={`absolute right-12 sm:right-14 bottom-2 p-2 rounded-full hover:bg-blue-50 transition ${listening ? 'animate-pulse border-blue-500' : ''}`}
+                  onClick={handleMic}
+                  disabled={loading || listening}
+                  aria-label="Start voice input"
+                  tabIndex={0}
+                  style={{ zIndex: 2, background: 'transparent', border: 'none' }}
+                >
+                  {/* Heroicons solid mic icon */}
+                  <svg viewBox="0 0 20 20" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${listening ? 'text-blue-600' : 'text-gray-500'}`}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
+                </button>
+                {/* Send button as icon inside textarea */}
+                <button
+                  className="absolute right-2 bottom-2 p-2 rounded-full hover:bg-gray-200 transition disabled:opacity-50"
+                  onClick={sendMessage}
+                  disabled={loading || !input.trim()}
+                  aria-label="Send message"
+                  tabIndex={0}
+                  style={{ zIndex: 2, background: 'transparent', border: 'none' }}
+                >
+                  {/* Telegram-style paper-plane icon */}
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 sm:w-6 sm:h-6 text-gray-500">
+                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                  </svg>
+                </button>
+              </div>
+              
+              {/* Chat Shortcuts - Centered */}
+              <div className="mt-4 px-1 sm:px-0">
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {[
+                    "Help with homework",
+                    "Explain a concept",
+                    "Study tips",
+                    "School schedule",
+                    "Assignment help",
+                    "Math problems",
+                    "Science questions",
+                    "History facts"
+                  ].map((shortcut, index) => (
+                    <button
+                      key={index}
+                      onClick={() => {
+                        setInput(shortcut);
+                        inputRef.current?.focus();
+                      }}
+                      className="px-3 py-1.5 text-xs sm:text-sm bg-gray-100 hover:bg-blue-100 text-gray-700 hover:text-blue-700 rounded-full transition-colors duration-200 border border-gray-200 hover:border-blue-300"
+                      disabled={loading}
+                    >
+                      {shortcut}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </>
-      )}
-      
-      {/* Show cleared message */}
-      {showClearedMessage && (
-        <div className="mb-4 text-center">
-          <div className="inline-block bg-green-100 text-green-800 px-4 py-2 rounded-lg text-sm">
-            ✨ Chat cleared! Starting fresh...
-          </div>
-        </div>
-      )}
-      <div className="flex-1 overflow-y-auto mb-4 space-y-2 pr-2 sm:pr-4" style={{ minHeight: 0 }}>
+      ) : (
+        <>
+          {/* Chat Screen - Normal Layout */}
+          {/* Show cleared message */}
+          {showClearedMessage && (
+            <div className="mb-4 text-center">
+              <div className="inline-block bg-green-100 text-green-800 px-4 py-2 rounded-lg text-sm">
+                ✨ Chat cleared! Starting fresh...
+              </div>
+            </div>
+          )}
+          <div className="flex-1 overflow-y-auto mb-4 space-y-2 pr-2 sm:pr-4" style={{ minHeight: 0 }}>
+        {/* Show user profile indicator for authenticated users */}
+        {user && profile && <UserProfileIndicator />}
+        
         {messages.map((msg, idx) => (
           'type' in msg && msg.type === 'calendar' ? (
             <div key={idx} className="flex justify-start">
@@ -567,77 +653,79 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             </div>
           </div>
         )}
-        <div ref={messagesEndRef} />
-      </div>
+            <div ref={messagesEndRef} />
+          </div>
 
-      <div className="relative flex items-end w-full mt-auto px-1 sm:px-0">
-        <textarea
-          ref={inputRef}
-          className="w-full border border-gray-300 rounded-[20px] px-4 sm:px-5 py-3 pr-20 sm:pr-24 bg-transparent text-gray-900 placeholder-gray-400 focus:outline-none resize-none font-normal text-sm sm:text-base"
-          style={{ height: 'auto', minHeight: '60px', maxHeight: '120px' }}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={micPlaceholder}
-          disabled={loading}
-          aria-label="Chat input"
-          rows={1}
-        />
-        {/* Microphone button inside textarea */}
-        <button
-          className={`absolute right-12 sm:right-14 bottom-2 p-2 rounded-full hover:bg-blue-50 transition ${listening ? 'animate-pulse border-blue-500' : ''}`}
-          onClick={handleMic}
-          disabled={loading || listening}
-          aria-label="Start voice input"
-          tabIndex={0}
-          style={{ zIndex: 2, background: 'transparent', border: 'none' }}
-        >
-          {/* Heroicons solid mic icon */}
-          <svg viewBox="0 0 20 20" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${listening ? 'text-blue-600' : 'text-gray-500'}`}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
-        </button>
-        {/* Send button as icon inside textarea */}
-        <button
-          className="absolute right-2 bottom-2 p-2 rounded-full hover:bg-gray-200 transition disabled:opacity-50"
-          onClick={sendMessage}
-          disabled={loading || !input.trim()}
-          aria-label="Send message"
-          tabIndex={0}
-          style={{ zIndex: 2, background: 'transparent', border: 'none' }}
-        >
-          {/* Telegram-style paper-plane icon */}
-          <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 sm:w-6 sm:h-6 text-gray-500">
-            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-          </svg>
-        </button>
-      </div>
-      
-      {/* Chat Shortcuts */}
-      <div className="mt-3 px-1 sm:px-0">
-        <div className="flex flex-wrap gap-2 justify-center">
-          {[
-            "Help with homework",
-            "Explain a concept",
-            "Study tips",
-            "School schedule",
-            "Assignment help",
-            "Math problems",
-            "Science questions",
-            "History facts"
-          ].map((shortcut, index) => (
-            <button
-              key={index}
-              onClick={() => {
-                setInput(shortcut);
-                inputRef.current?.focus();
-              }}
-              className="px-3 py-1.5 text-xs sm:text-sm bg-gray-100 hover:bg-blue-100 text-gray-700 hover:text-blue-700 rounded-full transition-colors duration-200 border border-gray-200 hover:border-blue-300"
+          <div className="relative flex items-end w-full mt-auto px-1 sm:px-0">
+            <textarea
+              ref={inputRef}
+              className="w-full border border-gray-300 rounded-[20px] px-4 sm:px-5 py-3 pr-20 sm:pr-24 bg-transparent text-gray-900 placeholder-gray-400 focus:outline-none resize-none font-normal text-sm sm:text-base"
+              style={{ height: 'auto', minHeight: '60px', maxHeight: '120px' }}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={micPlaceholder}
               disabled={loading}
+              aria-label="Chat input"
+              rows={1}
+            />
+            {/* Microphone button inside textarea */}
+            <button
+              className={`absolute right-12 sm:right-14 bottom-2 p-2 rounded-full hover:bg-blue-50 transition ${listening ? 'animate-pulse border-blue-500' : ''}`}
+              onClick={handleMic}
+              disabled={loading || listening}
+              aria-label="Start voice input"
+              tabIndex={0}
+              style={{ zIndex: 2, background: 'transparent', border: 'none' }}
             >
-              {shortcut}
+              {/* Heroicons solid mic icon */}
+              <svg viewBox="0 0 20 20" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${listening ? 'text-blue-600' : 'text-gray-500'}`}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
             </button>
-          ))}
-        </div>
-      </div>
+            {/* Send button as icon inside textarea */}
+            <button
+              className="absolute right-2 bottom-2 p-2 rounded-full hover:bg-gray-200 transition disabled:opacity-50"
+              onClick={sendMessage}
+              disabled={loading || !input.trim()}
+              aria-label="Send message"
+              tabIndex={0}
+              style={{ zIndex: 2, background: 'transparent', border: 'none' }}
+            >
+              {/* Telegram-style paper-plane icon */}
+              <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 sm:w-6 sm:h-6 text-gray-500">
+                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+              </svg>
+            </button>
+          </div>
+          
+          {/* Chat Shortcuts */}
+          <div className="mt-3 px-1 sm:px-0">
+            <div className="flex flex-wrap gap-2 justify-center">
+              {[
+                "Help with homework",
+                "Explain a concept",
+                "Study tips",
+                "School schedule",
+                "Assignment help",
+                "Math problems",
+                "Science questions",
+                "History facts"
+              ].map((shortcut, index) => (
+                <button
+                  key={index}
+                  onClick={() => {
+                    setInput(shortcut);
+                    inputRef.current?.focus();
+                  }}
+                  className="px-3 py-1.5 text-xs sm:text-sm bg-gray-100 hover:bg-blue-100 text-gray-700 hover:text-blue-700 rounded-full transition-colors duration-200 border border-gray-200 hover:border-blue-300"
+                  disabled={loading}
+                >
+                  {shortcut}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 });

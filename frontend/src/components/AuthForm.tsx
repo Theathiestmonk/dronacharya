@@ -16,6 +16,11 @@ const AuthForm: React.FC = () => {
     setError(null);
     setLoading(true);
     try {
+      if (!supabase) {
+        setError('Authentication not available');
+        return;
+      }
+      
       let result;
       if (isSignup) {
         result = await supabase.auth.signUp({ email, password });
@@ -38,6 +43,11 @@ const AuthForm: React.FC = () => {
     setError(null);
     setLoading(true);
     try {
+      if (!supabase) {
+        setError('Authentication not available');
+        return;
+      }
+      
       const { error } = await supabase.auth.signInWithOAuth({ provider: 'google' });
       if (error) setError(error.message);
     } catch (err: unknown) {
