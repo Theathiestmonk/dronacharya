@@ -46,7 +46,10 @@ const StudentAuth: React.FC<StudentAuthProps> = ({ onSuccess, onCancel }) => {
       <div className="fixed bottom-4 right-4">
         <button
           onClick={handleSwitchMode}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-blue-700 transition-colors"
+          className="text-white px-4 py-2 rounded-lg shadow-lg transition-colors"
+          style={{ backgroundColor: 'var(--brand-primary)' }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary-800)'}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary)'}
         >
           {isLogin ? 'Switch to Registration' : 'Switch to Login'}
         </button>

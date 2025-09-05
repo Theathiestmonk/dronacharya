@@ -411,7 +411,10 @@ const StudentRegistrationForm: React.FC<StudentRegistrationFormProps> = ({
           <button
             type="submit"
             disabled={loading}
-            className="flex-1 bg-blue-700 text-white py-3 px-6 rounded-md hover:bg-blue-800 transition font-semibold shadow disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 text-white py-3 px-6 rounded-md transition font-semibold shadow disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: 'var(--brand-primary)' }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary-800)'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary)'}
           >
             {loading ? 'Creating Account...' : 'Create Account'}
           </button>

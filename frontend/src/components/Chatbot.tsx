@@ -14,9 +14,9 @@ type Message =
 // Typing dots animation component
 const TypingDots: React.FC = () => (
   <span className="inline-flex space-x-1">
-    <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></span>
-    <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
-    <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></span>
+    <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--brand-primary)', animationDelay: '0s' }}></span>
+    <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--brand-primary)', animationDelay: '0.2s' }}></span>
+    <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--brand-primary)', animationDelay: '0.4s' }}></span>
   </span>
 );
 
@@ -25,7 +25,7 @@ const CopyIcon = ({ copied }: { copied: boolean }) => (
   copied ? (
     <svg className="w-5 h-5 text-green-500 ml-2" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
   ) : (
-    <svg className="w-5 h-5 text-gray-400 hover:text-blue-500 ml-2 cursor-pointer" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>
+    <svg className="w-5 h-5 text-gray-400 ml-2 cursor-pointer hover:opacity-70" style={{ color: 'var(--brand-primary)' }} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>
   )
 );
 
@@ -422,15 +422,20 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                 />
                 {/* Microphone button inside textarea */}
                 <button
-                  className={`absolute right-12 sm:right-14 bottom-2 p-2 rounded-full hover:bg-blue-50 transition ${listening ? 'animate-pulse border-blue-500' : ''}`}
+                  className={`absolute right-12 sm:right-14 bottom-2 p-2 rounded-full transition ${listening ? 'animate-pulse' : ''}`}
+                  style={{ 
+                    backgroundColor: listening ? 'var(--brand-primary-50)' : 'transparent',
+                    borderColor: listening ? 'var(--brand-primary)' : 'transparent',
+                    zIndex: 2,
+                    border: 'none'
+                  }}
                   onClick={handleMic}
                   disabled={loading || listening}
                   aria-label="Start voice input"
                   tabIndex={0}
-                  style={{ zIndex: 2, background: 'transparent', border: 'none' }}
                 >
                   {/* Heroicons solid mic icon */}
-                  <svg viewBox="0 0 20 20" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${listening ? 'text-blue-600' : 'text-gray-500'}`}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
+                  <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 sm:w-6 sm:h-6" style={{ color: listening ? 'var(--brand-primary)' : '#6b7280' }}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
                 </button>
                 {/* Send button as icon inside textarea */}
                 <button
@@ -467,7 +472,12 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                         setInput(shortcut);
                         inputRef.current?.focus();
                       }}
-                      className="px-3 py-1.5 text-xs sm:text-sm bg-gray-100 hover:bg-blue-100 text-gray-700 hover:text-blue-700 rounded-full transition-colors duration-200 border border-gray-200 hover:border-blue-300"
+                      className="px-3 py-1.5 text-xs sm:text-sm bg-gray-100 text-gray-700 rounded-full transition-colors duration-200 border border-gray-200"
+                      style={{
+                        backgroundColor: 'var(--brand-primary-50)',
+                        color: 'var(--brand-primary)',
+                        borderColor: 'var(--brand-primary-200)'
+                      }}
                       disabled={loading}
                     >
                       {shortcut}
@@ -496,7 +506,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         {messages.map((msg, idx) => (
           'type' in msg && msg.type === 'calendar' ? (
             <div key={idx} className="flex justify-start">
-              <div className="max-w-[95%] sm:max-w-[80%] w-full bg-white border border-blue-200 rounded-lg p-2 mt-2 flex justify-center">
+              <div className="max-w-[95%] sm:max-w-[80%] w-full bg-white rounded-lg p-2 mt-2 flex justify-center" style={{ borderColor: 'var(--brand-primary-200)' }}>
                 <iframe
                   src={msg.url}
                   className="w-full max-w-sm sm:max-w-none"
@@ -508,7 +518,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             </div>
           ) : 'type' in msg && msg.type === 'map' ? (
             <div key={idx} className="flex justify-start">
-              <div className="max-w-[95%] sm:max-w-[80%] w-full bg-white border border-blue-200 rounded-lg p-2 mt-2 flex justify-center">
+              <div className="max-w-[95%] sm:max-w-[80%] w-full bg-white rounded-lg p-2 mt-2 flex justify-center" style={{ borderColor: 'var(--brand-primary-200)' }}>
                 <iframe
                   src={msg.url}
                   className="w-full max-w-sm sm:max-w-none"
@@ -535,7 +545,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                         <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2 line-clamp-2">{video.title}</h3>
                         <p className="text-gray-600 text-xs sm:text-sm mb-2 line-clamp-2">{video.description}</p>
                         <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-gray-500">
-                          <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">{video.category}</span>
+                          <span className="px-2 py-1 rounded text-xs" style={{ backgroundColor: 'var(--brand-primary-100)', color: 'var(--brand-primary-800)' }}>{video.category}</span>
                           <span className="text-xs">{video.duration}</span>
                         </div>
                         <div className="mt-3">
@@ -586,7 +596,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                         strong: ({...props}) => <strong className="font-bold text-gray-900" {...props} />,
                         em: ({...props}) => <em className="italic text-gray-700" {...props} />,
                         code: ({...props}) => <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-gray-800" {...props} />,
-                        blockquote: ({...props}) => <blockquote className="border-l-4 border-blue-300 pl-4 italic text-gray-600 bg-blue-50 py-2 rounded-r" {...props} />,
+                        blockquote: ({...props}) => <blockquote className="border-l-4 pl-4 italic text-gray-600 py-2 rounded-r" style={{ borderLeftColor: 'var(--brand-primary-300)', backgroundColor: 'var(--brand-primary-50)' }} {...props} />,
                         table: ({...props}) => <table className="border-collapse border border-gray-300 w-full mb-2 text-sm" {...props} />,
                         th: ({...props}) => <th className="border border-gray-300 px-2 py-1 bg-gray-100 font-bold text-gray-800" {...props} />,
                         td: ({...props}) => <td className="border border-gray-300 px-2 py-1 text-gray-700" {...props} />,
@@ -634,7 +644,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                     strong: ({...props}) => <strong className="font-bold text-gray-900" {...props} />,
                     em: ({...props}) => <em className="italic text-gray-700" {...props} />,
                     code: ({...props}) => <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-gray-800" {...props} />,
-                    blockquote: ({...props}) => <blockquote className="border-l-4 border-blue-300 pl-4 italic text-gray-600 bg-blue-50 py-2 rounded-r" {...props} />,
+                    blockquote: ({...props}) => <blockquote className="border-l-4 pl-4 italic text-gray-600 py-2 rounded-r" style={{ borderLeftColor: 'var(--brand-primary-300)', backgroundColor: 'var(--brand-primary-50)' }} {...props} />,
                     table: ({...props}) => <table className="border-collapse border border-gray-300 w-full mb-2 text-sm" {...props} />,
                     th: ({...props}) => <th className="border border-gray-300 px-2 py-1 bg-gray-100 font-bold text-gray-800" {...props} />,
                     td: ({...props}) => <td className="border border-gray-300 px-2 py-1 text-gray-700" {...props} />,
@@ -671,15 +681,20 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             />
             {/* Microphone button inside textarea */}
             <button
-              className={`absolute right-12 sm:right-14 bottom-2 p-2 rounded-full hover:bg-blue-50 transition ${listening ? 'animate-pulse border-blue-500' : ''}`}
+              className={`absolute right-12 sm:right-14 bottom-2 p-2 rounded-full transition ${listening ? 'animate-pulse' : ''}`}
+              style={{ 
+                backgroundColor: listening ? 'var(--brand-primary-50)' : 'transparent',
+                borderColor: listening ? 'var(--brand-primary)' : 'transparent',
+                zIndex: 2,
+                border: 'none'
+              }}
               onClick={handleMic}
               disabled={loading || listening}
               aria-label="Start voice input"
               tabIndex={0}
-              style={{ zIndex: 2, background: 'transparent', border: 'none' }}
             >
               {/* Heroicons solid mic icon */}
-              <svg viewBox="0 0 20 20" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${listening ? 'text-blue-600' : 'text-gray-500'}`}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
+              <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 sm:w-6 sm:h-6" style={{ color: listening ? 'var(--brand-primary)' : '#6b7280' }}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
             </button>
             {/* Send button as icon inside textarea */}
             <button
@@ -716,7 +731,12 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                     setInput(shortcut);
                     inputRef.current?.focus();
                   }}
-                  className="px-3 py-1.5 text-xs sm:text-sm bg-gray-100 hover:bg-blue-100 text-gray-700 hover:text-blue-700 rounded-full transition-colors duration-200 border border-gray-200 hover:border-blue-300"
+                  className="px-3 py-1.5 text-xs sm:text-sm bg-gray-100 text-gray-700 rounded-full transition-colors duration-200 border border-gray-200"
+                  style={{
+                    backgroundColor: 'var(--brand-primary-50)',
+                    color: 'var(--brand-primary)',
+                    borderColor: 'var(--brand-primary-200)'
+                  }}
                   disabled={loading}
                 >
                   {shortcut}

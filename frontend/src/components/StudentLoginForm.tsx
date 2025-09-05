@@ -140,7 +140,10 @@ const StudentLoginForm: React.FC<StudentLoginFormProps> = ({
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-700 text-white py-3 px-6 rounded-md hover:bg-blue-800 transition font-semibold shadow disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full text-white py-3 px-6 rounded-md transition font-semibold shadow disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: 'var(--brand-primary)' }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary-800)'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary)'}
           >
             {loading ? 'Logging in...' : 'Login'}
           </button>

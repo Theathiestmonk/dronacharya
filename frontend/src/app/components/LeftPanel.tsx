@@ -40,7 +40,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({ user, onLogoClick }) => {
     </div>
     {/* User profile circle */}
     <div className="mb-8">
-      <div className="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center text-white text-xl font-bold border-2 border-white shadow-md">
+      <div className="w-12 h-12 rounded-full flex items-center justify-center text-white text-xl font-bold border-2 border-white shadow-md" style={{ backgroundColor: 'var(--brand-primary)' }}>
         {user?.email ? user.email[0]?.toUpperCase() : <UserCircleIcon className="w-10 h-10 text-gray-300" />}
       </div>
     </div>

@@ -79,7 +79,8 @@ const AuthForm: React.FC = () => {
         <form onSubmit={handleAuth} className="flex flex-col gap-4">
           <input
             type="email"
-            className="border border-gray-400 rounded px-4 py-2 text-gray-900 bg-gray-50 focus:outline-none focus:ring focus:border-blue-500"
+            className="border border-gray-400 rounded px-4 py-2 text-gray-900 bg-gray-50 focus:outline-none focus:ring"
+            style={{ borderColor: 'var(--brand-primary)', boxShadow: '0 0 0 1px var(--brand-primary)' }}
             placeholder="Email"
             value={email}
             onChange={e => setEmail(e.target.value)}
@@ -87,7 +88,8 @@ const AuthForm: React.FC = () => {
           />
           <input
             type="password"
-            className="border border-gray-400 rounded px-4 py-2 text-gray-900 bg-gray-50 focus:outline-none focus:ring focus:border-blue-500"
+            className="border border-gray-400 rounded px-4 py-2 text-gray-900 bg-gray-50 focus:outline-none focus:ring"
+            style={{ borderColor: 'var(--brand-primary)', boxShadow: '0 0 0 1px var(--brand-primary)' }}
             placeholder="Password"
             value={password}
             onChange={e => setPassword(e.target.value)}
@@ -96,7 +98,10 @@ const AuthForm: React.FC = () => {
           {error && <div className="text-red-700 text-sm font-semibold bg-red-50 border border-red-200 rounded px-2 py-1">{error}</div>}
           <button
             type="submit"
-            className="w-full bg-blue-700 text-white py-2 rounded hover:bg-blue-800 transition font-semibold shadow mb-2"
+            className="w-full text-white py-2 rounded transition font-semibold shadow mb-2"
+            style={{ backgroundColor: 'var(--brand-primary)' }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary-800)'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary)'}
             disabled={loading}
           >
             {isSignup ? 'Sign Up' : 'Login'}
@@ -104,7 +109,10 @@ const AuthForm: React.FC = () => {
           <button
             onClick={handleGoogle}
             type="button"
-            className="w-full bg-green-800 text-white py-2 rounded hover:bg-green-900 transition font-semibold shadow"
+            className="w-full text-white py-2 rounded transition font-semibold shadow"
+            style={{ backgroundColor: 'var(--brand-secondary)' }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-secondary-800)'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-secondary)'}
             disabled={loading}
           >
             Continue with Google
@@ -112,7 +120,8 @@ const AuthForm: React.FC = () => {
         </form>
         <div className="mt-4 text-center">
           <button
-            className="text-blue-700 hover:underline font-semibold"
+            className="hover:underline font-semibold"
+            style={{ color: 'var(--brand-primary)' }}
             onClick={() => setIsSignup(!isSignup)}
           >
             {isSignup ? 'Already have an account? Login' : "Don't have an account? Sign Up"}

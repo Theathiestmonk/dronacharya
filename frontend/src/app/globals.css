@@ -3,6 +3,36 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  
+  /* Brand Colors */
+  --brand-primary: #23479f;    /* Dark blue - primary brand color */
+  --brand-secondary: #459ed4;  /* Light blue - secondary brand color */
+  --brand-accent: #000002;     /* Near black - accent color */
+  
+  /* Brand Color Variations */
+  --brand-primary-50: #eff6ff;
+  --brand-primary-100: #dbeafe;
+  --brand-primary-200: #bfdbfe;
+  --brand-primary-300: #93c5fd;
+  --brand-primary-400: #60a5fa;
+  --brand-primary-500: #3b82f6;
+  --brand-primary-600: #2563eb;
+  --brand-primary-700: #1d4ed8;
+  --brand-primary-800: #1e40af;
+  --brand-primary-900: #1e3a8a;
+  --brand-primary-950: #23479f;
+  
+  --brand-secondary-50: #f0f9ff;
+  --brand-secondary-100: #e0f2fe;
+  --brand-secondary-200: #bae6fd;
+  --brand-secondary-300: #7dd3fc;
+  --brand-secondary-400: #38bdf8;
+  --brand-secondary-500: #0ea5e9;
+  --brand-secondary-600: #0284c7;
+  --brand-secondary-700: #0369a1;
+  --brand-secondary-800: #075985;
+  --brand-secondary-900: #0c4a6e;
+  --brand-secondary-950: #459ed4;
 }
 
 @theme inline {
@@ -10,16 +40,47 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  
+  /* Brand Colors */
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-secondary: var(--brand-secondary);
+  --color-brand-accent: var(--brand-accent);
+  
+  /* Brand Primary Variations */
+  --color-brand-primary-50: var(--brand-primary-50);
+  --color-brand-primary-100: var(--brand-primary-100);
+  --color-brand-primary-200: var(--brand-primary-200);
+  --color-brand-primary-300: var(--brand-primary-300);
+  --color-brand-primary-400: var(--brand-primary-400);
+  --color-brand-primary-500: var(--brand-primary-500);
+  --color-brand-primary-600: var(--brand-primary-600);
+  --color-brand-primary-700: var(--brand-primary-700);
+  --color-brand-primary-800: var(--brand-primary-800);
+  --color-brand-primary-900: var(--brand-primary-900);
+  --color-brand-primary-950: var(--brand-primary-950);
+  
+  /* Brand Secondary Variations */
+  --color-brand-secondary-50: var(--brand-secondary-50);
+  --color-brand-secondary-100: var(--brand-secondary-100);
+  --color-brand-secondary-200: var(--brand-secondary-200);
+  --color-brand-secondary-300: var(--brand-secondary-300);
+  --color-brand-secondary-400: var(--brand-secondary-400);
+  --color-brand-secondary-500: var(--brand-secondary-500);
+  --color-brand-secondary-600: var(--brand-secondary-600);
+  --color-brand-secondary-700: var(--brand-secondary-700);
+  --color-brand-secondary-800: var(--brand-secondary-800);
+  --color-brand-secondary-900: var(--brand-secondary-900);
+  --color-brand-secondary-950: var(--brand-secondary-950);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Helvetica, Arial, sans-serif;
-  /* Graph-like background - blue grid lines, 5% opacity */
+  /* Graph-like background - brand color grid lines, 5% opacity */
   background-image:
-    linear-gradient(to right, rgba(37, 99, 235, 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(37, 99, 235, 0.05) 1px, transparent 1px);
+    linear-gradient(to right, rgba(35, 71, 159, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(35, 71, 159, 0.05) 1px, transparent 1px);
   background-size: 16px 16px;
 }
 
@@ -92,11 +153,11 @@ body {
 }
 
 .markdown-content blockquote {
-  border-left: 4px solid #3b82f6;
+  border-left: 4px solid var(--brand-primary);
   padding-left: 1rem;
   margin: 1rem 0;
   font-style: italic;
-  background-color: #eff6ff;
+  background-color: var(--brand-primary-50);
   padding: 0.75rem 1rem;
   border-radius: 0 0.375rem 0.375rem 0;
 }

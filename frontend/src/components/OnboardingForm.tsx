@@ -176,9 +176,13 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             onClick={() => handleRoleChange(role as UserRole)}
             className={`p-6 border-2 rounded-lg text-left transition-all ${
               formData.role === role
-                ? 'border-blue-500 bg-blue-50'
+                ? 'border-gray-200'
                 : 'border-gray-200 hover:border-gray-300'
             }`}
+            style={{
+              borderColor: formData.role === role ? 'var(--brand-primary)' : undefined,
+              backgroundColor: formData.role === role ? 'var(--brand-primary-50)' : undefined
+            }}
           >
             <div className="text-3xl mb-3">{icon}</div>
             <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
@@ -204,7 +208,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             required
             value={getStringValue(formData.first_name)}
             onChange={(e) => handleInputChange('first_name', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           />
         </div>
         
@@ -215,7 +223,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             required
             value={getStringValue(formData.last_name)}
             onChange={(e) => handleInputChange('last_name', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           />
         </div>
         
@@ -226,7 +238,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             required
             value={getStringValue(formData.phone)}
             onChange={(e) => handleInputChange('phone', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           />
         </div>
         
@@ -237,7 +253,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             required
             value={getStringValue(formData.date_of_birth)}
             onChange={(e) => handleInputChange('date_of_birth', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           />
         </div>
       </div>
@@ -249,7 +269,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           value={getStringValue(formData.address)}
           onChange={(e) => handleInputChange('address', e.target.value)}
           rows={3}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-2"
         />
       </div>
       
@@ -261,7 +281,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             required
             value={getStringValue(formData.city)}
             onChange={(e) => handleInputChange('city', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           />
         </div>
         
@@ -272,7 +296,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             required
             value={getStringValue(formData.state)}
             onChange={(e) => handleInputChange('state', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           />
         </div>
         
@@ -283,7 +311,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             required
             value={getStringValue(formData.postal_code)}
             onChange={(e) => handleInputChange('postal_code', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           />
         </div>
       </div>
@@ -304,7 +336,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             required
             value={getStringValue(formData.grade)}
             onChange={(e) => handleInputChange('grade', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           >
             <option value="">Select Grade</option>
             <option value="Pre-Nursery">Pre-Nursery</option>
@@ -322,7 +358,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             type="text"
             value={getStringValue(formData.student_id)}
             onChange={(e) => handleInputChange('student_id', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           />
         </div>
         
@@ -333,7 +373,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             value={getStringValue(formData.subjects)}
             onChange={(e) => handleArrayInputChange('subjects', e.target.value)}
             placeholder="Math, Science, English, History"
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           />
           <p className="text-xs text-gray-500 mt-1">Separate multiple subjects with commas</p>
         </div>
@@ -343,7 +387,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           <select
             value={getStringValue(formData.learning_style)}
             onChange={(e) => handleInputChange('learning_style', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           >
             <option value="">Select Learning Style</option>
             <option value="visual">Visual</option>
@@ -362,7 +410,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           onChange={(e) => handleInputChange('learning_goals', e.target.value)}
           rows={3}
           placeholder="What do you hope to achieve this year?"
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-2"
         />
       </div>
       
@@ -373,7 +421,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           value={getStringValue(formData.interests)}
           onChange={(e) => handleArrayInputChange('interests', e.target.value)}
           placeholder="Sports, Music, Art, Science, Technology"
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-2"
         />
         <p className="text-xs text-gray-500 mt-1">Separate multiple interests with commas</p>
       </div>
@@ -385,7 +433,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           onChange={(e) => handleInputChange('special_needs', e.target.value)}
           rows={2}
           placeholder="Any special needs or accommodations you require"
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-2"
         />
       </div>
       
@@ -397,7 +445,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             required
             value={getStringValue(formData.emergency_contact_name)}
             onChange={(e) => handleInputChange('emergency_contact_name', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           />
         </div>
         
@@ -408,7 +460,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             required
             value={getStringValue(formData.emergency_contact_phone)}
             onChange={(e) => handleInputChange('emergency_contact_phone', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           />
         </div>
       </div>
@@ -429,7 +485,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             type="text"
             value={getStringValue(formData.employee_id)}
             onChange={(e) => handleInputChange('employee_id', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           />
         </div>
         
@@ -440,7 +500,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             required
             value={getStringValue(formData.department)}
             onChange={(e) => handleInputChange('department', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           />
         </div>
         
@@ -452,7 +516,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             value={getStringValue(formData.subjects_taught)}
             onChange={(e) => handleArrayInputChange('subjects_taught', e.target.value)}
             placeholder="Math, Science, English"
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           />
           <p className="text-xs text-gray-500 mt-1">Separate multiple subjects with commas</p>
         </div>
@@ -465,7 +533,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             min="0"
             value={getStringValue(formData.years_of_experience)}
             onChange={(e) => handleInputChange('years_of_experience', parseInt(e.target.value))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           />
         </div>
         
@@ -475,7 +547,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             type="text"
             value={getStringValue(formData.office_location)}
             onChange={(e) => handleInputChange('office_location', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           />
         </div>
         
@@ -486,7 +562,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             value={getStringValue(formData.office_hours)}
             onChange={(e) => handleInputChange('office_hours', e.target.value)}
             placeholder="9:00 AM - 5:00 PM"
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           />
         </div>
       </div>
@@ -499,7 +579,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           onChange={(e) => handleInputChange('qualifications', e.target.value)}
           rows={3}
           placeholder="B.Ed, M.A. in Mathematics, etc."
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-2"
         />
       </div>
       
@@ -510,7 +590,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           value={getStringValue(formData.specializations)}
           onChange={(e) => handleArrayInputChange('specializations', e.target.value)}
           placeholder="Special Education, STEM, Language Arts"
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-2"
         />
         <p className="text-xs text-gray-500 mt-1">Separate multiple specializations with commas</p>
       </div>
@@ -531,7 +611,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             required
             value={getStringValue(formData.relationship_to_student)}
             onChange={(e) => handleInputChange('relationship_to_student', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           >
             <option value="">Select Relationship</option>
             <option value="mother">Mother</option>
@@ -548,7 +632,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             type="text"
             value={getStringValue(formData.occupation)}
             onChange={(e) => handleInputChange('occupation', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           />
         </div>
         
@@ -558,7 +646,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             type="text"
             value={getStringValue(formData.workplace)}
             onChange={(e) => handleInputChange('workplace', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           />
         </div>
         
@@ -568,7 +660,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             required
             value={getStringValue(formData.preferred_contact_method)}
             onChange={(e) => handleInputChange('preferred_contact_method', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
           >
             <option value="">Select Method</option>
             <option value="email">Email</option>
@@ -585,7 +681,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           onChange={(e) => handleInputChange('communication_preferences', e.target.value)}
           rows={3}
           placeholder="How would you like to be contacted? Any specific preferences?"
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-2"
         />
       </div>
     </div>
@@ -656,8 +752,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
               <div 
-                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${(currentStep / 3) * 100}%` }}
+                className="h-2 rounded-full transition-all duration-300"
+                style={{ 
+                  width: `${(currentStep / 3) * 100}%`,
+                  backgroundColor: 'var(--brand-primary)'
+                }}
               ></div>
             </div>
           </div>
@@ -686,7 +785,10 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
                   type="button"
                   onClick={() => setCurrentStep(currentStep + 1)}
                   disabled={!canProceed()}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 text-sm font-medium text-white border border-transparent rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: 'var(--brand-primary)' }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary-800)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary)'}
                 >
                   Next
                 </button>
@@ -694,7 +796,10 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
                 <button
                   type="submit"
                   disabled={!canProceed() || loading}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 text-sm font-medium text-white border border-transparent rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: 'var(--brand-primary)' }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary-800)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary)'}
                 >
                   {loading ? 'Saving...' : 'Complete Setup'}
                 </button>
