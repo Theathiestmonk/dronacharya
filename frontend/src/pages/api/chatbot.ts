@@ -2,10 +2,13 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+// Only create Supabase client if both URL and key are available
+const supabase = supabaseUrl && supabaseServiceKey 
+  ? createClient(supabaseUrl, supabaseServiceKey)
+  : null;
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -13,9 +16,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
   
   try {
-    // Get user profile if user_id is provided
+    // Get user profile if user_id is provided and Supabase is available
     let userProfile = null;
-    if (req.body.user_id && req.body.user_id !== null) {
+    if (req.body.user_id && req.body.user_id !== null && supabase) {
       try {
         const { data, error } = await supabase
           .from('user_profiles')
