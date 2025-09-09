@@ -1,15 +1,63 @@
 "use client";
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import Chatbot from '../components/Chatbot';
 import AuthFormWithOnboarding from '../components/AuthFormWithOnboarding';
 import OnboardingForm from '../components/OnboardingForm';
 import { useAuth } from '../providers/AuthProvider';
+import { useSupabase } from '../providers/SupabaseProvider';
 
 const HomePage: React.FC = () => {
   const { user, loading, needsOnboarding, signOut } = useAuth();
+  const supabase = useSupabase();
   const [chatKey] = useState(0); // Key to force re-render of Chatbot
   const chatbotRef = useRef<{ clearChat: () => void }>(null); // Ref for chatbot component
   const [showAuthForm, setShowAuthForm] = useState(false);
+
+  // Handle OAuth callback tokens if they're in the URL hash
+  useEffect(() => {
+    const handleOAuthCallback = async () => {
+      if (!supabase) return;
+      
+      // Check if there are OAuth tokens in the URL hash
+      if (window.location.hash.includes('access_token')) {
+        console.log('OAuth tokens detected in main page, processing...');
+        console.log('URL hash:', window.location.hash);
+        
+        // Parse the URL hash to extract tokens
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const accessToken = hashParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token');
+        
+        if (accessToken) {
+          try {
+            console.log('Setting session with OAuth tokens...');
+            const { data: { session }, error } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken || '',
+            });
+            
+            if (error) {
+              console.error('Error setting session:', error);
+              console.error('Error details:', {
+                message: error.message,
+                status: error.status
+              });
+            } else if (session) {
+              console.log('Session created successfully:', session.user.email);
+              // Clear the URL hash to remove tokens
+              window.history.replaceState({}, document.title, window.location.pathname);
+            } else {
+              console.log('No session returned from setSession');
+            }
+          } catch (error) {
+            console.error('Error processing OAuth tokens:', error);
+          }
+        }
+      }
+    };
+
+    handleOAuthCallback();
+  }, [supabase]);
 
   // Show loading state while checking authentication
   if (loading) {
@@ -53,6 +101,7 @@ const HomePage: React.FC = () => {
       />
     );
   }
+
 
   // Show chatbot for all users (public access)
   return (

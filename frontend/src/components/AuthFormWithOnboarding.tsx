@@ -58,22 +58,30 @@ const AuthFormWithOnboarding: React.FC<AuthFormWithOnboardingProps> = ({ onBack 
     }
   };
 
-  const handleGoogleSignIn = async () => {
+  const handleGoogleSignIn = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
     setLoading(true);
     setError(null);
 
-    try {
-      const { error } = await signInWithGoogle();
-
+    console.log('Google sign-in button clicked');
+    
+    // Call the OAuth function without await to prevent blocking
+    signInWithGoogle().then(({ error }) => {
       if (error) {
+        console.error('Google sign-in error:', error);
         setError(error.message || 'An error occurred with Google sign-in');
         setLoading(false);
+      } else {
+        console.log('Google sign-in initiated, redirecting...');
+        // Don't set loading to false here as we're redirecting
       }
-      // Note: Google sign-in will redirect, so we don't need to set loading to false
-    } catch (err: unknown) {
+    }).catch((err: unknown) => {
+      console.error('Google sign-in exception:', err);
       setError(err instanceof Error ? err.message : 'An error occurred with Google sign-in');
       setLoading(false);
-    }
+    });
   };
 
   return (

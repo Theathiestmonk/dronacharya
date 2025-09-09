@@ -70,26 +70,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const supabase = useSupabase();
 
   const fetchUserProfile = useCallback(async (userId: string) => {
-    if (!supabase) {
-      setLoading(false);
-      return;
-    }
-    
     try {
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('user_id', userId)
-        .single();
+      const response = await fetch(`/api/user-profile?user_id=${userId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
 
-      if (error) {
-        console.error('Error fetching user profile:', error);
-        setProfile(null);
-        // If no profile exists, this is a first-time user
-        setIsFirstLogin(true);
-      } else {
+      if (response.ok) {
+        const data = await response.json();
         setProfile(data);
         setIsFirstLogin(false);
+      } else if (response.status === 404) {
+        // Profile not found - this is a first-time user
+        console.log('User profile not found - first time user');
+        setProfile(null);
+        setIsFirstLogin(true);
+      } else {
+        console.error('Error fetching user profile:', response.status, response.statusText);
+        setProfile(null);
+        setIsFirstLogin(true);
       }
     } catch (error) {
       console.error('Error fetching user profile:', error);
@@ -99,7 +100,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setLoading(false);
     }
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
     // If Supabase is not available, disable auth features
@@ -169,19 +170,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      console.log('Starting Google OAuth...');
+      // Let Supabase handle the OAuth flow and redirect back to our app
+      const redirectUrl = `http://localhost:3000`;
+      console.log('Redirect URL:', redirectUrl);
+      console.log('Current URL before OAuth:', window.location.href);
+      console.log('Window origin:', window.location.origin);
+      
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}`,
+          redirectTo: redirectUrl,
         },
       });
 
+      console.log('OAuth response:', { data, error });
+      console.log('OAuth data URL:', data?.url);
+      console.log('Expected Supabase OAuth URL should contain:', 'tvtfuexwurcdjevdnrqd.supabase.co');
+      
+      if (data?.url) {
+        if (data.url.includes('supabase.co')) {
+          console.log('✅ Correct: OAuth URL contains Supabase domain');
+        } else if (data.url.includes('google.com')) {
+          console.log('❌ Issue: OAuth URL goes directly to Google, not through Supabase');
+          console.log('This means Google OAuth provider is not properly configured in Supabase');
+        } else {
+          console.log('⚠️ Unknown OAuth URL format:', data.url);
+        }
+      }
+
       if (error) {
+        console.error('OAuth error:', error);
         return { error };
       }
 
-      return { error: null };
+      console.log('OAuth initiated successfully');
+      console.log('About to redirect to:', data?.url);
+      
+      // If we have a URL, redirect immediately
+      if (data?.url) {
+        console.log('Redirecting to Google OAuth...');
+        console.log('Full redirect URL:', data.url);
+        
+        // Force immediate redirect
+        console.log('Attempting redirect to:', data.url);
+        
+        // Use the most reliable redirect method
+        window.location.assign(data.url);
+        
+        // Don't return here - let the redirect happen
+        return { error: null };
+      } else {
+        console.warn('No redirect URL received from OAuth');
+        console.warn('This might mean Google OAuth is not properly configured in Supabase');
+        return { error: new Error('Google OAuth not configured properly') };
+      }
     } catch (error) {
+      console.error('OAuth exception:', error);
       return { error: error instanceof Error ? error : new Error('Unknown error') };
     }
   };
@@ -218,26 +263,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!user) {
       return { error: new Error('No user logged in') };
     }
-    
-    if (!supabase) {
-      return { error: new Error('Database not available') };
-    }
 
     try {
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .upsert({
+      const response = await fetch('/api/user-profile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           ...profileData,
           user_id: user.id,
           updated_at: new Date().toISOString(),
-        })
-        .select()
-        .single();
+        }),
+      });
 
-      if (error) {
-        return { error: error instanceof Error ? error : new Error('Database error') };
+      if (!response.ok) {
+        const errorData = await response.json();
+        return { error: new Error(errorData.error || 'Failed to update profile') };
       }
 
+      const data = await response.json();
       setProfile(data);
       // Mark onboarding as completed and reset first login flag
       setIsFirstLogin(false);
@@ -247,8 +292,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const completeOnboarding = () => {
+  const completeOnboarding = async () => {
     setIsFirstLogin(false);
+    // Fetch the updated profile from the server to ensure we have the latest data
+    if (user) {
+      await fetchUserProfile(user.id);
+    }
   };
 
   const needsOnboarding = Boolean(user && (isFirstLogin || !profile || !profile.onboarding_completed));
