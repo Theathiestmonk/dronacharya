@@ -174,7 +174,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       console.log('Starting Google OAuth...');
       // Let Supabase handle the OAuth flow and redirect back to our app
-      const redirectUrl = `http://localhost:3000`;
+      const redirectUrl = window.location.origin;
       console.log('Redirect URL:', redirectUrl);
       console.log('Current URL before OAuth:', window.location.href);
       console.log('Window origin:', window.location.origin);
