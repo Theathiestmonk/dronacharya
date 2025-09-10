@@ -12,6 +12,8 @@ interface UserProfile {
   last_name: string;
   phone?: string;
   date_of_birth?: string;
+  profile_picture_url?: string;
+  avatar_color?: string;
   grade?: string;
   student_id?: string;
   subjects?: string[];

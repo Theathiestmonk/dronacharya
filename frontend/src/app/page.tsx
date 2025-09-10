@@ -3,6 +3,8 @@ import React, { useRef, useState, useEffect } from 'react';
 import Chatbot from '../components/Chatbot';
 import AuthFormWithOnboarding from '../components/AuthFormWithOnboarding';
 import OnboardingForm from '../components/OnboardingForm';
+import EditProfileModal from '../components/EditProfileModal';
+import UserAvatarDropdown from '../components/UserAvatarDropdown';
 import { useAuth } from '../providers/AuthProvider';
 import { useSupabase } from '../providers/SupabaseProvider';
 
@@ -12,6 +14,7 @@ const HomePage: React.FC = () => {
   const [chatKey] = useState(0); // Key to force re-render of Chatbot
   const chatbotRef = useRef<{ clearChat: () => void }>(null); // Ref for chatbot component
   const [showAuthForm, setShowAuthForm] = useState(false);
+  const [showEditProfile, setShowEditProfile] = useState(false);
 
   // Handle OAuth callback tokens if they're in the URL hash
   useEffect(() => {
@@ -106,23 +109,16 @@ const HomePage: React.FC = () => {
   // Show chatbot for all users (public access)
   return (
     <div className="flex min-h-screen h-screen">
-      {/* Header with login/logout button */}
+      {/* Header with user avatar dropdown */}
       <header className="absolute top-0 right-0 p-4 z-10">
         {user ? (
-          <div className="flex items-center space-x-4">
-            <span className="text-sm text-gray-600">
-              Welcome, {user.user_metadata?.first_name || user.email}
-            </span>
-            <button
-              onClick={async () => {
-                await signOut();
-                setShowAuthForm(false);
-              }}
-              className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors"
-            >
-              Logout
-            </button>
-          </div>
+          <UserAvatarDropdown
+            onEditProfile={() => setShowEditProfile(true)}
+            onLogout={async () => {
+              await signOut();
+              setShowAuthForm(false);
+            }}
+          />
         ) : (
           <button
             onClick={() => setShowAuthForm(true)}
@@ -141,6 +137,12 @@ const HomePage: React.FC = () => {
           <Chatbot key={chatKey} ref={chatbotRef} />
         </div>
       </main>
+
+      {/* Edit Profile Modal */}
+      <EditProfileModal
+        isOpen={showEditProfile}
+        onClose={() => setShowEditProfile(false)}
+      />
     </div>
   );
 };
