@@ -85,22 +85,21 @@ const AuthFormWithOnboarding: React.FC<AuthFormWithOnboardingProps> = ({ onBack 
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 relative">
+      {/* Back button - positioned in top-left corner */}
+      {onBack && (
+        <button
+          onClick={onBack}
+          className="absolute top-4 left-4 flex items-center text-sm text-gray-600 hover:text-gray-800 transition-colors z-10"
+        >
+          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to Chatbot
+        </button>
+      )}
+      
       <div className="max-w-md w-full space-y-8">
-        {/* Back button */}
-        {onBack && (
-          <div className="flex justify-start">
-            <button
-              onClick={onBack}
-              className="flex items-center text-sm text-gray-600 hover:text-gray-800 transition-colors"
-            >
-              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              Back to Chatbot
-            </button>
-          </div>
-        )}
         
         <div>
           <div className="mx-auto h-12 w-12 flex items-center justify-center">

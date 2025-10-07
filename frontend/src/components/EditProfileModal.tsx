@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/providers/AuthProvider';
+import { useTheme } from '@/providers/ThemeProvider';
 import Image from 'next/image';
 
 interface EditProfileModalProps {
@@ -12,6 +13,7 @@ type FormData = Record<string, unknown>;
 
 const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose }) => {
   const { profile, updateProfile } = useAuth();
+  const { theme } = useTheme();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -246,15 +248,23 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose }) 
 
   const renderStudentFields = () => (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-gray-900">Student Information</h3>
+      <h3 className={`text-lg font-semibold ${
+        theme === 'dark' ? 'text-white' : 'text-gray-900'
+      }`}>Student Information</h3>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Grade</label>
+          <label className={`block text-sm font-medium mb-1 ${
+            theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+          }`}>Grade</label>
           <select
             value={getStringValue(formData.grade)}
             onChange={(e) => handleInputChange('grade', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+              theme === 'dark' 
+                ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+            }`}
           >
             <option value="">Select Grade</option>
             <option value="Pre-Nursery">Pre-Nursery</option>
@@ -267,32 +277,50 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose }) 
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Student ID</label>
+          <label className={`block text-sm font-medium mb-1 ${
+            theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+          }`}>Student ID</label>
           <input
             type="text"
             value={getStringValue(formData.student_id)}
             onChange={(e) => handleInputChange('student_id', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+              theme === 'dark' 
+                ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+            }`}
           />
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Subjects</label>
+          <label className={`block text-sm font-medium mb-1 ${
+            theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+          }`}>Subjects</label>
           <input
             type="text"
             value={getArrayDisplayValue('subjects')}
             onChange={(e) => handleArrayInputChange('subjects', e.target.value)}
             placeholder="Math, Science, English"
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+              theme === 'dark' 
+                ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+            }`}
           />
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Learning Style</label>
+          <label className={`block text-sm font-medium mb-1 ${
+            theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+          }`}>Learning Style</label>
           <select
             value={getStringValue(formData.learning_style)}
             onChange={(e) => handleInputChange('learning_style', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+              theme === 'dark' 
+                ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+            }`}
           >
             <option value="">Select Learning Style</option>
             <option value="visual">Visual</option>
@@ -329,91 +357,141 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose }) 
 
   const renderTeacherFields = () => (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-gray-900">Teacher Information</h3>
+      <h3 className={`text-lg font-semibold ${
+        theme === 'dark' ? 'text-white' : 'text-gray-900'
+      }`}>Teacher Information</h3>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID</label>
+          <label className={`block text-sm font-medium mb-1 ${
+            theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+          }`}>Employee ID</label>
           <input
             type="text"
             value={getStringValue(formData.employee_id)}
             onChange={(e) => handleInputChange('employee_id', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+              theme === 'dark' 
+                ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+            }`}
           />
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+          <label className={`block text-sm font-medium mb-1 ${
+            theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+          }`}>Department</label>
           <input
             type="text"
             value={getStringValue(formData.department)}
             onChange={(e) => handleInputChange('department', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+              theme === 'dark' 
+                ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+            }`}
           />
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Subjects Taught</label>
+          <label className={`block text-sm font-medium mb-1 ${
+            theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+          }`}>Subjects Taught</label>
           <input
             type="text"
             value={getArrayDisplayValue('subjects_taught')}
             onChange={(e) => handleArrayInputChange('subjects_taught', e.target.value)}
             placeholder="Math, Science, English"
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+              theme === 'dark' 
+                ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+            }`}
           />
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Years of Experience</label>
+          <label className={`block text-sm font-medium mb-1 ${
+            theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+          }`}>Years of Experience</label>
           <input
             type="number"
             min="0"
             value={getStringValue(formData.years_of_experience)}
             onChange={(e) => handleInputChange('years_of_experience', parseInt(e.target.value))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+              theme === 'dark' 
+                ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+            }`}
           />
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Office Location</label>
+          <label className={`block text-sm font-medium mb-1 ${
+            theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+          }`}>Office Location</label>
           <input
             type="text"
             value={getStringValue(formData.office_location)}
             onChange={(e) => handleInputChange('office_location', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+              theme === 'dark' 
+                ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+            }`}
           />
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Office Hours</label>
+          <label className={`block text-sm font-medium mb-1 ${
+            theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+          }`}>Office Hours</label>
           <input
             type="text"
             value={getStringValue(formData.office_hours)}
             onChange={(e) => handleInputChange('office_hours', e.target.value)}
             placeholder="9:00 AM - 5:00 PM"
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+              theme === 'dark' 
+                ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+            }`}
           />
         </div>
       </div>
       
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Qualifications</label>
+        <label className={`block text-sm font-medium mb-1 ${
+          theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+        }`}>Qualifications</label>
         <textarea
           value={getStringValue(formData.qualifications)}
           onChange={(e) => handleInputChange('qualifications', e.target.value)}
           rows={3}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+            theme === 'dark' 
+              ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+              : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+          }`}
         />
       </div>
       
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Specializations</label>
+        <label className={`block text-sm font-medium mb-1 ${
+          theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+        }`}>Specializations</label>
         <input
           type="text"
           value={getArrayDisplayValue('specializations')}
           onChange={(e) => handleArrayInputChange('specializations', e.target.value)}
           placeholder="Special Education, STEM"
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+            theme === 'dark' 
+              ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+              : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+          }`}
         />
       </div>
     </div>
@@ -421,15 +499,23 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose }) 
 
   const renderParentFields = () => (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-gray-900">Parent Information</h3>
+      <h3 className={`text-lg font-semibold ${
+        theme === 'dark' ? 'text-white' : 'text-gray-900'
+      }`}>Parent Information</h3>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Relationship to Student</label>
+          <label className={`block text-sm font-medium mb-1 ${
+            theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+          }`}>Relationship to Student</label>
           <select
             value={getStringValue(formData.relationship_to_student)}
             onChange={(e) => handleInputChange('relationship_to_student', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+              theme === 'dark' 
+                ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+            }`}
           >
             <option value="">Select Relationship</option>
             <option value="mother">Mother</option>
@@ -441,31 +527,49 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose }) 
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Occupation</label>
+          <label className={`block text-sm font-medium mb-1 ${
+            theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+          }`}>Occupation</label>
           <input
             type="text"
             value={getStringValue(formData.occupation)}
             onChange={(e) => handleInputChange('occupation', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+              theme === 'dark' 
+                ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+            }`}
           />
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Workplace</label>
+          <label className={`block text-sm font-medium mb-1 ${
+            theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+          }`}>Workplace</label>
           <input
             type="text"
             value={getStringValue(formData.workplace)}
             onChange={(e) => handleInputChange('workplace', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+              theme === 'dark' 
+                ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+            }`}
           />
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Contact Method</label>
+          <label className={`block text-sm font-medium mb-1 ${
+            theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+          }`}>Preferred Contact Method</label>
           <select
             value={getStringValue(formData.preferred_contact_method)}
             onChange={(e) => handleInputChange('preferred_contact_method', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+              theme === 'dark' 
+                ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+            }`}
           >
             <option value="">Select Method</option>
             <option value="email">Email</option>
@@ -490,14 +594,24 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose }) 
   if (!isOpen || !profile) return null;
 
   return (
-    <div className="fixed inset-0 bg-transparent flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      <div className={`rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto ${
+        theme === 'dark' 
+          ? 'bg-gray-800' 
+          : 'bg-white'
+      }`}>
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Edit Profile</h2>
+            <h2 className={`text-2xl font-bold ${
+              theme === 'dark' ? 'text-white' : 'text-gray-900'
+            }`}>Edit Profile</h2>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600"
+              className={`${
+                theme === 'dark' 
+                  ? 'text-gray-400 hover:text-gray-200' 
+                  : 'text-gray-400 hover:text-gray-600'
+              }`}
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -508,7 +622,9 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose }) 
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Basic Information */}
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">Basic Information</h3>
+              <h3 className={`text-lg font-semibold ${
+                theme === 'dark' ? 'text-white' : 'text-gray-900'
+              }`}>Basic Information</h3>
               
               {/* Profile Picture */}
               <div className="space-y-4">
@@ -557,7 +673,9 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose }) 
                 {/* Avatar Color Picker - only show if no profile picture */}
                 {!uploadedImage && !getStringValue(formData.profile_picture_url) && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Avatar Color</label>
+                    <label className={`block text-sm font-medium mb-2 ${
+                      theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                    }`}>Avatar Color</label>
                     <div className="flex items-center space-x-3">
                       <input
                         type="color"
@@ -588,40 +706,60 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose }) 
                         ))}
                       </div>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">Choose a color for your avatar background</p>
+                    <p className={`text-xs mt-1 ${
+                      theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                    }`}>Choose a color for your avatar background</p>
                   </div>
                 )}
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                  <label className={`block text-sm font-medium mb-1 ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}>First Name</label>
                   <input
                     type="text"
                     required
                     value={getStringValue(formData.first_name)}
                     onChange={(e) => handleInputChange('first_name', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+                      theme === 'dark' 
+                        ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                        : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+                    }`}
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                  <label className={`block text-sm font-medium mb-1 ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}>Last Name</label>
                   <input
                     type="text"
                     required
                     value={getStringValue(formData.last_name)}
                     onChange={(e) => handleInputChange('last_name', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+                      theme === 'dark' 
+                        ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                        : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+                    }`}
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+                  <label className={`block text-sm font-medium mb-1 ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}>Gender</label>
                   <select
                     value={getStringValue(formData.gender)}
                     onChange={(e) => handleInputChange('gender', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+                      theme === 'dark' 
+                        ? 'border-gray-600 bg-gray-700 text-white focus:ring-blue-500' 
+                        : 'border-gray-300 bg-white text-gray-900 focus:ring-blue-500'
+                    }`}
                   >
                     <option value="">Select Gender</option>
                     <option value="male">Male</option>
@@ -632,64 +770,100 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose }) 
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                  <label className={`block text-sm font-medium mb-1 ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}>Phone</label>
                   <input
                     type="tel"
                     value={getStringValue(formData.phone)}
                     onChange={(e) => handleInputChange('phone', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+                      theme === 'dark' 
+                        ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                        : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+                    }`}
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
+                  <label className={`block text-sm font-medium mb-1 ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}>Date of Birth</label>
                   <input
                     type="date"
                     value={getStringValue(formData.date_of_birth)}
                     onChange={(e) => handleInputChange('date_of_birth', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+                      theme === 'dark' 
+                        ? 'border-gray-600 bg-gray-700 text-white focus:ring-blue-500 [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert' 
+                        : 'border-gray-300 bg-white text-gray-900 focus:ring-blue-500'
+                    }`}
                   />
                 </div>
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                <label className={`block text-sm font-medium mb-1 ${
+                  theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                }`}>Address</label>
                 <textarea
                   value={getStringValue(formData.address)}
                   onChange={(e) => handleInputChange('address', e.target.value)}
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+                    theme === 'dark' 
+                      ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                      : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+                  }`}
                 />
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+                  <label className={`block text-sm font-medium mb-1 ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}>City</label>
                   <input
                     type="text"
                     value={getStringValue(formData.city)}
                     onChange={(e) => handleInputChange('city', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+                      theme === 'dark' 
+                        ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                        : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+                    }`}
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+                  <label className={`block text-sm font-medium mb-1 ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}>State</label>
                   <input
                     type="text"
                     value={getStringValue(formData.state)}
                     onChange={(e) => handleInputChange('state', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+                      theme === 'dark' 
+                        ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                        : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+                    }`}
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Postal Code</label>
+                  <label className={`block text-sm font-medium mb-1 ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}>Postal Code</label>
                   <input
                     type="text"
                     value={getStringValue(formData.postal_code)}
                     onChange={(e) => handleInputChange('postal_code', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+                      theme === 'dark' 
+                        ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                        : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+                    }`}
                   />
                 </div>
               </div>
@@ -702,26 +876,40 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose }) 
 
             {/* Emergency Contact */}
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">Emergency Contact</h3>
+              <h3 className={`text-lg font-semibold ${
+                theme === 'dark' ? 'text-white' : 'text-gray-900'
+              }`}>Emergency Contact</h3>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Emergency Contact Name</label>
+                  <label className={`block text-sm font-medium mb-1 ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}>Emergency Contact Name</label>
                   <input
                     type="text"
                     value={getStringValue(formData.emergency_contact_name)}
                     onChange={(e) => handleInputChange('emergency_contact_name', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+              theme === 'dark' 
+                ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+            }`}
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Emergency Contact Phone</label>
+                  <label className={`block text-sm font-medium mb-1 ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}>Emergency Contact Phone</label>
                   <input
                     type="tel"
                     value={getStringValue(formData.emergency_contact_phone)}
                     onChange={(e) => handleInputChange('emergency_contact_phone', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+              theme === 'dark' 
+                ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400 focus:ring-blue-500' 
+                : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-blue-500'
+            }`}
                   />
                 </div>
               </div>
@@ -737,7 +925,11 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose }) 
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                className={`px-4 py-2 text-sm font-medium rounded-md ${
+                  theme === 'dark'
+                    ? 'text-gray-300 bg-gray-700 border border-gray-600 hover:bg-gray-600'
+                    : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                }`}
               >
                 Cancel
               </button>

@@ -3,18 +3,114 @@ import React, { useRef, useState, useEffect } from 'react';
 import Chatbot from '../components/Chatbot';
 import AuthFormWithOnboarding from '../components/AuthFormWithOnboarding';
 import OnboardingForm from '../components/OnboardingForm';
-import EditProfileModal from '../components/EditProfileModal';
-import UserAvatarDropdown from '../components/UserAvatarDropdown';
 import { useAuth } from '../providers/AuthProvider';
+import { ChatHistoryProvider, useChatHistory } from '../providers/ChatHistoryProvider';
+import { ThemeProvider } from '../providers/ThemeProvider';
 import { useSupabase } from '../providers/SupabaseProvider';
+import ChatGPTLayout from '../components/ChatGPTLayout';
+
+// Component to check if all providers are ready
+const AppContent: React.FC<{ 
+  user: { id: string; email?: string } | null; 
+  loading: boolean; 
+  needsOnboarding: boolean; 
+  showAuthForm: boolean;
+  setShowAuthForm: (show: boolean) => void;
+  chatbotRef: React.RefObject<{ clearChat: () => void } | null>;
+  chatKey: number;
+}> = ({ 
+  user, 
+  loading, 
+  needsOnboarding, 
+  showAuthForm, 
+  setShowAuthForm, 
+  chatbotRef, 
+  chatKey 
+}) => {
+  const { isLoading: chatHistoryLoading } = useChatHistory();
+  const [isFullyInitialized, setIsFullyInitialized] = useState(false);
+
+  // Wait for both chat history and theme to be ready
+  useEffect(() => {
+    if (!chatHistoryLoading) {
+      // Chat history is loaded, now wait a bit more for theme to be fully applied
+      const timer = setTimeout(() => {
+        setIsFullyInitialized(true);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [chatHistoryLoading]);
+
+  // Show loading state while providers are initializing
+  if (loading || chatHistoryLoading || !isFullyInitialized) {
+    return (
+      <div className="flex min-h-screen h-screen bg-gray-50 dark:bg-gray-900">
+        <main className="flex-1 flex items-center justify-center h-screen">
+          <div className="w-full max-w-2xl h-full flex flex-col justify-center">
+            <div className="flex justify-center mb-6">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img 
+                src="/prakriti_logo.webp" 
+                alt="Prakriti Visual" 
+                style={{ maxWidth: '150px', height: 'auto' }}
+              />
+            </div>
+            <div className="text-center">
+              <span className="text-gray-600 dark:text-gray-300">
+                Refreshing page...
+              </span>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Handle login redirect from sidebar click
+  const handleLoginRedirect = () => {
+    setShowAuthForm(true);
+  };
+
+  // Show auth form if user clicked login and needs onboarding
+  if (showAuthForm && (!user || needsOnboarding)) {
+    return (
+      <AuthFormWithOnboarding 
+        onBack={() => setShowAuthForm(false)}
+      />
+    );
+  }
+
+  // Show onboarding form if user is logged in but needs onboarding
+  if (user && needsOnboarding) {
+    return (
+      <OnboardingForm
+        user={user}
+        onComplete={() => setShowAuthForm(false)}
+        onBack={() => setShowAuthForm(false)}
+      />
+    );
+  }
+
+  // Show chatbot for all users (public access)
+  return (
+    <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+      <ChatGPTLayout onLoginRedirect={handleLoginRedirect}>
+        <main className="flex-1 flex items-center justify-center px-2 sm:px-4">
+          <div className="w-full max-w-4xl h-full flex flex-col justify-center">
+            <Chatbot key={chatKey} ref={chatbotRef} />
+          </div>
+        </main>
+      </ChatGPTLayout>
+    </div>
+  );
+};
 
 const HomePage: React.FC = () => {
-  const { user, loading, needsOnboarding, signOut } = useAuth();
+  const { user, loading, needsOnboarding } = useAuth();
   const supabase = useSupabase();
   const [chatKey] = useState(0); // Key to force re-render of Chatbot
   const chatbotRef = useRef<{ clearChat: () => void }>(null); // Ref for chatbot component
   const [showAuthForm, setShowAuthForm] = useState(false);
-  const [showEditProfile, setShowEditProfile] = useState(false);
 
   // Handle OAuth callback tokens if they're in the URL hash
   useEffect(() => {
@@ -62,88 +158,21 @@ const HomePage: React.FC = () => {
     handleOAuthCallback();
   }, [supabase]);
 
-  // Show loading state while checking authentication
-  if (loading) {
-    return (
-      <div className="flex min-h-screen h-screen">
-        <main className="flex-1 flex items-center justify-center h-screen">
-          <div className="w-full max-w-2xl h-full flex flex-col justify-center">
-            <div className="flex justify-center mb-6">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img 
-                src="/prakriti_logo.webp" 
-                alt="Prakriti Visual" 
-                style={{ maxWidth: '150px', height: 'auto' }}
-              />
-            </div>
-            <div className="text-center">
-              <span className="text-gray-600">Loading...</span>
-            </div>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  // Show auth form if user clicked login and needs onboarding
-  if (showAuthForm && (!user || needsOnboarding)) {
-    return (
-      <AuthFormWithOnboarding 
-        onBack={() => setShowAuthForm(false)}
-      />
-    );
-  }
-
-  // Show onboarding form if user is logged in but needs onboarding
-  if (user && needsOnboarding) {
-    return (
-      <OnboardingForm
-        user={user}
-        onComplete={() => setShowAuthForm(false)}
-        onBack={() => setShowAuthForm(false)}
-      />
-    );
-  }
-
-
-  // Show chatbot for all users (public access)
+  // Show chatbot for all users (public access) with proper provider initialization
   return (
-    <div className="flex min-h-screen h-screen">
-      {/* Header with user avatar dropdown */}
-      <header className="absolute top-0 right-0 p-4 z-10">
-        {user ? (
-          <UserAvatarDropdown
-            onEditProfile={() => setShowEditProfile(true)}
-            onLogout={async () => {
-              await signOut();
-              setShowAuthForm(false);
-            }}
-          />
-        ) : (
-          <button
-            onClick={() => setShowAuthForm(true)}
-            className="px-4 py-2 text-sm text-white rounded-md transition-colors"
-            style={{ backgroundColor: 'var(--brand-primary)' }}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary-800)'}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary)'}
-          >
-            Login
-          </button>
-        )}
-      </header>
-
-      <main className="flex-1 flex items-center justify-center h-screen px-2 sm:px-4">
-        <div className="w-full max-w-2xl h-full flex flex-col justify-center">
-          <Chatbot key={chatKey} ref={chatbotRef} />
-        </div>
-      </main>
-
-      {/* Edit Profile Modal */}
-      <EditProfileModal
-        isOpen={showEditProfile}
-        onClose={() => setShowEditProfile(false)}
-      />
-    </div>
+    <ThemeProvider>
+      <ChatHistoryProvider>
+        <AppContent
+          user={user}
+          loading={loading}
+          needsOnboarding={needsOnboarding}
+          showAuthForm={showAuthForm}
+          setShowAuthForm={setShowAuthForm}
+          chatbotRef={chatbotRef}
+          chatKey={chatKey}
+        />
+      </ChatHistoryProvider>
+    </ThemeProvider>
   );
 };
 

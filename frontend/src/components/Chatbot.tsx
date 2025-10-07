@@ -3,7 +3,8 @@ import { useState as useCopyState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useAuth } from '@/providers/AuthProvider';
-import UserProfileIndicator from './UserProfileIndicator';
+import { useChatHistory } from '@/providers/ChatHistoryProvider';
+import { useTheme } from '@/providers/ThemeProvider';
 
 type Message =
   | { sender: 'user' | 'bot'; text: string }
@@ -35,10 +36,22 @@ interface ChatbotProps {
 
 const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ clearChat }, ref) => {
   const { user, profile } = useAuth();
+  const { theme } = useTheme();
+  const { 
+    getActiveSession, 
+    addMessage, 
+    clearActiveSession, 
+    isLoading: chatHistoryLoading
+  } = useChatHistory();
+  
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [requestInProgress, setRequestInProgress] = useState(false);
   const [listening, setListening] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [hasFirstResponse, setHasFirstResponse] = useState(false);
   const [micPlaceholder, setMicPlaceholder] = useState<string>('Ask me anything...');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -187,12 +200,14 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               } else {
                 setIsTyping(false);
                 setMessages((msgs) => [...msgs, { sender: 'bot', text: fullText }]);
+                setHasFirstResponse(true);
               }
             }
             typeChar();
           })
           .catch(() => {
             setMessages((msgs) => [...msgs, { sender: 'bot', text: 'Error: Could not get response.' }]);
+            setHasFirstResponse(true);
           })
           .finally(() => {
             setLoading(false);
@@ -211,11 +226,67 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     recognition.start();
   };
 
+  // Stop current generation
+  const stopGeneration = () => {
+    if (abortController) {
+      abortController.abort();
+      setAbortController(null);
+    }
+    setIsGenerating(false);
+    setLoading(false);
+    setRequestInProgress(false);
+    setIsTyping(false);
+    setDisplayedBotText('');
+  };
+
+  // Handle suggestion button clicks with specific prompts
+  const handleSuggestionClick = (suggestion: string) => {
+    // Prevent clicking if already processing
+    if (loading || requestInProgress || isGenerating) {
+      return;
+    }
+
+    // Create specific prompts for each suggestion type
+    const suggestionPrompts: { [key: string]: string } = {
+      "Help with homework": "I need help with my homework. Can you provide step-by-step guidance and explanations?",
+      "Explain a concept": "Can you explain a concept in simple terms with examples? I'm looking for a clear understanding.",
+      "Study tips": "What are some effective study tips and techniques that can help me learn better?",
+      "School schedule": "Can you help me with information about school schedules, timetables, or academic planning?",
+      "Assignment help": "I need assistance with an assignment. Can you guide me through the process and requirements?",
+      "Math problems": "I have math problems that I need help solving. Can you provide solutions with explanations?",
+      "Science questions": "I have science questions that need answering. Can you provide detailed scientific explanations?",
+      "History facts": "I'm interested in learning about historical facts and events. Can you share some interesting information?",
+      "Prakriti School info": "Tell me about Prakriti School - its philosophy, programs, and what makes it special.",
+      "Progressive education": "What is progressive education and how does it differ from traditional education?",
+      "Learning for happiness": "How does Prakriti School's 'learning for happiness' philosophy work in practice?",
+      "IGCSE curriculum": "Can you explain the IGCSE curriculum offered at Prakriti School and its benefits?"
+    };
+
+    const prompt = suggestionPrompts[suggestion] || suggestion;
+    
+    console.log('🎯 Suggestion clicked:', suggestion, '→ Sending prompt:', prompt);
+    
+    // Set the input and automatically send the message
+    setInput(prompt);
+    
+    // Use setTimeout to ensure the input is set before sending
+    setTimeout(() => {
+      sendMessage();
+    }, 100);
+  };
+
   // Send message to backend /chatbot endpoint
   const sendMessage = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || loading || requestInProgress) return; // Prevent sending if already loading or request in progress
     const userMsg: Message = { sender: 'user', text: input };
     setMessages((msgs) => [...msgs, userMsg]);
+    
+    // Add user message to chat history
+    addMessage({
+      sender: 'user',
+      text: input,
+      timestamp: Date.now(),
+    });
     
     // Add user message to conversation history
     const newHistory = [...conversationHistory, { role: 'user', content: input }];
@@ -223,8 +294,14 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     
     setInput('');
     setLoading(true);
+    setRequestInProgress(true);
+    setIsGenerating(true);
     setDisplayedBotText('');
     setIsTyping(false);
+    
+    // Create abort controller for this request
+    const controller = new AbortController();
+    setAbortController(controller);
     
     // Show immediate loading feedback
     setTimeout(() => {
@@ -248,19 +325,38 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestData),
+        signal: controller.signal,
       });
       const data = await res.json();
       
       // Check for structured responses with type field
       if (data.type === 'calendar' && data.response && data.response.url) {
-        setMessages((msgs) => [...msgs, { sender: 'bot', type: 'calendar', url: data.response.url }]);
+        const botMsg = { sender: 'bot' as const, type: 'calendar' as const, url: data.response.url };
+        setMessages((msgs) => [...msgs, botMsg]);
+        addMessage({
+          sender: 'bot',
+          text: data.response.url,
+          timestamp: Date.now(),
+          type: 'calendar',
+          url: data.response.url,
+        });
         setIsTyping(false);
         setDisplayedBotText('');
+        setHasFirstResponse(true);
         return;
       } else if (data.type === 'map' && data.response && data.response.url) {
-        setMessages((msgs) => [...msgs, { sender: 'bot', type: 'map', url: data.response.url }]);
+        const botMsg = { sender: 'bot' as const, type: 'map' as const, url: data.response.url };
+        setMessages((msgs) => [...msgs, botMsg]);
+        addMessage({
+          sender: 'bot',
+          text: data.response.url,
+          timestamp: Date.now(),
+          type: 'map',
+          url: data.response.url,
+        });
         setIsTyping(false);
         setDisplayedBotText('');
+        setHasFirstResponse(true);
         return;
       } else if (data.type === 'mixed' && Array.isArray(data.response)) {
         // Handle mixed responses (like location with map or videos)
@@ -275,12 +371,22 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         setMessages((msgs) => [...msgs, ...messages_to_add]);
         setIsTyping(false);
         setDisplayedBotText('');
+        setHasFirstResponse(true);
         return;
       } else if (data.type === 'videos' && data.response && data.response.videos) {
         // Handle video responses
-        setMessages((msgs) => [...msgs, { sender: 'bot', type: 'videos', videos: data.response.videos }]);
+        const botMsg = { sender: 'bot' as const, type: 'videos' as const, videos: data.response.videos };
+        setMessages((msgs) => [...msgs, botMsg]);
+        addMessage({
+          sender: 'bot',
+          text: JSON.stringify(data.response.videos),
+          timestamp: Date.now(),
+          type: 'videos',
+          videos: data.response.videos,
+        });
         setIsTyping(false);
         setDisplayedBotText('');
+        setHasFirstResponse(true);
         return;
       }
       
@@ -303,13 +409,32 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           setIsTyping(false);
           // Store the full Markdown text for rendering
           setMessages((msgs) => [...msgs, { sender: 'bot', text: fullText }]);
+          
+          // Add to chat history
+          addMessage({
+            sender: 'bot',
+            text: fullText,
+            timestamp: Date.now(),
+          });
+          
+          // Mark that we've had the first response
+          setHasFirstResponse(true);
         }
       }
       typeChar();
-    } catch {
-      setMessages((msgs) => [...msgs, { sender: 'bot', text: 'Error: Could not get response.' }]);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        // Request was aborted, don't add error message
+        console.log('Request aborted by user');
+      } else {
+        setMessages((msgs) => [...msgs, { sender: 'bot', text: 'Error: Could not get response.' }]);
+        setHasFirstResponse(true);
+      }
     } finally {
       setLoading(false);
+      setRequestInProgress(false);
+      setIsGenerating(false);
+      setAbortController(null);
     }
   };
 
@@ -317,7 +442,11 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      if (isGenerating || isTyping) {
+        stopGeneration();
+      } else if (!loading && !requestInProgress) {
+        sendMessage();
+      }
     }
   };
 
@@ -350,6 +479,36 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     }
   }, [messages]);
 
+  // Load messages from active session
+  useEffect(() => {
+    const activeSession = getActiveSession();
+    if (activeSession) {
+      const sessionMessages: Message[] = activeSession.messages.map(msg => ({
+        sender: msg.sender,
+        text: msg.text,
+        ...(msg.type && { type: msg.type }),
+        ...(msg.url && { url: msg.url }),
+        ...(msg.videos && { videos: msg.videos }),
+      }));
+      setMessages(sessionMessages);
+      
+      // Check if there are any bot messages to set hasFirstResponse
+      const hasBotMessages = sessionMessages.some(msg => msg.sender === 'bot');
+      setHasFirstResponse(hasBotMessages);
+      
+      // Update conversation history for API calls
+      const history = activeSession.messages.map(msg => ({
+        role: msg.sender === 'bot' ? 'assistant' : msg.sender,
+        content: msg.text,
+      }));
+      setConversationHistory(history);
+    } else {
+      setMessages([]);
+      setConversationHistory([]);
+      setHasFirstResponse(false);
+    }
+  }, [getActiveSession]);
+
   // For copy feedback per message
   const handleCopy = (text: string, idx: number) => {
     navigator.clipboard.writeText(text);
@@ -359,16 +518,27 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
 
   // Clear chat function
   const handleClearChat = useCallback(() => {
+    // Stop any ongoing generation
+    if (abortController) {
+      abortController.abort();
+    }
     setMessages([]);
     setInput('');
     setLoading(false);
+    setRequestInProgress(false);
+    setIsGenerating(false);
+    setAbortController(null);
     setListening(false);
     setDisplayedBotText('');
     setIsTyping(false);
     setCopiedIdx(null);
+    setHasFirstResponse(false);
     
     // Clear conversation history
     setConversationHistory([]);
+    
+    // Clear active session in chat history
+    clearActiveSession();
     
     // Generate a new random welcome message
     setWelcomeMessage(getRandomWelcomeMessage());
@@ -381,7 +551,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     if (clearChat) {
       clearChat();
     }
-  }, [clearChat, getRandomWelcomeMessage, setCopiedIdx]);
+  }, [clearChat, getRandomWelcomeMessage, clearActiveSession, abortController, setCopiedIdx]);
 
   // Expose clearChat function to parent
   React.useImperativeHandle(ref, () => ({
@@ -389,7 +559,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   }), [handleClearChat]);
 
   return (
-    <div className="flex flex-col h-[70vh] sm:h-[80vh] w-full max-w-xl mx-auto bg-transparent p-2 sm:p-0">
+    <div className={`flex flex-col h-[70vh] sm:h-[80vh] w-full max-w-xl mx-auto ${theme === 'dark' ? 'bg-gray-900' : 'bg-transparent'} p-2 sm:p-0`}>
       {messages.length === 0 ? (
         <>
           {/* Welcome Screen - Centered Layout */}
@@ -405,7 +575,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             </div>
             {/* Heading */}
             <div className="mb-8 sm:mb-12 text-center px-2">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-normal text-gray-500 mb-2 leading-tight">
+              <h2 className={`text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-normal mb-2 leading-tight ${theme === 'dark' ? 'text-gray-300' : 'text-gray-500'}`}>
                 {welcomeMessage ? renderWelcomeMessage(welcomeMessage) : "Loading..."}
               </h2>
             </div>
@@ -415,19 +585,19 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               <div className="relative flex items-end w-full px-1 sm:px-0">
                 <textarea
                   ref={inputRef}
-                  className="w-full border border-gray-300 rounded-[20px] px-4 sm:px-5 py-3 pr-20 sm:pr-24 bg-transparent text-gray-900 placeholder-gray-400 focus:outline-none resize-none font-normal text-sm sm:text-base"
+                  className={`w-full border rounded-[20px] px-4 sm:px-5 py-3 pr-20 sm:pr-24 bg-transparent focus:outline-none resize-none font-normal text-sm sm:text-base ${theme === 'dark' ? 'border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-400'}`}
                   style={{ height: 'auto', minHeight: '60px', maxHeight: '120px' }}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={micPlaceholder}
+                  placeholder={(isGenerating || isTyping) ? "Generating response... Press Enter to stop" : micPlaceholder}
                   disabled={loading}
                   aria-label="Chat input"
                   rows={1}
                 />
                 {/* Microphone button inside textarea */}
                 <button
-                  className={`absolute right-12 sm:right-14 bottom-2 p-2 rounded-full transition ${listening ? 'animate-pulse' : ''}`}
+                  className={`absolute right-12 sm:right-14 bottom-2 p-2 rounded-full transition-all duration-200 ${listening ? 'animate-pulse' : ''} ${theme === 'dark' ? 'hover:bg-gray-700 hover:scale-105' : 'hover:bg-gray-200 hover:scale-105'}`}
                   style={{ 
                     backgroundColor: listening ? 'var(--brand-primary-50)' : 'transparent',
                     borderColor: listening ? 'var(--brand-primary)' : 'transparent',
@@ -440,27 +610,39 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                   tabIndex={0}
                 >
                   {/* Heroicons solid mic icon */}
-                  <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 sm:w-6 sm:h-6" style={{ color: listening ? 'var(--brand-primary)' : '#6b7280' }}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
+                  <svg viewBox="0 0 20 20" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${theme === 'dark' ? (listening ? 'text-blue-400' : 'text-gray-300') : (listening ? 'var(--brand-primary)' : '#6b7280')}`}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
                 </button>
-                {/* Send button as icon inside textarea */}
+                {/* Send/Stop button as icon inside textarea */}
                 <button
-                  className="absolute right-2 bottom-2 p-2 rounded-full hover:bg-gray-200 transition disabled:opacity-50"
-                  onClick={sendMessage}
-                  disabled={loading || !input.trim()}
-                  aria-label="Send message"
+                  className={`absolute right-2 bottom-2 p-2 rounded-full transition-all duration-200 disabled:opacity-50 ${
+                    (isGenerating || isTyping)
+                      ? `${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-600 hover:bg-gray-700'} shadow-lg animate-pulse` 
+                      : `${theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-200'}`
+                  }`}
+                  onClick={(isGenerating || isTyping) ? stopGeneration : sendMessage}
+                  disabled={!(isGenerating || isTyping) && (loading || requestInProgress || !input.trim())}
+                  aria-label={(isGenerating || isTyping) ? "Stop generation" : "Send message"}
                   tabIndex={0}
-                  style={{ zIndex: 2, background: 'transparent', border: 'none' }}
+                  style={{ zIndex: 2, border: 'none' }}
                 >
-                  {/* Telegram-style paper-plane icon */}
-                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 sm:w-6 sm:h-6 text-gray-500">
-                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-                  </svg>
+                  {(isGenerating || isTyping) ? (
+                    /* Stop icon - more prominent */
+                    <svg viewBox="0 0 24 24" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${theme === 'dark' ? 'text-gray-200' : 'text-white'}`}>
+                      <path d="M6 6h12v12H6z" />
+                    </svg>
+                  ) : (
+                    /* Send icon */
+                    <svg viewBox="0 0 24 24" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-500'}`}>
+                      <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                    </svg>
+                  )}
                 </button>
               </div>
               
-              {/* Chat Shortcuts - Centered */}
-              <div className="mt-4 px-1 sm:px-0">
-                <div className="flex flex-wrap gap-2 justify-center">
+              {/* Chat Shortcuts - Centered - Only show before first response and when not loading */}
+              {!hasFirstResponse && !chatHistoryLoading && (
+                <div className="mt-4 px-1 sm:px-0">
+                  <div className="flex flex-wrap gap-2 justify-center">
                   {[
                     "Help with homework",
                     "Explain a concept",
@@ -469,27 +651,29 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                     "Assignment help",
                     "Math problems",
                     "Science questions",
-                    "History facts"
+                    "History facts",
+                    "Prakriti School info",
+                    "Progressive education",
+                    "Learning for happiness",
+                    "IGCSE curriculum"
                   ].map((shortcut, index) => (
                     <button
                       key={index}
-                      onClick={() => {
-                        setInput(shortcut);
-                        inputRef.current?.focus();
-                      }}
-                      className="px-3 py-1.5 text-xs sm:text-sm bg-gray-100 text-gray-700 rounded-full transition-colors duration-200 border border-gray-200"
+                      onClick={() => handleSuggestionClick(shortcut)}
+                      className="px-3 py-1.5 text-xs sm:text-sm bg-gray-100 text-gray-700 rounded-full transition-colors duration-200 border border-gray-200 hover:shadow-md hover:scale-105"
                       style={{
                         backgroundColor: 'var(--brand-primary-50)',
                         color: 'var(--brand-primary)',
                         borderColor: 'var(--brand-primary-200)'
                       }}
-                      disabled={loading}
+                      disabled={loading || requestInProgress || isGenerating}
                     >
                       {shortcut}
                     </button>
                   ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </>
@@ -505,8 +689,6 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             </div>
           )}
           <div className="flex-1 overflow-y-auto mb-4 space-y-2 pr-2 sm:pr-4" style={{ minHeight: 0 }}>
-        {/* Show user profile indicator for authenticated users */}
-        {user && profile && <UserProfileIndicator />}
         
         {messages.map((msg, idx) => (
           'type' in msg && msg.type === 'calendar' ? (
@@ -547,9 +729,9 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                         />
                       </div>
                       <div className="flex-1">
-                        <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2 line-clamp-2">{video.title}</h3>
-                        <p className="text-gray-600 text-xs sm:text-sm mb-2 line-clamp-2">{video.description}</p>
-                        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-gray-500">
+                        <h3 className={`text-base sm:text-lg font-semibold mb-2 line-clamp-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{video.title}</h3>
+                        <p className={`text-xs sm:text-sm mb-2 line-clamp-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>{video.description}</p>
+                        <div className={`flex flex-wrap items-center gap-2 sm:gap-4 text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
                           <span className="px-2 py-1 rounded text-xs" style={{ backgroundColor: 'var(--brand-primary-100)', color: 'var(--brand-primary-800)' }}>{video.category}</span>
                           <span className="text-xs">{video.duration}</span>
                         </div>
@@ -580,8 +762,8 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               <div
                 className={`max-w-[85%] sm:max-w-[80%] break-words ${
                   'text' in msg && msg.sender === 'user'
-                    ? 'text-blue-900 text-right justify-end'
-                    : 'text-gray-900 text-left'
+                    ? `${theme === 'dark' ? 'text-blue-300' : 'text-blue-900'} text-right justify-end`
+                    : `${theme === 'dark' ? 'text-white' : 'text-gray-900'} text-left`
                 }`}
                 style={{ background: 'none', padding: '0.75rem 0', borderRadius: 0 }}
               >
@@ -591,20 +773,20 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                       remarkPlugins={[remarkGfm]}
                       components={{
                         // Custom styling for Markdown elements
-                        h1: ({...props}) => <h1 className="text-xl font-bold mb-2 text-gray-800" {...props} />,
-                        h2: ({...props}) => <h2 className="text-lg font-bold mb-2 text-gray-800" {...props} />,
-                        h3: ({...props}) => <h3 className="text-base font-bold mb-2 text-gray-800" {...props} />,
-                        p: ({...props}) => <p className="mb-2 text-gray-700 leading-relaxed" {...props} />,
-                        ul: ({...props}) => <ul className="list-disc list-inside mb-2 text-gray-700 space-y-1" {...props} />,
-                        ol: ({...props}) => <ol className="list-decimal list-inside mb-2 text-gray-700 space-y-1" {...props} />,
-                        li: ({...props}) => <li className="mb-1 text-gray-700" {...props} />,
-                        strong: ({...props}) => <strong className="font-bold text-gray-900" {...props} />,
-                        em: ({...props}) => <em className="italic text-gray-700" {...props} />,
-                        code: ({...props}) => <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-gray-800" {...props} />,
-                        blockquote: ({...props}) => <blockquote className="border-l-4 pl-4 italic text-gray-600 py-2 rounded-r" style={{ borderLeftColor: 'var(--brand-primary-300)', backgroundColor: 'var(--brand-primary-50)' }} {...props} />,
-                        table: ({...props}) => <table className="border-collapse border border-gray-300 w-full mb-2 text-sm" {...props} />,
-                        th: ({...props}) => <th className="border border-gray-300 px-2 py-1 bg-gray-100 font-bold text-gray-800" {...props} />,
-                        td: ({...props}) => <td className="border border-gray-300 px-2 py-1 text-gray-700" {...props} />,
+                        h1: ({...props}) => <h1 className={`text-xl font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`} {...props} />,
+                        h2: ({...props}) => <h2 className={`text-lg font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`} {...props} />,
+                        h3: ({...props}) => <h3 className={`text-base font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`} {...props} />,
+                        p: ({...props}) => <p className={`mb-2 leading-relaxed ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
+                        ul: ({...props}) => <ul className={`list-disc list-inside mb-2 space-y-1 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
+                        ol: ({...props}) => <ol className={`list-decimal list-inside mb-2 space-y-1 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
+                        li: ({...props}) => <li className={`mb-1 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
+                        strong: ({...props}) => <strong className={`font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`} {...props} />,
+                        em: ({...props}) => <em className={`italic ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
+                        code: ({...props}) => <code className={`px-1 py-0.5 rounded text-sm font-mono ${theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-800'}`} {...props} />,
+                        blockquote: ({...props}) => <blockquote className={`border-l-4 pl-4 italic py-2 rounded-r ${theme === 'dark' ? 'text-gray-300 border-gray-600 bg-gray-800' : 'text-gray-600 border-gray-300 bg-gray-50'}`} style={{ borderLeftColor: theme === 'dark' ? '#4B5563' : 'var(--brand-primary-300)', backgroundColor: theme === 'dark' ? '#1F2937' : 'var(--brand-primary-50)' }} {...props} />,
+                        table: ({...props}) => <table className={`border-collapse w-full mb-2 text-sm ${theme === 'dark' ? 'border-gray-600' : 'border-gray-300'}`} {...props} />,
+                        th: ({...props}) => <th className={`border px-2 py-1 font-bold ${theme === 'dark' ? 'border-gray-600 bg-gray-700 text-gray-200' : 'border-gray-300 bg-gray-100 text-gray-800'}`} {...props} />,
+                        td: ({...props}) => <td className={`border px-2 py-1 ${theme === 'dark' ? 'border-gray-600 text-gray-200' : 'border-gray-300 text-gray-700'}`} {...props} />,
                       }}
                     >
                       {msg.text}
@@ -631,7 +813,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           <div className="flex justify-start">
             <div 
               ref={typingRef}
-              className="max-w-[80%] break-words text-gray-900 text-left" 
+              className={`max-w-[80%] break-words text-left ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`} 
               style={{ background: 'none', padding: '0.75rem 0', borderRadius: 0 }}
             >
               <div className="markdown-content">
@@ -639,20 +821,20 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                   remarkPlugins={[remarkGfm]}
                   components={{
                     // Custom styling for Markdown elements
-                    h1: ({...props}) => <h1 className="text-xl font-bold mb-2 text-gray-800" {...props} />,
-                    h2: ({...props}) => <h2 className="text-lg font-bold mb-2 text-gray-800" {...props} />,
-                    h3: ({...props}) => <h3 className="text-base font-bold mb-2 text-gray-800" {...props} />,
-                    p: ({...props}) => <p className="mb-2 text-gray-700 leading-relaxed" {...props} />,
-                    ul: ({...props}) => <ul className="list-disc list-inside mb-2 text-gray-700 space-y-1" {...props} />,
-                    ol: ({...props}) => <ol className="list-decimal list-inside mb-2 text-gray-700 space-y-1" {...props} />,
-                    li: ({...props}) => <li className="mb-1 text-gray-700" {...props} />,
-                    strong: ({...props}) => <strong className="font-bold text-gray-900" {...props} />,
-                    em: ({...props}) => <em className="italic text-gray-700" {...props} />,
-                    code: ({...props}) => <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-gray-800" {...props} />,
-                    blockquote: ({...props}) => <blockquote className="border-l-4 pl-4 italic text-gray-600 py-2 rounded-r" style={{ borderLeftColor: 'var(--brand-primary-300)', backgroundColor: 'var(--brand-primary-50)' }} {...props} />,
-                    table: ({...props}) => <table className="border-collapse border border-gray-300 w-full mb-2 text-sm" {...props} />,
-                    th: ({...props}) => <th className="border border-gray-300 px-2 py-1 bg-gray-100 font-bold text-gray-800" {...props} />,
-                    td: ({...props}) => <td className="border border-gray-300 px-2 py-1 text-gray-700" {...props} />,
+                    h1: ({...props}) => <h1 className={`text-xl font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`} {...props} />,
+                    h2: ({...props}) => <h2 className={`text-lg font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`} {...props} />,
+                    h3: ({...props}) => <h3 className={`text-base font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`} {...props} />,
+                    p: ({...props}) => <p className={`mb-2 leading-relaxed ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
+                    ul: ({...props}) => <ul className={`list-disc list-inside mb-2 space-y-1 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
+                    ol: ({...props}) => <ol className={`list-decimal list-inside mb-2 space-y-1 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
+                    li: ({...props}) => <li className={`mb-1 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
+                    strong: ({...props}) => <strong className={`font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`} {...props} />,
+                    em: ({...props}) => <em className={`italic ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
+                    code: ({...props}) => <code className={`px-1 py-0.5 rounded text-sm font-mono ${theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-800'}`} {...props} />,
+                    blockquote: ({...props}) => <blockquote className={`border-l-4 pl-4 italic py-2 rounded-r ${theme === 'dark' ? 'text-gray-300 border-gray-600 bg-gray-800' : 'text-gray-600 border-gray-300 bg-gray-50'}`} style={{ borderLeftColor: theme === 'dark' ? '#4B5563' : 'var(--brand-primary-300)', backgroundColor: theme === 'dark' ? '#1F2937' : 'var(--brand-primary-50)' }} {...props} />,
+                    table: ({...props}) => <table className={`border-collapse w-full mb-2 text-sm ${theme === 'dark' ? 'border-gray-600' : 'border-gray-300'}`} {...props} />,
+                    th: ({...props}) => <th className={`border px-2 py-1 font-bold ${theme === 'dark' ? 'border-gray-600 bg-gray-700 text-gray-200' : 'border-gray-300 bg-gray-100 text-gray-800'}`} {...props} />,
+                    td: ({...props}) => <td className={`border px-2 py-1 ${theme === 'dark' ? 'border-gray-600 text-gray-200' : 'border-gray-300 text-gray-700'}`} {...props} />,
                   }}
                 >
                   {displayedBotText}
@@ -663,7 +845,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         )}
         {loading && !isTyping && (
           <div className="flex justify-start">
-            <div className="max-w-[80%] break-words text-gray-900 text-left" style={{ background: 'none', padding: '0.75rem 0', borderRadius: 0 }}>
+            <div className={`max-w-[80%] break-words text-left ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`} style={{ background: 'none', padding: '0.75rem 0', borderRadius: 0 }}>
               <TypingDots />
             </div>
           </div>
@@ -674,19 +856,19 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           <div className="relative flex items-end w-full mt-auto px-1 sm:px-0">
             <textarea
               ref={inputRef}
-              className="w-full border border-gray-300 rounded-[20px] px-4 sm:px-5 py-3 pr-20 sm:pr-24 bg-transparent text-gray-900 placeholder-gray-400 focus:outline-none resize-none font-normal text-sm sm:text-base"
+              className={`w-full border rounded-[20px] px-4 sm:px-5 py-3 pr-20 sm:pr-24 bg-transparent focus:outline-none resize-none font-normal text-sm sm:text-base ${theme === 'dark' ? 'border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-400'}`}
               style={{ height: 'auto', minHeight: '60px', maxHeight: '120px' }}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={micPlaceholder}
+              placeholder={(isGenerating || isTyping) ? "Generating response... Press Enter to stop" : micPlaceholder}
               disabled={loading}
               aria-label="Chat input"
               rows={1}
-            />
-            {/* Microphone button inside textarea */}
+                />
+                {/* Microphone button inside textarea */}
             <button
-              className={`absolute right-12 sm:right-14 bottom-2 p-2 rounded-full transition ${listening ? 'animate-pulse' : ''}`}
+              className={`absolute right-12 sm:right-14 bottom-2 p-2 rounded-full transition-all duration-200 ${listening ? 'animate-pulse' : ''} ${theme === 'dark' ? 'hover:bg-gray-700 hover:scale-105' : 'hover:bg-gray-200 hover:scale-105'}`}
               style={{ 
                 backgroundColor: listening ? 'var(--brand-primary-50)' : 'transparent',
                 borderColor: listening ? 'var(--brand-primary)' : 'transparent',
@@ -699,27 +881,39 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               tabIndex={0}
             >
               {/* Heroicons solid mic icon */}
-              <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 sm:w-6 sm:h-6" style={{ color: listening ? 'var(--brand-primary)' : '#6b7280' }}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
+              <svg viewBox="0 0 20 20" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${theme === 'dark' ? (listening ? 'text-blue-400' : 'text-gray-300') : (listening ? 'var(--brand-primary)' : '#6b7280')}`}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
             </button>
-            {/* Send button as icon inside textarea */}
+            {/* Send/Stop button as icon inside textarea */}
             <button
-              className="absolute right-2 bottom-2 p-2 rounded-full hover:bg-gray-200 transition disabled:opacity-50"
-              onClick={sendMessage}
-              disabled={loading || !input.trim()}
-              aria-label="Send message"
+              className={`absolute right-2 bottom-2 p-2 rounded-full transition-all duration-200 disabled:opacity-50 ${
+                (isGenerating || isTyping)
+                  ? `${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-600 hover:bg-gray-700'} shadow-lg animate-pulse` 
+                  : `${theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-200'}`
+              }`}
+              onClick={(isGenerating || isTyping) ? stopGeneration : sendMessage}
+              disabled={!(isGenerating || isTyping) && (loading || requestInProgress || !input.trim())}
+              aria-label={(isGenerating || isTyping) ? "Stop generation" : "Send message"}
               tabIndex={0}
-              style={{ zIndex: 2, background: 'transparent', border: 'none' }}
+              style={{ zIndex: 2, border: 'none' }}
             >
-              {/* Telegram-style paper-plane icon */}
-              <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 sm:w-6 sm:h-6 text-gray-500">
-                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-              </svg>
+              {(isGenerating || isTyping) ? (
+                /* Stop icon - more prominent */
+                <svg viewBox="0 0 24 24" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${theme === 'dark' ? 'text-gray-200' : 'text-white'}`}>
+                  <path d="M6 6h12v12H6z" />
+                </svg>
+              ) : (
+                /* Send icon */
+                <svg viewBox="0 0 24 24" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-500'}`}>
+                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                </svg>
+              )}
             </button>
           </div>
           
-          {/* Chat Shortcuts */}
-          <div className="mt-3 px-1 sm:px-0">
-            <div className="flex flex-wrap gap-2 justify-center">
+          {/* Chat Shortcuts - Only show before first response and when not loading */}
+          {!hasFirstResponse && !chatHistoryLoading && (
+            <div className="mt-3 px-1 sm:px-0">
+              <div className="flex flex-wrap gap-2 justify-center">
               {[
                 "Help with homework",
                 "Explain a concept",
@@ -728,27 +922,29 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                 "Assignment help",
                 "Math problems",
                 "Science questions",
-                "History facts"
+                "History facts",
+                "Prakriti School info",
+                "Progressive education",
+                "Learning for happiness",
+                "IGCSE curriculum"
               ].map((shortcut, index) => (
                 <button
                   key={index}
-                  onClick={() => {
-                    setInput(shortcut);
-                    inputRef.current?.focus();
-                  }}
-                  className="px-3 py-1.5 text-xs sm:text-sm bg-gray-100 text-gray-700 rounded-full transition-colors duration-200 border border-gray-200"
+                  onClick={() => handleSuggestionClick(shortcut)}
+                  className="px-3 py-1.5 text-xs sm:text-sm bg-gray-100 text-gray-700 rounded-full transition-colors duration-200 border border-gray-200 hover:shadow-md hover:scale-105"
                   style={{
                     backgroundColor: 'var(--brand-primary-50)',
                     color: 'var(--brand-primary)',
                     borderColor: 'var(--brand-primary-200)'
                   }}
-                  disabled={loading}
+                  disabled={loading || requestInProgress || isGenerating}
                 >
                   {shortcut}
                 </button>
               ))}
+              </div>
             </div>
-          </div>
+          )}
         </>
       )}
     </div>
