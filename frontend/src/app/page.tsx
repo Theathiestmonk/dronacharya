@@ -30,16 +30,39 @@ const AppContent: React.FC<{
   const { isLoading: chatHistoryLoading } = useChatHistory();
   const [isFullyInitialized, setIsFullyInitialized] = useState(false);
 
-  // Wait for both chat history and theme to be ready
+  // Immediate fallback for very fast loading
+  useEffect(() => {
+    const immediateTimer = setTimeout(() => {
+      if (!isFullyInitialized) {
+        console.log('Immediate fallback - forcing load');
+        setIsFullyInitialized(true);
+      }
+    }, 1000); // 1 second immediate fallback
+
+    return () => clearTimeout(immediateTimer);
+  }, [isFullyInitialized]);
+
+  // Simplified loading logic - just wait for chat history
   useEffect(() => {
     if (!chatHistoryLoading) {
-      // Chat history is loaded, now wait a bit more for theme to be fully applied
-      const timer = setTimeout(() => {
-        setIsFullyInitialized(true);
-      }, 100);
-      return () => clearTimeout(timer);
+      setIsFullyInitialized(true);
     }
   }, [chatHistoryLoading]);
+
+  // Fallback timeout to prevent infinite loading
+  useEffect(() => {
+    const fallbackTimer = setTimeout(() => {
+      console.log('Fallback timeout - forcing initialization');
+      setIsFullyInitialized(true);
+    }, 2000); // 2 second fallback
+
+    return () => clearTimeout(fallbackTimer);
+  }, []);
+
+  // Debug logging
+  useEffect(() => {
+    console.log('Loading states:', { loading, chatHistoryLoading, isFullyInitialized });
+  }, [loading, chatHistoryLoading, isFullyInitialized]);
 
   // Show loading state while providers are initializing
   if (loading || chatHistoryLoading || !isFullyInitialized) {
@@ -57,7 +80,7 @@ const AppContent: React.FC<{
             </div>
             <div className="text-center">
               <span className="text-gray-600 dark:text-gray-300">
-                Refreshing page...
+                Loading Prakriti AI...
               </span>
             </div>
           </div>

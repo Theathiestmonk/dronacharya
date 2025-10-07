@@ -319,6 +319,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Create new chat session
   const createNewSession = useCallback((): string => {
+    console.log('🆕 Creating new session...');
     const newSession: ChatSession = {
       id: generateSessionId(), // This now generates proper UUIDs
       title: 'New Chat',
@@ -328,7 +329,10 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       isActive: true,
     };
 
+    console.log('New session created with ID:', newSession.id);
+
     setSessions(prevSessions => {
+      console.log('Previous sessions count:', prevSessions.length);
       // Deactivate all other sessions
       const updatedSessions = prevSessions.map(session => ({
         ...session,
@@ -336,6 +340,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }));
 
       const newSessions = [...updatedSessions, newSession];
+      console.log('Total sessions after adding new one:', newSessions.length);
       
       // Save to Supabase
       saveSessionToSupabase(newSession);
@@ -344,6 +349,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     });
 
     setActiveSessionId(newSession.id);
+    console.log('Active session set to:', newSession.id);
     return newSession.id;
   }, [saveSessionToSupabase]);
 
@@ -506,18 +512,22 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const loadFromLocalStorage = useCallback(async () => {
     if (user) {
       try {
+        console.log('Loading chat history for user:', user.id);
         // First try to load from Supabase
         const supabaseSessions = await loadSessionsFromSupabase();
+        console.log('Supabase sessions loaded:', supabaseSessions.length);
         
         if (supabaseSessions.length > 0) {
           // Use Supabase data
           setSessions(supabaseSessions);
           const activeSession = supabaseSessions.find(s => s.isActive);
           setActiveSessionId(activeSession?.id || supabaseSessions[0]?.id || null);
+          console.log('Using Supabase sessions, active session:', activeSession?.id || supabaseSessions[0]?.id);
         } else {
           // Fallback to localStorage
           const userKey = `chat_history_${user.id}`;
           const saved = localStorage.getItem(userKey);
+          console.log('Checking localStorage for key:', userKey, 'Found:', !!saved);
           if (saved) {
             try {
               const data = JSON.parse(saved);
@@ -528,9 +538,12 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
               }));
               setSessions(migratedSessions);
               setActiveSessionId(data.activeSessionId ? migrateSessionId(data.activeSessionId) : null);
+              console.log('Using localStorage sessions:', migratedSessions.length, 'Active:', data.activeSessionId);
             } catch (error) {
               console.error('Error loading chat history from localStorage:', error);
             }
+          } else {
+            console.log('No sessions found in localStorage, will create new session');
           }
         }
       } catch (error) {
@@ -548,6 +561,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
             }));
             setSessions(migratedSessions);
             setActiveSessionId(data.activeSessionId ? migrateSessionId(data.activeSessionId) : null);
+            console.log('Fallback to localStorage sessions:', migratedSessions.length);
           } catch (error) {
             console.error('Error loading chat history from localStorage:', error);
           }
@@ -555,6 +569,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
       setIsLoading(false);
     } else {
+      console.log('No user, setting loading to false');
       setIsLoading(false);
     }
   }, [user, loadSessionsFromSupabase, migrateSessionId]);
@@ -569,20 +584,59 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
   // Load from localStorage and Supabase when user changes
   useEffect(() => {
     if (user) {
+      setHasAttemptedLoad(false); // Reset flag for new user
       loadFromLocalStorage();
     } else {
       // Clear sessions when user logs out
       setSessions([]);
       setActiveSessionId(null);
+      setIsLoading(false); // Important: set loading to false when no user
+      setHasAttemptedLoad(false); // Reset flag when no user
     }
   }, [user, loadFromLocalStorage]);
 
-  // Create initial session only if no sessions exist after loading from localStorage
+  // Fallback timeout to prevent infinite loading
   useEffect(() => {
-    if (user && !isLoading && sessions.length === 0 && activeSessionId === null) {
-      createNewSession();
+    const timeout = setTimeout(() => {
+      if (isLoading) {
+        console.log('ChatHistory loading timeout - forcing false');
+        setIsLoading(false);
+      }
+    }, 2000); // 2 second timeout
+
+    return () => clearTimeout(timeout);
+  }, [isLoading]);
+
+  // Track if we've already attempted to load sessions
+  const [hasAttemptedLoad, setHasAttemptedLoad] = useState(false);
+  
+  // Create initial session only if no sessions exist after loading from localStorage
+  // Only create a new session if we've finished loading and truly have no sessions
+  useEffect(() => {
+    console.log('Checking if should create new session:', { 
+      user: !!user, 
+      isLoading, 
+      sessionsLength: sessions.length, 
+      activeSessionId,
+      hasAttemptedLoad
+    });
+    
+    // Only check once after loading is complete
+    if (user && !isLoading && !hasAttemptedLoad) {
+      setHasAttemptedLoad(true);
+      
+      if (sessions.length === 0 && activeSessionId === null) {
+        console.log('Creating new session - no existing sessions found');
+        // Add a small delay to ensure localStorage has been checked
+        const timer = setTimeout(() => {
+          createNewSession();
+        }, 100);
+        return () => clearTimeout(timer);
+      } else {
+        console.log('Existing sessions found, not creating new session');
+      }
     }
-  }, [user, isLoading, sessions.length, activeSessionId, createNewSession]);
+  }, [user, isLoading, sessions.length, activeSessionId, createNewSession, hasAttemptedLoad]);
 
   // Clean up old sessions when retention policy changes
   useEffect(() => {

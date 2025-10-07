@@ -118,7 +118,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const timeoutId = setTimeout(() => {
       console.log('Auth loading timeout - setting loading to false');
       setLoading(false);
-    }, 5000); // 5 second timeout
+    }, 1500); // 1.5 second timeout - even faster
 
     // Get initial session
     const getInitialSession = async () => {
@@ -134,6 +134,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (error) {
         console.error('Error getting initial session:', error);
         setLoading(false);
+      } finally {
+        // Always clear timeout when session check is complete
+        clearTimeout(timeoutId);
       }
     };
 
