@@ -157,9 +157,6 @@ const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({ onEditProfile, 
                   {profile.role === 'student' && profile.grade && (
                     <span className="ml-2">• Grade {profile.grade}</span>
                   )}
-                  {profile.role === 'teacher' && profile.department && (
-                    <span className="ml-2">• {profile.department}</span>
-                  )}
                 </div>
               </div>
             </div>

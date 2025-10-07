@@ -49,9 +49,6 @@ const UserProfileIndicator: React.FC = () => {
           {profile.role === 'student' && profile.grade && (
             <p className="text-sm text-gray-600">Grade {profile.grade}</p>
           )}
-          {profile.role === 'teacher' && profile.department && (
-            <p className="text-sm text-gray-600">{profile.department}</p>
-          )}
           {profile.role === 'parent' && profile.relationship_to_student && (
             <p className="text-sm text-gray-600">{profile.relationship_to_student.charAt(0).toUpperCase() + profile.relationship_to_student.slice(1)}</p>
           )}
