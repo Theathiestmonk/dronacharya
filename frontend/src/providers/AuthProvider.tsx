@@ -10,6 +10,7 @@ interface UserProfile {
   email: string;
   first_name: string;
   last_name: string;
+  gender?: 'male' | 'female' | 'other' | 'prefer_not_to_say';
   phone?: string;
   date_of_birth?: string;
   profile_picture_url?: string;
@@ -82,6 +83,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (response.ok) {
         const data = await response.json();
+        console.log('Profile loaded in AuthProvider:', JSON.stringify(data, null, 2));
         setProfile(data);
         setIsFirstLogin(false);
       } else if (response.status === 404) {

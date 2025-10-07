@@ -89,6 +89,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         profileData.learning_style = profileData.learning_style.substring(0, 50);
       }
 
+      // Handle gender field specifically (VARCHAR(20))
+      if (profileData.gender && typeof profileData.gender === 'string' && profileData.gender.length > 20) {
+        console.warn('gender exceeds 20 characters, truncating:', profileData.gender);
+        profileData.gender = profileData.gender.substring(0, 20);
+      }
+
       // Handle empty string values for optional fields only
       const optionalFields = ['phone', 'preferred_contact_method', 'postal_code', 'learning_style'];
       optionalFields.forEach(field => {

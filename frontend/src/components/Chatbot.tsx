@@ -235,14 +235,19 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     }, 100);
     
     try {
+      const requestData = { 
+        message: input,
+        conversation_history: newHistory,
+        user_id: user?.id || null,
+        user_profile: profile || null  // Pass the complete user profile including gender
+      };
+      
+      console.log('Chatbot sending request data:', JSON.stringify(requestData, null, 2));
+      
       const res = await fetch('/api/chatbot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          message: input,
-          conversation_history: newHistory,
-          user_id: user?.id || null
-        }),
+        body: JSON.stringify(requestData),
       });
       const data = await res.json();
       

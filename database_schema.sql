@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
   email VARCHAR(255) NOT NULL,
   first_name VARCHAR(100) NOT NULL,
   last_name VARCHAR(100) NOT NULL,
+  gender VARCHAR(20) CHECK (gender IN ('male', 'female', 'other', 'prefer_not_to_say')),
   phone VARCHAR(20),
   date_of_birth DATE,
   profile_picture_url TEXT,

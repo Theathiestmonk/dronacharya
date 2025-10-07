@@ -16,9 +16,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
   
   try {
-    // Get user profile if user_id is provided and Supabase is available
+    // Get user profile - prioritize user_profile from request body, fallback to database fetch
     let userProfile = null;
-    if (req.body.user_id && req.body.user_id !== null && supabase) {
+    
+    // First, check if user_profile is provided in the request body
+    if (req.body.user_profile && req.body.user_profile !== null) {
+      userProfile = req.body.user_profile;
+      console.log('✅ User profile from request body:', JSON.stringify(userProfile, null, 2));
+      console.log('✅ Gender field in profile:', userProfile.gender);
+    } else if (req.body.user_id && req.body.user_id !== null && supabase) {
+      console.log('❌ No user_profile in request body, attempting to fetch from database...');
+      console.log('Request body keys:', Object.keys(req.body));
       try {
         const { data, error } = await supabase
           .from('user_profiles')
@@ -28,11 +36,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         
         if (!error && data) {
           userProfile = data;
+          console.log('User profile fetched from database:', JSON.stringify(userProfile, null, 2));
         }
       } catch (error) {
         console.error('Error fetching user profile:', error);
         // Continue without profile data
       }
+    } else {
+      console.log('❌ No user_profile or user_id provided in request body. Cannot fetch profile.');
+      console.log('Request body keys:', Object.keys(req.body));
     }
 
     // Prepare request body with user profile
@@ -40,6 +52,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ...req.body,
       user_profile: userProfile
     };
+    
+    console.log('Request body being sent to backend:', JSON.stringify(requestBody, null, 2));
     
     // Try primary connection method first
     let backendRes;

@@ -45,7 +45,99 @@ def generate_chatbot_response(request):
     conversation_history = getattr(request, 'conversation_history', [])
     user_profile = getattr(request, 'user_profile', None)
 
-    # Step 0: Intent detection for holiday calendar
+    
+    # Step 0: Check if this is a greeting and provide role-specific greeting (PRIORITY)
+    greeting_keywords = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening', 'greetings']
+    is_greeting = any(keyword in user_query.lower() for keyword in greeting_keywords)
+    
+    # Check for "how are you" type questions
+    how_are_you_keywords = ['how are you', 'how are you doing', 'how do you do', 'how\'s it going', 'how\'s everything']
+    is_how_are_you = any(keyword in user_query.lower() for keyword in how_are_you_keywords)
+    
+    
+    if is_greeting and user_profile:
+        role = user_profile.get('role', '').lower()
+        first_name = user_profile.get('first_name', '')
+        gender = user_profile.get('gender', '').lower()
+        
+        # Determine appropriate title based on gender and role
+        # Only use titles for teachers and parents, not students
+        if role in ['teacher', 'parent']:
+            if gender == 'male':
+                title = 'Sir'
+            elif gender == 'female':
+                title = 'Madam'
+            else:
+                title = ''  # No title for 'other' or 'prefer_not_to_say'
+        else:
+            title = ''  # No title for students regardless of gender
+        
+        # Format greeting with appropriate title and capitalize first name
+        capitalized_first_name = first_name.capitalize() if first_name else first_name
+        greeting_prefix = f"Hello {capitalized_first_name}{f' {title}' if title else ''}!"
+        
+        # Check if this is the first greeting (conversation history <= 1)
+        is_first_greeting = len(conversation_history) <= 1
+        
+        if role == 'student':
+            if is_first_greeting:
+                grade = user_profile.get('grade', '')
+                subjects = user_profile.get('subjects', [])
+                return f"{greeting_prefix} Welcome to Prakriti School's AI assistant! I'm here to help you with your studies, answer questions about our school, and support your learning journey. I see you're in {grade} and studying {', '.join(subjects) if subjects else 'various subjects'}. How can I assist you today? Remember, at Prakriti, we believe in 'learning for happiness' - so let's make your learning experience joyful and meaningful!"
+            else:
+                return f"{greeting_prefix} How can I help you with your studies today?"
+        
+        elif role == 'teacher':
+            if is_first_greeting:
+                department = user_profile.get('department', '')
+                subjects_taught = user_profile.get('subjects_taught', [])
+                return f"{greeting_prefix} Welcome to Prakriti School's AI assistant for educators! I'm here to support you in your teaching journey at Prakriti. I see you're in the {department} department, teaching {', '.join(subjects_taught) if subjects_taught else 'various subjects'}. How can I help you with curriculum planning, teaching strategies, or any questions about our progressive educational approach? Let's work together to create amazing learning experiences for our students!"
+            else:
+                return f"{greeting_prefix} How can I assist you with your teaching today?"
+        
+        elif role == 'parent':
+            if is_first_greeting:
+                relationship = user_profile.get('relationship_to_student', '')
+                return f"{greeting_prefix} Welcome to Prakriti School's AI assistant for parents! I'm here to help you understand our school's approach and support your child's educational journey. As a {relationship.lower() if relationship else 'parent'}, you play a crucial role in your child's development. How can I assist you today? Whether you have questions about our curriculum, activities, or how to support your child's learning at home, I'm here to help!"
+            else:
+                return f"{greeting_prefix} How can I help you with your child's education today?"
+        
+        else:
+            if is_first_greeting:
+                return f"{greeting_prefix} Welcome to Prakriti School's AI assistant! I'm here to help you learn about our unique educational philosophy and programs. How can I assist you today?"
+            else:
+                return f"{greeting_prefix} How can I help you today?"
+
+    # Step 0.5: Handle "how are you" type questions with friendly responses
+    if is_how_are_you and user_profile:
+        role = user_profile.get('role', '').lower()
+        first_name = user_profile.get('first_name', '')
+        gender = user_profile.get('gender', '').lower()
+        
+        # Determine appropriate title based on gender and role
+        if role in ['teacher', 'parent']:
+            if gender == 'male':
+                title = 'Sir'
+            elif gender == 'female':
+                title = 'Madam'
+            else:
+                title = ''
+        else:
+            title = ''
+        
+        title_text = f' {title}' if title else ''
+        capitalized_first_name = first_name.capitalize() if first_name else first_name
+        
+        if role == 'teacher':
+            return f"I'm doing wonderfully, thank you for asking! I'm energized and ready to help you with your teaching at Prakriti School. How can I assist you today, {capitalized_first_name}{title_text}?"
+        elif role == 'parent':
+            return f"I'm doing great, thank you! I'm here and excited to help you support your child's education at Prakriti School. How can I assist you today, {capitalized_first_name}{title_text}?"
+        elif role == 'student':
+            return f"I'm doing fantastic, thank you for asking! I'm here and ready to help you with your studies and learning journey at Prakriti School. How can I assist you today, {capitalized_first_name}?"
+        else:
+            return f"I'm doing great, thank you! I'm here and ready to help you learn about Prakriti School. How can I assist you today, {capitalized_first_name}?"
+
+    # Step 1: Intent detection for holiday calendar
     holiday_keywords = [
         'holiday calendar', 'school holidays', 'vacation calendar', 'holidays', 'school calendar', 'show holidays', 'holiday list', 'calendar of holidays'
     ]
@@ -83,7 +175,7 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
         )
@@ -116,7 +208,7 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
         )
@@ -156,7 +248,7 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
         )
@@ -191,7 +283,7 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
         )
@@ -232,7 +324,7 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
         )
@@ -281,7 +373,7 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
         )
@@ -315,7 +407,7 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
         )
@@ -353,10 +445,12 @@ def generate_chatbot_response(request):
     max_attempts = 3
     for attempt in range(max_attempts):
         try:
-            # Build personalized system prompt
+            # Build personalized system prompt with enhanced role-based logic
             personalization = ""
+            role_specific_guidelines = ""
+            
             if user_profile:
-                role = user_profile.get('role', '')
+                role = user_profile.get('role', '').lower()
                 first_name = user_profile.get('first_name', '')
                 grade = user_profile.get('grade', '')
                 subjects = user_profile.get('subjects', [])
@@ -380,21 +474,77 @@ def generate_chatbot_response(request):
 - **Learning Goals**: {learning_goals if learning_goals else 'Not specified'}
 - **Interests**: {', '.join(interests) if interests else 'Not specified'}
 - **Learning Style**: {learning_style if learning_style else 'Not specified'}"""
+                    
+                    role_specific_guidelines = """
+## Student-Specific Guidelines:
+- Address them as a student and use encouraging, supportive language
+- Focus on their learning journey, academic growth, and personal development
+- Reference their specific grade level and subjects when relevant
+- Provide study tips, learning strategies, and academic guidance
+- Encourage curiosity, creativity, and self-expression
+- Mention how Prakriti's "learning for happiness" philosophy applies to their studies
+- Suggest activities, projects, or resources that align with their interests
+- Use age-appropriate language and examples
+- Emphasize growth mindset and learning from mistakes
+- Connect their learning goals to Prakriti's holistic approach"""
+                    
                 elif role == 'teacher':
                     personalization += f"""- **Department**: {department}
 - **Subjects Taught**: {', '.join(subjects_taught) if subjects_taught else 'Not specified'}"""
+                    
+                    role_specific_guidelines = """
+## Teacher-Specific Guidelines:
+- Address them as a colleague and fellow educator
+- Focus on teaching methodologies, curriculum, and educational best practices
+- Discuss classroom management, student engagement, and assessment strategies
+- Reference their specific subjects and department when relevant
+- Provide resources, lesson ideas, and professional development suggestions
+- Discuss how to implement Prakriti's progressive teaching philosophy
+- Share insights about student-centered learning and experiential education
+- Offer support for inclusive teaching and the Bridge Programme
+- Discuss collaboration with other teachers and parent communication
+- Use professional, respectful language appropriate for educators"""
+                    
                 elif role == 'parent':
                     personalization += f"""- **Relationship**: {relationship.title() if relationship else 'Not specified'}"""
                 
-                personalization += """
+                    role_specific_guidelines = """
+## Parent-Specific Guidelines:
+- Address them as a parent and partner in their child's education
+- Focus on their child's development, well-being, and academic progress
+- Discuss how to support their child's learning at home
+- Explain Prakriti's educational philosophy and how it benefits their child
+- Provide guidance on communication with teachers and school staff
+- Discuss the Bridge Programme and inclusive education if relevant
+- Share information about school activities, events, and opportunities
+- Address concerns about their child's academic or social development
+- Explain school policies, procedures, and how to get involved
+- Use warm, understanding language that acknowledges their role as advocates for their child"""
+                
+                else:
+                    # Default for unknown roles
+                    role_specific_guidelines = """
+## General Guidelines:
+- Be welcoming and informative about Prakriti School
+- Provide comprehensive information about our programs and philosophy
+- Encourage questions and engagement
+- Use warm, professional language
+- Focus on how Prakriti can meet their educational needs"""
+                
+                personalization += f"""
 
-## Personalization Guidelines:
-- Address the user by their first name when appropriate
-- Tailor responses to their specific role (student/teacher/parent)
-- Reference their grade, subjects, or department when relevant
-- Consider their learning goals and interests when providing advice
+{role_specific_guidelines}
+
+## General Personalization Guidelines:
+- Always address the user by their first name when appropriate
+- Use respectful titles (Sir/Madam) based on their gender preference when appropriate
+- Tailor your tone and content to their specific role and context
+- Reference their specific details (grade, subjects, department) when relevant
+- Consider their goals, interests, and needs when providing advice
 - Use their preferred learning style when suggesting study methods
-- Be more specific and targeted in your responses based on their profile"""
+- Be more specific and targeted in your responses based on their profile
+- Maintain Prakriti's warm, encouraging, and inclusive tone
+- Be respectful of gender identity and use appropriate language"""
 
             # Build messages array with conversation history
             messages = [
@@ -413,6 +563,14 @@ def generate_chatbot_response(request):
 - **Activities**: Sports, visual & performing arts, music, theater, STEM/design labs, farm outings, meditation/mindfulness, and maker projects
 - **Fee Structure**: Monthly fees range from ₹21,000 (Pre-Nursery-KG) to ₹35,000 (Grade XI-XII), with one-time admission charges of ₹125,000{personalization}
 
+## Your Communication Style:
+- **Be warm, friendly, and personal** - Always address the user by their first name with appropriate titles (Sir/Madam for teachers and parents)
+- **Use a conversational, encouraging tone** - Make every interaction feel like talking to a caring friend
+- **Be enthusiastic and positive** - Show genuine interest in helping and supporting the user
+- **Avoid robotic or formal language** - Use natural, human-like responses
+- **Show empathy and understanding** - Acknowledge the user's needs and concerns
+- **Be helpful and solution-oriented** - Focus on how you can assist and support them
+
 ## Your Role:
 - Always contextualize your responses specifically for Prakriti School
 - When discussing education, learning, or school-related topics, relate them to Prakriti's progressive, experiential approach
@@ -421,8 +579,9 @@ def generate_chatbot_response(request):
 - Be warm, encouraging, and aligned with Prakriti's compassionate, learner-centric values
 - Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points)
 - End responses with proper conclusions that reinforce Prakriti's educational philosophy
+- **Always use the user's first name (properly capitalized) and appropriate title (Sir/Madam) when addressing them**
 
-Remember: Every response should reflect Prakriti School's unique identity and educational approach."""}
+Remember: Every response should reflect Prakriti School's unique identity, educational approach, and warm, personal communication style."""}
             ]
             
             # Add conversation history (limit to last 10 messages to avoid token limits)

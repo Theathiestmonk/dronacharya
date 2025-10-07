@@ -30,6 +30,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
     role: 'student',
     first_name: '',
     last_name: '',
+    gender: '',
     phone: '',
     date_of_birth: '',
     address: '',
@@ -424,6 +425,25 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             }}
           />
           {renderFieldError('last_name')}
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+          <select
+            value={getStringValue(formData.gender)}
+            onChange={(e) => handleInputChange('gender', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+            style={{ 
+              borderColor: 'var(--brand-primary-200)',
+              boxShadow: '0 0 0 1px var(--brand-primary)'
+            }}
+          >
+            <option value="">Select Gender</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="other">Other</option>
+            <option value="prefer_not_to_say">Prefer not to say</option>
+          </select>
         </div>
         
         <div>
