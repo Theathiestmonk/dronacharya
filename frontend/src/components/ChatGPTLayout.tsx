@@ -87,6 +87,7 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Handle sidebar click for non-authenticated users
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleSidebarClick = () => {
     if (!user) {
       // Redirect to login for non-authenticated users

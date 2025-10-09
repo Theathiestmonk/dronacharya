@@ -8,6 +8,7 @@ interface EditProfileModalProps {
   onClose: () => void;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 type UserRole = 'student' | 'teacher' | 'parent';
 type FormData = Record<string, unknown>;
 
@@ -105,6 +106,7 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose }) 
   };
 
   // Helper function to render field error
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const renderFieldError = (field: string) => {
     const error = fieldErrors[field];
     if (error) {
@@ -246,8 +248,8 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose }) 
       };
       
       // Handle gender field - if empty, set to null for students
-      if (formData.role === 'student' && (!(requestData as any).gender || (requestData as any).gender === '')) {
-        (requestData as any).gender = null;
+      if (formData.role === 'student' && (!(requestData as Record<string, unknown>).gender || (requestData as Record<string, unknown>).gender === '')) {
+        (requestData as Record<string, unknown>).gender = null;
       }
       
       console.log('Sending profile update:', requestData);

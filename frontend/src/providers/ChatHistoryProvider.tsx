@@ -8,7 +8,7 @@ export interface ChatMessage {
   text: string;
   type?: string;
   url?: string;
-  videos?: any[];
+  videos?: unknown[];
 }
 
 export interface ChatSession {

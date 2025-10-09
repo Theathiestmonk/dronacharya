@@ -326,6 +326,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         throw new Error(errorData.error || 'Failed to save profile');
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const savedProfile = await response.json();
 
       // Mark onboarding as completed
@@ -378,7 +379,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             borderColor: 'border-orange-200',
             hoverShadow: 'hover:shadow-orange-200'
           }
-        ].map(({ role, title, description, icon, gradient, bgGradient, borderColor, hoverShadow }) => (
+        ].map(({ role, title, description, icon, bgGradient, hoverShadow }) => (
           <button
             key={role}
             type="button"
