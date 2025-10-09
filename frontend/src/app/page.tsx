@@ -5,7 +5,6 @@ import AuthFormWithOnboarding from '../components/AuthFormWithOnboarding';
 import OnboardingForm from '../components/OnboardingForm';
 import { useAuth } from '../providers/AuthProvider';
 import { ChatHistoryProvider, useChatHistory } from '../providers/ChatHistoryProvider';
-import { ThemeProvider } from '../providers/ThemeProvider';
 import { useSupabase } from '../providers/SupabaseProvider';
 import ChatGPTLayout from '../components/ChatGPTLayout';
 
@@ -30,24 +29,13 @@ const AppContent: React.FC<{
   const { isLoading: chatHistoryLoading } = useChatHistory();
   const [isFullyInitialized, setIsFullyInitialized] = useState(false);
 
-  // Immediate fallback for very fast loading
+  // Simple loading logic - just wait for auth to complete
   useEffect(() => {
-    const immediateTimer = setTimeout(() => {
-      if (!isFullyInitialized) {
-        console.log('Immediate fallback - forcing load');
-        setIsFullyInitialized(true);
-      }
-    }, 1000); // 1 second immediate fallback
-
-    return () => clearTimeout(immediateTimer);
-  }, [isFullyInitialized]);
-
-  // Simplified loading logic - just wait for chat history
-  useEffect(() => {
-    if (!chatHistoryLoading) {
+    if (!loading) {
+      console.log('Auth loading completed, initializing app');
       setIsFullyInitialized(true);
     }
-  }, [chatHistoryLoading]);
+  }, [loading]);
 
   // Fallback timeout to prevent infinite loading
   useEffect(() => {
@@ -183,19 +171,17 @@ const HomePage: React.FC = () => {
 
   // Show chatbot for all users (public access) with proper provider initialization
   return (
-    <ThemeProvider>
-      <ChatHistoryProvider>
-        <AppContent
-          user={user}
-          loading={loading}
-          needsOnboarding={needsOnboarding}
-          showAuthForm={showAuthForm}
-          setShowAuthForm={setShowAuthForm}
-          chatbotRef={chatbotRef}
-          chatKey={chatKey}
-        />
-      </ChatHistoryProvider>
-    </ThemeProvider>
+    <ChatHistoryProvider>
+      <AppContent
+        user={user}
+        loading={loading}
+        needsOnboarding={needsOnboarding}
+        showAuthForm={showAuthForm}
+        setShowAuthForm={setShowAuthForm}
+        chatbotRef={chatbotRef}
+        chatKey={chatKey}
+      />
+    </ChatHistoryProvider>
   );
 };
 

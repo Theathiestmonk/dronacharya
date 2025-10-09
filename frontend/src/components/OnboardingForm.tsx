@@ -253,18 +253,15 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
       // Add role-specific required fields
       const roleRequiredFields = [...baseRequiredFields];
       
-      console.log('Validating for role:', role);
-      console.log('Clean form data:', cleanFormData);
       
         if (role === 'student') {
           roleRequiredFields.push('grade', 'student_id', 'learning_style', 'emergency_contact_name', 'emergency_contact_phone');
         } else if (role === 'teacher') {
-        roleRequiredFields.push('employee_id', 'department', 'subjects_taught', 'years_of_experience', 'qualifications', 'emergency_contact_name', 'emergency_contact_phone');
+        roleRequiredFields.push('employee_id', 'department', 'subjects_taught', 'years_of_experience', 'qualifications', 'gender', 'emergency_contact_name', 'emergency_contact_phone');
       } else if (role === 'parent') {
-        roleRequiredFields.push('relationship_to_student', 'preferred_contact_method', 'emergency_contact_name', 'emergency_contact_phone');
+        roleRequiredFields.push('relationship_to_student', 'preferred_contact_method', 'gender', 'emergency_contact_name', 'emergency_contact_phone');
       }
       
-      console.log('Required fields for role:', roleRequiredFields);
       
       // Validate all required fields
       for (const field of roleRequiredFields) {
@@ -286,7 +283,6 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
       
       // If there are field errors, show them and stop submission
       if (Object.keys(newFieldErrors).length > 0) {
-        console.log('Validation errors found:', newFieldErrors);
         setFieldErrors(newFieldErrors);
         setLoading(false);
         return;
@@ -315,9 +311,6 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         }
       });
 
-      console.log('Saving profile data:', profileData);
-      console.log('Current role:', role);
-      console.log('Form data role:', cleanFormData.role);
 
       // Use the API endpoint instead of direct Supabase calls
       const response = await fetch('/api/user-profile', {
@@ -334,7 +327,6 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
       }
 
       const savedProfile = await response.json();
-      console.log('Profile saved successfully:', savedProfile);
 
       // Mark onboarding as completed
       await completeOnboarding();
@@ -348,37 +340,105 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
   };
 
   const renderRoleSelection = () => (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="text-center">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome to Prakriti School!</h2>
-        <p className="text-gray-600">Please select your role to get started</p>
+        <h2 className="text-3xl font-bold text-gray-900 mb-3">Welcome to Prakriti School!</h2>
+        <p className="text-lg text-gray-600">Please select your role to get started</p>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {[
-          { role: 'student', title: 'Student', description: 'I am a student at Prakriti School', icon: '🎓' },
-          { role: 'teacher', title: 'Teacher', description: 'I am a teacher at Prakriti School', icon: '👩‍🏫' },
-          { role: 'parent', title: 'Parent', description: 'I am a parent of a Prakriti student', icon: '👨‍👩‍👧‍👦' }
-        ].map(({ role, title, description, icon }) => (
+          { 
+            role: 'student', 
+            title: 'Student', 
+            description: 'I am a student at Prakriti School', 
+            icon: '🎓',
+            gradient: 'from-blue-500 to-purple-600',
+            bgGradient: 'from-blue-50 to-purple-50',
+            borderColor: 'border-blue-200',
+            hoverShadow: 'hover:shadow-blue-200'
+          },
+          { 
+            role: 'teacher', 
+            title: 'Teacher', 
+            description: 'I am a teacher at Prakriti School', 
+            icon: '👩‍🏫',
+            gradient: 'from-green-500 to-teal-600',
+            bgGradient: 'from-green-50 to-teal-50',
+            borderColor: 'border-green-200',
+            hoverShadow: 'hover:shadow-green-200'
+          },
+          { 
+            role: 'parent', 
+            title: 'Parent', 
+            description: 'I am a parent of a Prakriti student', 
+            icon: '👨‍👩‍👧‍👦',
+            gradient: 'from-orange-500 to-pink-600',
+            bgGradient: 'from-orange-50 to-pink-50',
+            borderColor: 'border-orange-200',
+            hoverShadow: 'hover:shadow-orange-200'
+          }
+        ].map(({ role, title, description, icon, gradient, bgGradient, borderColor, hoverShadow }) => (
           <button
             key={role}
             type="button"
             onClick={() => handleRoleChange(role as UserRole)}
-            className={`p-6 border-2 rounded-lg text-left transition-all ${
+            className={`group relative p-8 border-2 rounded-2xl text-left transition-all duration-300 transform hover:scale-105 hover:-translate-y-2 ${
               formData.role === role
-                ? 'border-gray-200'
-                : 'border-gray-200 hover:border-gray-300'
+                ? `border-blue-500 bg-gradient-to-br ${bgGradient} shadow-xl shadow-blue-200`
+                : `border-gray-200 bg-white hover:border-gray-300 ${hoverShadow} hover:shadow-xl`
             }`}
-            style={{
-              borderColor: formData.role === role ? 'var(--brand-primary)' : undefined,
-              backgroundColor: formData.role === role ? 'var(--brand-primary-50)' : undefined
-            }}
           >
-            <div className="text-3xl mb-3">{icon}</div>
-            <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-            <p className="text-sm text-gray-600">{description}</p>
+            {/* Selection indicator */}
+            {formData.role === role && (
+              <div className="absolute -top-2 -right-2 w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            )}
+            
+            {/* Icon and Title - Centered */}
+            <div className="text-center mb-4">
+              <div className={`text-3xl mb-3 transition-transform duration-300 ${
+                formData.role === role ? 'scale-110' : 'group-hover:scale-110'
+              }`} style={{
+                filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.2))',
+                textShadow: '0 2px 4px rgba(0,0,0,0.3)'
+              }}>
+                {icon}
+              </div>
+              <h3 className={`text-xl font-bold transition-colors duration-300 ${
+                formData.role === role ? 'text-blue-700' : 'text-gray-900 group-hover:text-gray-700'
+              }`}>
+                {title}
+              </h3>
+            </div>
+            
+            {/* Description */}
+            <div className="text-center">
+              <p className={`text-sm leading-relaxed transition-colors duration-300 ${
+                formData.role === role ? 'text-blue-600' : 'text-gray-600 group-hover:text-gray-500'
+              }`}>
+                {description}
+              </p>
+            </div>
+            
+            {/* Hover effect overlay */}
+            <div className={`absolute inset-0 rounded-2xl transition-opacity duration-300 ${
+              formData.role === role 
+                ? 'opacity-0' 
+                : 'opacity-0 group-hover:opacity-5 bg-gradient-to-r from-gray-400 to-gray-600'
+            }`}></div>
           </button>
         ))}
+      </div>
+      
+      {/* Additional visual enhancement */}
+      <div className="text-center mt-6">
+        <div className="text-sm text-gray-500">
+          Choose your role to continue
+        </div>
       </div>
     </div>
   );
@@ -427,24 +487,28 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           {renderFieldError('last_name')}
         </div>
         
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
-          <select
-            value={getStringValue(formData.gender)}
-            onChange={(e) => handleInputChange('gender', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
-            style={{ 
-              borderColor: 'var(--brand-primary-200)',
-              boxShadow: '0 0 0 1px var(--brand-primary)'
-            }}
-          >
-            <option value="">Select Gender</option>
-            <option value="male">Male</option>
-            <option value="female">Female</option>
-            <option value="other">Other</option>
-            <option value="prefer_not_to_say">Prefer not to say</option>
-          </select>
-        </div>
+        {/* Gender field - only for Teacher and Parent roles */}
+        {formData.role !== 'student' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Gender *</label>
+            <select
+              required
+              value={getStringValue(formData.gender)}
+              onChange={(e) => handleInputChange('gender', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+              style={{ 
+                borderColor: 'var(--brand-primary-200)',
+                boxShadow: '0 0 0 1px var(--brand-primary)'
+              }}
+            >
+              <option value="">Select Gender</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+              <option value="prefer_not_to_say">Prefer not to say</option>
+            </select>
+          </div>
+        )}
         
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
@@ -484,7 +548,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           value={getStringValue(formData.address)}
           onChange={(e) => handleInputChange('address', e.target.value)}
           rows={3}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-2"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-1"
+          style={{ 
+            borderColor: 'var(--brand-primary-200)',
+            boxShadow: '0 0 0 1px var(--brand-primary)'
+          }}
         />
       </div>
       
@@ -631,7 +699,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           onChange={(e) => handleInputChange('learning_goals', e.target.value)}
           rows={3}
           placeholder="What do you hope to achieve this year?"
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-2"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-1"
+          style={{ 
+            borderColor: 'var(--brand-primary-200)',
+            boxShadow: '0 0 0 1px var(--brand-primary)'
+          }}
         />
       </div>
       
@@ -642,7 +714,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           value={getArrayDisplayValue('interests')}
           onChange={(e) => handleArrayInputChange('interests', e.target.value)}
           placeholder="Sports, Music, Art, Science, Technology"
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-2"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-1"
+          style={{ 
+            borderColor: 'var(--brand-primary-200)',
+            boxShadow: '0 0 0 1px var(--brand-primary)'
+          }}
         />
         <p className="text-xs text-gray-500 mt-1">Separate multiple interests with commas</p>
       </div>
@@ -654,7 +730,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           onChange={(e) => handleInputChange('special_needs', e.target.value)}
           rows={2}
           placeholder="Any special needs or accommodations you require"
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-2"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-1"
+          style={{ 
+            borderColor: 'var(--brand-primary-200)',
+            boxShadow: '0 0 0 1px var(--brand-primary)'
+          }}
         />
       </div>
       
@@ -707,7 +787,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Faculty ID *</label>
           <input
             type="text"
             required
@@ -944,7 +1024,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           value={getArrayDisplayValue('specializations')}
           onChange={(e) => handleArrayInputChange('specializations', e.target.value)}
           placeholder="Special Education, STEM, Language Arts"
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-2"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-1"
+          style={{ 
+            borderColor: 'var(--brand-primary-200)',
+            boxShadow: '0 0 0 1px var(--brand-primary)'
+          }}
         />
         <p className="text-xs text-gray-500 mt-1">Separate multiple specializations with commas</p>
       </div>
@@ -1073,7 +1157,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           onChange={(e) => handleInputChange('communication_preferences', e.target.value)}
           rows={3}
           placeholder="How would you like to be contacted? Any specific preferences?"
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-2"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-1"
+          style={{ 
+            borderColor: 'var(--brand-primary-200)',
+            boxShadow: '0 0 0 1px var(--brand-primary)'
+          }}
         />
       </div>
       
@@ -1139,43 +1227,23 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
       case 1:
         return formData.role !== undefined;
       case 2:
-        return formData.first_name && formData.last_name && formData.phone && formData.date_of_birth && formData.address && formData.city && formData.state && formData.postal_code;
+        const basicFields = formData.first_name && formData.last_name && formData.phone && formData.date_of_birth && formData.address && formData.city && formData.state && formData.postal_code;
+        // For teacher and parent roles, also require gender in step 2
+        if (role === 'teacher' || role === 'parent') {
+          return basicFields && formData.gender;
+        }
+        return basicFields;
       case 3:
         if (role === 'student') {
           const canProceedStudent = formData.grade && formData.student_id && formData.learning_style && formData.emergency_contact_name && formData.emergency_contact_phone;
-          console.log('Student canProceed check:', {
-            grade: formData.grade,
-            student_id: formData.student_id,
-            learning_style: formData.learning_style,
-            emergency_contact_name: formData.emergency_contact_name,
-            emergency_contact_phone: formData.emergency_contact_phone,
-            canProceed: canProceedStudent
-          });
           return canProceedStudent;
         }
         if (role === 'teacher') {
-          const canProceedTeacher = formData.employee_id && formData.department && formData.subjects_taught && formData.years_of_experience !== undefined && formData.qualifications && formData.emergency_contact_name && formData.emergency_contact_phone;
-          console.log('Teacher canProceed check:', {
-            employee_id: formData.employee_id,
-            department: formData.department,
-            subjects_taught: formData.subjects_taught,
-            years_of_experience: formData.years_of_experience,
-            qualifications: formData.qualifications,
-            emergency_contact_name: formData.emergency_contact_name,
-            emergency_contact_phone: formData.emergency_contact_phone,
-            canProceed: canProceedTeacher
-          });
+          const canProceedTeacher = formData.employee_id && formData.department && formData.subjects_taught && formData.years_of_experience !== undefined && formData.qualifications && formData.gender && formData.emergency_contact_name && formData.emergency_contact_phone;
           return canProceedTeacher;
         }
         if (role === 'parent') {
-          const canProceedParent = formData.relationship_to_student && formData.preferred_contact_method && formData.emergency_contact_name && formData.emergency_contact_phone;
-          console.log('Parent canProceed check:', {
-            relationship_to_student: formData.relationship_to_student,
-            preferred_contact_method: formData.preferred_contact_method,
-            emergency_contact_name: formData.emergency_contact_name,
-            emergency_contact_phone: formData.emergency_contact_phone,
-            canProceed: canProceedParent
-          });
+          const canProceedParent = formData.relationship_to_student && formData.preferred_contact_method && formData.gender && formData.emergency_contact_name && formData.emergency_contact_phone;
           return canProceedParent;
         }
         return false;

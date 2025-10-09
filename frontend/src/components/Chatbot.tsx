@@ -4,7 +4,6 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useAuth } from '@/providers/AuthProvider';
 import { useChatHistory } from '@/providers/ChatHistoryProvider';
-import { useTheme } from '@/providers/ThemeProvider';
 
 type Message =
   | { sender: 'user' | 'bot'; text: string }
@@ -36,7 +35,6 @@ interface ChatbotProps {
 
 const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ clearChat }, ref) => {
   const { user, profile } = useAuth();
-  const { theme } = useTheme();
   const { 
     getActiveSession, 
     addMessage, 
@@ -282,10 +280,9 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     setMessages((msgs) => [...msgs, userMsg]);
     
     // Add user message to chat history
-    addMessage({
+    await addMessage({
       sender: 'user',
       text: input,
-      timestamp: Date.now(),
     });
     
     // Add user message to conversation history
@@ -333,10 +330,9 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       if (data.type === 'calendar' && data.response && data.response.url) {
         const botMsg = { sender: 'bot' as const, type: 'calendar' as const, url: data.response.url };
         setMessages((msgs) => [...msgs, botMsg]);
-        addMessage({
+        await addMessage({
           sender: 'bot',
           text: data.response.url,
-          timestamp: Date.now(),
           type: 'calendar',
           url: data.response.url,
         });
@@ -347,10 +343,9 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       } else if (data.type === 'map' && data.response && data.response.url) {
         const botMsg = { sender: 'bot' as const, type: 'map' as const, url: data.response.url };
         setMessages((msgs) => [...msgs, botMsg]);
-        addMessage({
+        await addMessage({
           sender: 'bot',
           text: data.response.url,
-          timestamp: Date.now(),
           type: 'map',
           url: data.response.url,
         });
@@ -377,10 +372,9 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         // Handle video responses
         const botMsg = { sender: 'bot' as const, type: 'videos' as const, videos: data.response.videos };
         setMessages((msgs) => [...msgs, botMsg]);
-        addMessage({
+        await addMessage({
           sender: 'bot',
           text: JSON.stringify(data.response.videos),
-          timestamp: Date.now(),
           type: 'videos',
           videos: data.response.videos,
         });
@@ -400,7 +394,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       
       let idx = 0;
       setIsTyping(true);
-      function typeChar() {
+      async function typeChar() {
         setDisplayedBotText(fullText.slice(0, idx + 1));
         if (idx < fullText.length - 1) {
           idx++;
@@ -411,17 +405,16 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           setMessages((msgs) => [...msgs, { sender: 'bot', text: fullText }]);
           
           // Add to chat history
-          addMessage({
+          await addMessage({
             sender: 'bot',
             text: fullText,
-            timestamp: Date.now(),
           });
           
           // Mark that we've had the first response
           setHasFirstResponse(true);
         }
       }
-      typeChar();
+      await typeChar();
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         // Request was aborted, don't add error message
@@ -559,7 +552,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   }), [handleClearChat]);
 
   return (
-    <div className={`flex flex-col h-[70vh] sm:h-[80vh] w-full max-w-xl mx-auto ${theme === 'dark' ? 'bg-gray-900' : 'bg-transparent'} p-2 sm:p-0`}>
+    <div className="flex flex-col h-[70vh] sm:h-[80vh] w-full max-w-xl mx-auto bg-transparent p-2 sm:p-0">
       {messages.length === 0 ? (
         <>
           {/* Welcome Screen - Centered Layout */}
@@ -575,7 +568,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             </div>
             {/* Heading */}
             <div className="mb-8 sm:mb-12 text-center px-2">
-              <h2 className={`text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-normal mb-2 leading-tight ${theme === 'dark' ? 'text-gray-300' : 'text-gray-500'}`}>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-normal mb-2 leading-tight text-gray-500">
                 {welcomeMessage ? renderWelcomeMessage(welcomeMessage) : "Loading..."}
               </h2>
             </div>
@@ -585,7 +578,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               <div className="relative flex items-end w-full px-1 sm:px-0">
                 <textarea
                   ref={inputRef}
-                  className={`w-full border rounded-[20px] px-4 sm:px-5 py-3 pr-20 sm:pr-24 bg-transparent focus:outline-none resize-none font-normal text-sm sm:text-base ${theme === 'dark' ? 'border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-400'}`}
+                  className="w-full border rounded-[20px] px-4 sm:px-5 py-3 pr-20 sm:pr-24 bg-transparent focus:outline-none resize-none font-normal text-sm sm:text-base border-gray-300 text-gray-900 placeholder-gray-400"
                   style={{ height: 'auto', minHeight: '60px', maxHeight: '120px' }}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
@@ -597,7 +590,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                 />
                 {/* Microphone button inside textarea */}
                 <button
-                  className={`absolute right-12 sm:right-14 bottom-2 p-2 rounded-full transition-all duration-200 ${listening ? 'animate-pulse' : ''} ${theme === 'dark' ? 'hover:bg-gray-700 hover:scale-105' : 'hover:bg-gray-200 hover:scale-105'}`}
+                  className={`absolute right-12 sm:right-14 bottom-2 p-2 rounded-full transition-all duration-200 ${listening ? 'animate-pulse' : ''} hover:bg-gray-200 hover:scale-105`}
                   style={{ 
                     backgroundColor: listening ? 'var(--brand-primary-50)' : 'transparent',
                     borderColor: listening ? 'var(--brand-primary)' : 'transparent',
@@ -610,14 +603,14 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                   tabIndex={0}
                 >
                   {/* Heroicons solid mic icon */}
-                  <svg viewBox="0 0 20 20" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${theme === 'dark' ? (listening ? 'text-blue-400' : 'text-gray-300') : (listening ? 'var(--brand-primary)' : '#6b7280')}`}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
+                  <svg viewBox="0 0 20 20" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${listening ? 'var(--brand-primary)' : '#6b7280'}`}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
                 </button>
                 {/* Send/Stop button as icon inside textarea */}
                 <button
                   className={`absolute right-2 bottom-2 p-2 rounded-full transition-all duration-200 disabled:opacity-50 ${
                     (isGenerating || isTyping)
-                      ? `${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-600 hover:bg-gray-700'} shadow-lg animate-pulse` 
-                      : `${theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-200'}`
+                      ? 'bg-gray-600 hover:bg-gray-700 shadow-lg animate-pulse' 
+                      : 'hover:bg-gray-200'
                   }`}
                   onClick={(isGenerating || isTyping) ? stopGeneration : sendMessage}
                   disabled={!(isGenerating || isTyping) && (loading || requestInProgress || !input.trim())}
@@ -627,12 +620,12 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                 >
                   {(isGenerating || isTyping) ? (
                     /* Stop icon - more prominent */
-                    <svg viewBox="0 0 24 24" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${theme === 'dark' ? 'text-gray-200' : 'text-white'}`}>
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 sm:w-6 sm:h-6 text-white">
                       <path d="M6 6h12v12H6z" />
                     </svg>
                   ) : (
                     /* Send icon */
-                    <svg viewBox="0 0 24 24" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-500'}`}>
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 sm:w-6 sm:h-6 text-gray-500">
                       <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
                     </svg>
                   )}
@@ -688,7 +681,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               </div>
             </div>
           )}
-          <div className="flex-1 overflow-y-auto mb-4 space-y-2 pr-2 sm:pr-4" style={{ minHeight: 0 }}>
+          <div className="flex-1 overflow-y-auto mb-4 space-y-2 pr-2 sm:pr-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400" style={{ minHeight: 0 }}>
         
         {messages.map((msg, idx) => (
           'type' in msg && msg.type === 'calendar' ? (
@@ -729,9 +722,9 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                         />
                       </div>
                       <div className="flex-1">
-                        <h3 className={`text-base sm:text-lg font-semibold mb-2 line-clamp-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{video.title}</h3>
-                        <p className={`text-xs sm:text-sm mb-2 line-clamp-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>{video.description}</p>
-                        <div className={`flex flex-wrap items-center gap-2 sm:gap-4 text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                        <h3 className="text-base sm:text-lg font-semibold mb-2 line-clamp-2 text-gray-900">{video.title}</h3>
+                        <p className="text-xs sm:text-sm mb-2 line-clamp-2 text-gray-600">{video.description}</p>
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-gray-500">
                           <span className="px-2 py-1 rounded text-xs" style={{ backgroundColor: 'var(--brand-primary-100)', color: 'var(--brand-primary-800)' }}>{video.category}</span>
                           <span className="text-xs">{video.duration}</span>
                         </div>
@@ -760,11 +753,11 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               className={`flex ${'text' in msg && msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[85%] sm:max-w-[80%] break-words ${
-                  'text' in msg && msg.sender === 'user'
-                    ? `${theme === 'dark' ? 'text-blue-300' : 'text-blue-900'} text-right justify-end`
-                    : `${theme === 'dark' ? 'text-white' : 'text-gray-900'} text-left`
-                }`}
+              className={`max-w-[85%] sm:max-w-[80%] break-words ${
+                'text' in msg && msg.sender === 'user'
+                  ? 'text-blue-900 text-right justify-end'
+                  : 'text-gray-900 text-left'
+              }`}
                 style={{ background: 'none', padding: '0.75rem 0', borderRadius: 0 }}
               >
                 {'text' in msg && (
@@ -773,20 +766,20 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                       remarkPlugins={[remarkGfm]}
                       components={{
                         // Custom styling for Markdown elements
-                        h1: ({...props}) => <h1 className={`text-xl font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`} {...props} />,
-                        h2: ({...props}) => <h2 className={`text-lg font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`} {...props} />,
-                        h3: ({...props}) => <h3 className={`text-base font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`} {...props} />,
-                        p: ({...props}) => <p className={`mb-2 leading-relaxed ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
-                        ul: ({...props}) => <ul className={`list-disc list-inside mb-2 space-y-1 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
-                        ol: ({...props}) => <ol className={`list-decimal list-inside mb-2 space-y-1 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
-                        li: ({...props}) => <li className={`mb-1 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
-                        strong: ({...props}) => <strong className={`font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`} {...props} />,
-                        em: ({...props}) => <em className={`italic ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
-                        code: ({...props}) => <code className={`px-1 py-0.5 rounded text-sm font-mono ${theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-800'}`} {...props} />,
-                        blockquote: ({...props}) => <blockquote className={`border-l-4 pl-4 italic py-2 rounded-r ${theme === 'dark' ? 'text-gray-300 border-gray-600 bg-gray-800' : 'text-gray-600 border-gray-300 bg-gray-50'}`} style={{ borderLeftColor: theme === 'dark' ? '#4B5563' : 'var(--brand-primary-300)', backgroundColor: theme === 'dark' ? '#1F2937' : 'var(--brand-primary-50)' }} {...props} />,
-                        table: ({...props}) => <table className={`border-collapse w-full mb-2 text-sm ${theme === 'dark' ? 'border-gray-600' : 'border-gray-300'}`} {...props} />,
-                        th: ({...props}) => <th className={`border px-2 py-1 font-bold ${theme === 'dark' ? 'border-gray-600 bg-gray-700 text-gray-200' : 'border-gray-300 bg-gray-100 text-gray-800'}`} {...props} />,
-                        td: ({...props}) => <td className={`border px-2 py-1 ${theme === 'dark' ? 'border-gray-600 text-gray-200' : 'border-gray-300 text-gray-700'}`} {...props} />,
+                        h1: ({...props}) => <h1 className="text-xl font-bold mb-2 text-gray-800" {...props} />,
+                        h2: ({...props}) => <h2 className="text-lg font-bold mb-2 text-gray-800" {...props} />,
+                        h3: ({...props}) => <h3 className="text-base font-bold mb-2 text-gray-800" {...props} />,
+                        p: ({...props}) => <p className="mb-2 leading-relaxed text-gray-700" {...props} />,
+                        ul: ({...props}) => <ul className="list-disc list-inside mb-2 space-y-1 text-gray-700" {...props} />,
+                        ol: ({...props}) => <ol className="list-decimal list-inside mb-2 space-y-1 text-gray-700" {...props} />,
+                        li: ({...props}) => <li className="mb-1 text-gray-700" {...props} />,
+                        strong: ({...props}) => <strong className="font-bold text-gray-900" {...props} />,
+                        em: ({...props}) => <em className="italic text-gray-700" {...props} />,
+                        code: ({...props}) => <code className="px-1 py-0.5 rounded text-sm font-mono bg-gray-100 text-gray-800" {...props} />,
+                        blockquote: ({...props}) => <blockquote className="border-l-4 pl-4 italic py-2 rounded-r text-gray-600 border-gray-300 bg-gray-50" style={{ borderLeftColor: 'var(--brand-primary-300)', backgroundColor: 'var(--brand-primary-50)' }} {...props} />,
+                        table: ({...props}) => <table className="border-collapse w-full mb-2 text-sm border-gray-300" {...props} />,
+                        th: ({...props}) => <th className="border px-2 py-1 font-bold border-gray-300 bg-gray-100 text-gray-800" {...props} />,
+                        td: ({...props}) => <td className="border px-2 py-1 border-gray-300 text-gray-700" {...props} />,
                       }}
                     >
                       {msg.text}
@@ -813,7 +806,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           <div className="flex justify-start">
             <div 
               ref={typingRef}
-              className={`max-w-[80%] break-words text-left ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`} 
+              className="max-w-[80%] break-words text-left text-gray-900" 
               style={{ background: 'none', padding: '0.75rem 0', borderRadius: 0 }}
             >
               <div className="markdown-content">
@@ -821,20 +814,20 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                   remarkPlugins={[remarkGfm]}
                   components={{
                     // Custom styling for Markdown elements
-                    h1: ({...props}) => <h1 className={`text-xl font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`} {...props} />,
-                    h2: ({...props}) => <h2 className={`text-lg font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`} {...props} />,
-                    h3: ({...props}) => <h3 className={`text-base font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`} {...props} />,
-                    p: ({...props}) => <p className={`mb-2 leading-relaxed ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
-                    ul: ({...props}) => <ul className={`list-disc list-inside mb-2 space-y-1 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
-                    ol: ({...props}) => <ol className={`list-decimal list-inside mb-2 space-y-1 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
-                    li: ({...props}) => <li className={`mb-1 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
-                    strong: ({...props}) => <strong className={`font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`} {...props} />,
-                    em: ({...props}) => <em className={`italic ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`} {...props} />,
-                    code: ({...props}) => <code className={`px-1 py-0.5 rounded text-sm font-mono ${theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-800'}`} {...props} />,
-                    blockquote: ({...props}) => <blockquote className={`border-l-4 pl-4 italic py-2 rounded-r ${theme === 'dark' ? 'text-gray-300 border-gray-600 bg-gray-800' : 'text-gray-600 border-gray-300 bg-gray-50'}`} style={{ borderLeftColor: theme === 'dark' ? '#4B5563' : 'var(--brand-primary-300)', backgroundColor: theme === 'dark' ? '#1F2937' : 'var(--brand-primary-50)' }} {...props} />,
-                    table: ({...props}) => <table className={`border-collapse w-full mb-2 text-sm ${theme === 'dark' ? 'border-gray-600' : 'border-gray-300'}`} {...props} />,
-                    th: ({...props}) => <th className={`border px-2 py-1 font-bold ${theme === 'dark' ? 'border-gray-600 bg-gray-700 text-gray-200' : 'border-gray-300 bg-gray-100 text-gray-800'}`} {...props} />,
-                    td: ({...props}) => <td className={`border px-2 py-1 ${theme === 'dark' ? 'border-gray-600 text-gray-200' : 'border-gray-300 text-gray-700'}`} {...props} />,
+                    h1: ({...props}) => <h1 className="text-xl font-bold mb-2 text-gray-800" {...props} />,
+                    h2: ({...props}) => <h2 className="text-lg font-bold mb-2 text-gray-800" {...props} />,
+                    h3: ({...props}) => <h3 className="text-base font-bold mb-2 text-gray-800" {...props} />,
+                    p: ({...props}) => <p className="mb-2 leading-relaxed text-gray-700" {...props} />,
+                    ul: ({...props}) => <ul className="list-disc list-inside mb-2 space-y-1 text-gray-700" {...props} />,
+                    ol: ({...props}) => <ol className="list-decimal list-inside mb-2 space-y-1 text-gray-700" {...props} />,
+                    li: ({...props}) => <li className="mb-1 text-gray-700" {...props} />,
+                    strong: ({...props}) => <strong className="font-bold text-gray-900" {...props} />,
+                    em: ({...props}) => <em className="italic text-gray-700" {...props} />,
+                    code: ({...props}) => <code className="px-1 py-0.5 rounded text-sm font-mono bg-gray-100 text-gray-800" {...props} />,
+                    blockquote: ({...props}) => <blockquote className="border-l-4 pl-4 italic py-2 rounded-r text-gray-600 border-gray-300 bg-gray-50" style={{ borderLeftColor: 'var(--brand-primary-300)', backgroundColor: 'var(--brand-primary-50)' }} {...props} />,
+                    table: ({...props}) => <table className="border-collapse w-full mb-2 text-sm border-gray-300" {...props} />,
+                    th: ({...props}) => <th className="border px-2 py-1 font-bold border-gray-300 bg-gray-100 text-gray-800" {...props} />,
+                    td: ({...props}) => <td className="border px-2 py-1 border-gray-300 text-gray-700" {...props} />,
                   }}
                 >
                   {displayedBotText}
@@ -845,7 +838,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         )}
         {loading && !isTyping && (
           <div className="flex justify-start">
-            <div className={`max-w-[80%] break-words text-left ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`} style={{ background: 'none', padding: '0.75rem 0', borderRadius: 0 }}>
+            <div className="max-w-[80%] break-words text-left text-gray-900" style={{ background: 'none', padding: '0.75rem 0', borderRadius: 0 }}>
               <TypingDots />
             </div>
           </div>
@@ -856,7 +849,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           <div className="relative flex items-end w-full mt-auto px-1 sm:px-0">
             <textarea
               ref={inputRef}
-              className={`w-full border rounded-[20px] px-4 sm:px-5 py-3 pr-20 sm:pr-24 bg-transparent focus:outline-none resize-none font-normal text-sm sm:text-base ${theme === 'dark' ? 'border-gray-600 text-white placeholder-gray-400' : 'border-gray-300 text-gray-900 placeholder-gray-400'}`}
+              className="w-full border rounded-[20px] px-4 sm:px-5 py-3 pr-20 sm:pr-24 bg-transparent focus:outline-none resize-none font-normal text-sm sm:text-base border-gray-300 text-gray-900 placeholder-gray-400"
               style={{ height: 'auto', minHeight: '60px', maxHeight: '120px' }}
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -868,7 +861,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                 />
                 {/* Microphone button inside textarea */}
             <button
-              className={`absolute right-12 sm:right-14 bottom-2 p-2 rounded-full transition-all duration-200 ${listening ? 'animate-pulse' : ''} ${theme === 'dark' ? 'hover:bg-gray-700 hover:scale-105' : 'hover:bg-gray-200 hover:scale-105'}`}
+              className={`absolute right-12 sm:right-14 bottom-2 p-2 rounded-full transition-all duration-200 ${listening ? 'animate-pulse' : ''} hover:bg-gray-200 hover:scale-105`}
               style={{ 
                 backgroundColor: listening ? 'var(--brand-primary-50)' : 'transparent',
                 borderColor: listening ? 'var(--brand-primary)' : 'transparent',
@@ -881,14 +874,14 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               tabIndex={0}
             >
               {/* Heroicons solid mic icon */}
-              <svg viewBox="0 0 20 20" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${theme === 'dark' ? (listening ? 'text-blue-400' : 'text-gray-300') : (listening ? 'var(--brand-primary)' : '#6b7280')}`}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
+              <svg viewBox="0 0 20 20" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${listening ? 'var(--brand-primary)' : '#6b7280'}`}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
             </button>
             {/* Send/Stop button as icon inside textarea */}
             <button
               className={`absolute right-2 bottom-2 p-2 rounded-full transition-all duration-200 disabled:opacity-50 ${
                 (isGenerating || isTyping)
-                  ? `${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-600 hover:bg-gray-700'} shadow-lg animate-pulse` 
-                  : `${theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-200'}`
+                  ? 'bg-gray-600 hover:bg-gray-700 shadow-lg animate-pulse' 
+                  : 'hover:bg-gray-200'
               }`}
               onClick={(isGenerating || isTyping) ? stopGeneration : sendMessage}
               disabled={!(isGenerating || isTyping) && (loading || requestInProgress || !input.trim())}
@@ -898,12 +891,12 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             >
               {(isGenerating || isTyping) ? (
                 /* Stop icon - more prominent */
-                <svg viewBox="0 0 24 24" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${theme === 'dark' ? 'text-gray-200' : 'text-white'}`}>
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 sm:w-6 sm:h-6 text-white">
                   <path d="M6 6h12v12H6z" />
                 </svg>
               ) : (
                 /* Send icon */
-                <svg viewBox="0 0 24 24" fill="currentColor" className={`w-5 h-5 sm:w-6 sm:h-6 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-500'}`}>
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 sm:w-6 sm:h-6 text-gray-500">
                   <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
                 </svg>
               )}

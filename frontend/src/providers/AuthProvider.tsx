@@ -70,6 +70,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isFirstLogin, setIsFirstLogin] = useState(false);
+  const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
+  const [profileLoadError, setProfileLoadError] = useState(false);
   const supabase = useSupabase();
 
   const fetchUserProfile = useCallback(async (userId: string) => {
@@ -86,22 +88,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.log('Profile loaded in AuthProvider:', JSON.stringify(data, null, 2));
         setProfile(data);
         setIsFirstLogin(false);
+        setProfileLoadError(false);
       } else if (response.status === 404) {
         // Profile not found - this is a first-time user
         console.log('User profile not found - first time user');
         setProfile(null);
         setIsFirstLogin(true);
+        setProfileLoadError(false);
       } else {
         console.error('Error fetching user profile:', response.status, response.statusText);
         setProfile(null);
-        setIsFirstLogin(true);
+        setProfileLoadError(true); // Mark that there was an error loading profile
+        // Don't set isFirstLogin to true on API errors - user might already be onboarded
       }
     } catch (error) {
       console.error('Error fetching user profile:', error);
       setProfile(null);
-      // If there's an error fetching profile, treat as first-time user
-      setIsFirstLogin(true);
+      setProfileLoadError(true); // Mark that there was an error loading profile
+      // Don't set isFirstLogin to true on network errors - user might already be onboarded
     } finally {
+      // Only set loading to false if we're not in the middle of auth state change
+      console.log('fetchUserProfile completed, setting loading to false');
       setLoading(false);
     }
   }, []);
@@ -118,21 +125,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const timeoutId = setTimeout(() => {
       console.log('Auth loading timeout - setting loading to false');
       setLoading(false);
-    }, 1500); // 1.5 second timeout - even faster
+    }, 3000); // Increased to 3 seconds to allow proper loading
 
     // Get initial session
     const getInitialSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
+        console.log('Initial session check:', session?.user ? 'User found' : 'No user');
         setUser(session?.user ?? null);
+        setHasCheckedAuth(true);
         
         if (session?.user) {
           await fetchUserProfile(session.user.id);
         } else {
+          // Only set loading to false if we're sure there's no user
+          console.log('No user session found - setting loading to false');
           setLoading(false);
         }
       } catch (error) {
         console.error('Error getting initial session:', error);
+        setHasCheckedAuth(true);
         setLoading(false);
       } finally {
         // Always clear timeout when session check is complete
@@ -144,7 +156,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state change:', event, session?.user ? 'User found' : 'No user');
       setUser(session?.user ?? null);
+      setHasCheckedAuth(true);
       
       if (session?.user) {
         await fetchUserProfile(session.user.id);
@@ -301,18 +315,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const completeOnboarding = async () => {
     setIsFirstLogin(false);
+    // Save onboarding completion to localStorage as backup
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('onboarding_completed', 'true');
+    }
     // Fetch the updated profile from the server to ensure we have the latest data
     if (user) {
       await fetchUserProfile(user.id);
     }
   };
 
-  const needsOnboarding = Boolean(user && (isFirstLogin || !profile || !profile.onboarding_completed));
+  // Check localStorage for onboarding completion when there's a profile load error
+  const getOnboardingFromStorage = () => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('onboarding_completed');
+      return stored === 'true';
+    }
+    return false;
+  };
+
+  const needsOnboarding = Boolean(
+    user && 
+    !profileLoadError && 
+    (isFirstLogin || !profile || !profile.onboarding_completed) &&
+    !getOnboardingFromStorage() // Don't show onboarding if it's completed in localStorage
+  );
 
   const value = {
     user,
     profile,
-    loading,
+    loading: loading || !hasCheckedAuth, // Keep loading true until auth is checked
     signIn,
     signInWithGoogle,
     signUp,

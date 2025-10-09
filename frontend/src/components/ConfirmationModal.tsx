@@ -1,6 +1,5 @@
 "use client";
 import React from 'react';
-import { useTheme } from '@/providers/ThemeProvider';
 
 interface ConfirmationModalProps {
   isOpen: boolean;
@@ -25,7 +24,6 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
   type,
   isLoading = false
 }) => {
-  const { theme } = useTheme();
 
   if (!isOpen) return null;
 
@@ -39,7 +37,7 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
             </svg>
           ),
           confirmButton: 'bg-red-600 hover:bg-red-700 focus:ring-red-500',
-          iconBg: 'bg-red-100 dark:bg-red-900/20'
+          iconBg: 'bg-red-100'
         };
       case 'warning':
         return {
@@ -49,7 +47,7 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
             </svg>
           ),
           confirmButton: 'bg-brand-primary-600 hover:bg-brand-primary-700 focus:ring-brand-primary-500',
-          iconBg: 'bg-brand-primary-100 dark:bg-brand-primary-900/20'
+          iconBg: 'bg-brand-primary-100'
         };
       case 'info':
         return {
@@ -59,7 +57,7 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
             </svg>
           ),
           confirmButton: 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500',
-          iconBg: 'bg-blue-100 dark:bg-blue-900/20'
+          iconBg: 'bg-blue-100'
         };
       default:
         return {
@@ -69,7 +67,7 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
             </svg>
           ),
           confirmButton: 'bg-gray-600 hover:bg-gray-700 focus:ring-gray-500',
-          iconBg: 'bg-gray-100 dark:bg-gray-900/20'
+          iconBg: 'bg-gray-100'
         };
     }
   };
@@ -86,9 +84,7 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
       
       {/* Modal */}
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className={`relative w-full max-w-md transform overflow-hidden rounded-2xl shadow-xl transition-all ${
-          theme === 'dark' ? 'bg-gray-800/70 backdrop-blur-sm' : 'bg-white/70 backdrop-blur-sm'
-        }`}>
+        <div className="relative w-full max-w-md transform overflow-hidden rounded-2xl shadow-xl transition-all bg-white/70 backdrop-blur-sm">
           {/* Content */}
           <div className="p-6">
             {/* Icon and Title */}
@@ -97,14 +93,10 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
                 {typeStyles.icon}
               </div>
               <div className="ml-4 flex-1">
-                <h3 className={`text-lg font-semibold ${
-                  theme === 'dark' ? 'text-white' : 'text-gray-900'
-                }`}>
+                <h3 className="text-lg font-semibold text-gray-900">
                   {title}
                 </h3>
-                <p className={`mt-2 text-sm ${
-                  theme === 'dark' ? 'text-gray-300' : 'text-gray-600'
-                }`}>
+                <p className="mt-2 text-sm text-gray-600">
                   {message}
                 </p>
               </div>
@@ -115,11 +107,7 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
               <button
                 onClick={onClose}
                 disabled={isLoading}
-                className={`w-full sm:w-auto px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
-                  theme === 'dark' 
-                    ? 'border-gray-600 text-gray-300 hover:bg-gray-700 focus:ring-gray-500' 
-                    : 'border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-gray-500'
-                } focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50`}
+                className="w-full sm:w-auto px-4 py-2 text-sm font-medium rounded-lg border transition-colors border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50"
               >
                 {cancelText}
               </button>

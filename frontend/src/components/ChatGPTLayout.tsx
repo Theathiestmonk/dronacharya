@@ -1,11 +1,9 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/providers/AuthProvider';
 import { useChatHistory } from '@/providers/ChatHistoryProvider';
-import { useTheme } from '@/providers/ThemeProvider';
 import UserAvatarDropdown from './UserAvatarDropdown';
 import EditProfileModal from './EditProfileModal';
-import ThemeToggle from './ThemeToggle';
 import ConfirmationModal from './ConfirmationModal';
 import Image from 'next/image';
 
@@ -16,7 +14,6 @@ interface ChatGPTLayoutProps {
 
 const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect }) => {
   const { user, signOut } = useAuth();
-  const { theme } = useTheme();
   const { 
     sessions, 
     activeSessionId, 
@@ -27,10 +24,61 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
   } = useChatHistory();
   
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [showSessionMenu, setShowSessionMenu] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true); // Start hidden by default
+  const [showChatHistoryDropdown, setShowChatHistoryDropdown] = useState(false); // For dropdown menu
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
+
+  // Close session menu and chat history when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      
+      // Check if click is outside chat history popup
+      if (showChatHistoryDropdown) {
+        const chatHistoryPopup = document.querySelector('[data-chat-history-popup]');
+        const chatHistoryButton = document.querySelector('[data-chat-history-button]');
+        if (chatHistoryPopup && !chatHistoryPopup.contains(target) && 
+            (!chatHistoryButton || !chatHistoryButton.contains(target))) {
+          setShowChatHistoryDropdown(false);
+          setShowSessionMenu(null); // Also close session menu
+        }
+      }
+      
+      // Check if click is outside edit/delete dropdown
+      if (showSessionMenu) {
+        const dropdown = document.querySelector('[data-session-dropdown]');
+        if (dropdown && !dropdown.contains(target)) {
+          setShowSessionMenu(null);
+        }
+      }
+    };
+
+    if (showChatHistoryDropdown || showSessionMenu) {
+      document.addEventListener('click', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [showChatHistoryDropdown, showSessionMenu]);
+
+  // Focus input when editing starts
+  useEffect(() => {
+    if (editingSessionId) {
+      // Small delay to ensure the input is rendered
+      setTimeout(() => {
+        const input = document.querySelector('input[type="text"]') as HTMLInputElement;
+        if (input) {
+          input.focus();
+        }
+      }, 50);
+    }
+  }, [editingSessionId]);
   
   // Confirmation modal states
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -96,16 +144,17 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
     return words.join(' ') + (firstUserMessage.text.split(' ').length > 4 ? '...' : '');
   };
 
-  const handleCreateNew = () => {
-    createNewSession();
+  const handleCreateNew = async () => {
+    await createNewSession();
   };
 
-  const handleSwitchSession = (sessionId: string) => {
-    switchToSession(sessionId);
+  const handleSwitchSession = async (sessionId: string) => {
+    await switchToSession(sessionId);
   };
 
   const handleDeleteSession = (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation(); // Prevent switching session
+    console.log('Delete clicked for session:', sessionId);
     setSessionToDelete(sessionId);
     setShowDeleteConfirm(true);
   };
@@ -143,13 +192,14 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
 
   const handleEditTitle = (e: React.MouseEvent, session: {id: string; title: string}) => {
     e.stopPropagation();
+    console.log('Edit clicked for session:', session.id, 'title:', session.title);
     setEditingSessionId(session.id);
     setEditTitle(session.title);
   };
 
-  const handleSaveTitle = () => {
+  const handleSaveTitle = async () => {
     if (editingSessionId && editTitle.trim()) {
-      updateSessionTitle(editingSessionId, editTitle.trim());
+      await updateSessionTitle(editingSessionId, editTitle.trim());
     }
     setEditingSessionId(null);
     setEditTitle('');
@@ -180,224 +230,283 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
   );
 
   return (
-    <div className="flex flex-1 bg-gray-50 dark:bg-gray-900">
-      {/* Left Sidebar - Clean Minimal Design */}
-      {!sidebarCollapsed && (
-        <div className={`w-64 ${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-100'} ${theme === 'dark' ? 'text-white' : 'text-gray-900'} flex flex-col transition-all duration-300 ease-in-out border-r ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
-        {/* Header with Logo and Collapse Button */}
-        <div className={`p-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
+    <div className="flex flex-1 bg-gray-50">
+      
+      {/* Chat History Dropdown */}
+      {showChatHistoryDropdown && (
+        <div className="fixed top-32 left-0 z-50 w-80 bg-white border border-gray-200 rounded-lg shadow-xl ml-4" data-chat-history-popup>
+          {/* Header */}
+          <div className="p-3 border-b border-gray-200">
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium text-gray-900">Chat History</h3>
               <button
-                onClick={handleSidebarClick}
-                className="w-8 h-8 rounded-lg flex items-center justify-center hover:opacity-80 transition-opacity"
-                title={user ? (sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar") : "Login to access chat history"}
+                onClick={() => setShowChatHistoryDropdown(false)}
+                className="p-1 hover:bg-gray-100 rounded cursor-pointer"
               >
-                <Image
-                  src="/prakriti_logo.webp"
-                  alt="Prakriti Logo"
-                  width={32}
-                  height={32}
-                  className="w-8 h-8 rounded-lg object-contain"
-                />
+                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
-              {!sidebarCollapsed && (
-                <span className={`font-medium text-sm ${theme === 'dark' ? 'text-white' : 'text-gray-700'}`}>Prakriti AI</span>
-              )}
             </div>
-            
-            {/* Controls - Only show when sidebar is expanded */}
-            {!sidebarCollapsed && (
-              <div className="flex items-center space-x-2">
-                <ThemeToggle />
-                <button
-                  onClick={() => setSidebarCollapsed(true)}
-                  className={`p-2 rounded-lg ${theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-200'} transition-colors`}
-                  title="Collapse sidebar"
-                >
-                  <svg className={`w-4 h-4 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                  </svg>
-                </button>
-              </div>
-            )}
           </div>
-        </div>
 
-        {/* New Chat Button */}
-        <div className="p-3">
-          <button
-            onClick={handleCreateNew}
-            className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center p-2' : 'space-x-3 px-3 py-2'} ${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'} rounded-lg transition-colors`}
-            title={sidebarCollapsed ? 'New chat' : ''}
-          >
-            <svg className={`w-4 h-4 ${theme === 'dark' ? 'text-white' : 'text-gray-700'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            {!sidebarCollapsed && <span className={`text-sm ${theme === 'dark' ? 'text-white' : 'text-gray-700'}`}>New chat</span>}
-          </button>
-        </div>
 
-        {/* Search */}
-        {!sidebarCollapsed && (
-          <div className="px-3 pb-3">
+          {/* Search */}
+          <div className="p-3 border-b border-gray-200">
             <div className="relative">
-              <svg className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
-                  <input
-                    type="text"
-                    placeholder="Search chats"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className={`w-full pl-10 pr-4 py-2 rounded-lg focus:outline-none focus:ring-1 ${theme === 'dark' ? 'bg-gray-700 border border-gray-600 text-white placeholder-gray-300 focus:ring-gray-500' : 'bg-gray-200 border border-gray-300 text-gray-900 placeholder-gray-500 focus:ring-gray-400'}`}
-                  />
+              <input
+                type="text"
+                placeholder="Search chats"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 rounded-lg focus:outline-none focus:ring-1 bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-500 focus:ring-blue-400"
+              />
             </div>
           </div>
-        )}
 
-        {/* Chat History */}
-        <div className="flex-1 overflow-y-auto px-3">
-          {filteredSessions.length === 0 ? (
-            <div className={`text-center py-8 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-400'}`}>
-              <p className="text-xs">No chats yet</p>
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {filteredSessions
-                .sort((a, b) => b.updatedAt - a.updatedAt)
-                .map((session) => {
-                  const displayTitle = session.title === 'New Chat' ? generateChatName(session.messages) : session.title;
-                  return (
-                    <div
-                      key={session.id}
-                      className={`group relative p-2 rounded-lg cursor-pointer transition-colors ${
-                        session.id === activeSessionId
-                          ? theme === 'dark' ? 'bg-gray-700' : 'bg-gray-200'
-                          : theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-200'
-                      }`}
-                      onClick={() => handleSwitchSession(session.id)}
-                    >
-                      {editingSessionId === session.id ? (
-                        <div className="space-y-2">
-                          <input
-                            type="text"
-                            value={editTitle}
-                            onChange={(e) => setEditTitle(e.target.value)}
-                            className="w-full px-2 py-1 text-sm bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:ring-1 focus:ring-gray-500"
-                            autoFocus
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleSaveTitle();
-                              if (e.key === 'Escape') handleCancelEdit();
-                            }}
-                            onBlur={handleSaveTitle}
-                          />
-                          <div className="flex space-x-2">
-                            <button
-                              onClick={handleSaveTitle}
-                              className="px-2 py-1 text-xs bg-gray-700 text-white rounded hover:bg-gray-600"
-                            >
-                              Save
-                            </button>
-                            <button
-                              onClick={handleCancelEdit}
-                              className="px-2 py-1 text-xs bg-gray-600 text-gray-300 rounded hover:bg-gray-500"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="flex items-center justify-between">
-                            <div className="flex-1 min-w-0">
-                              <h3 className={`text-xs font-medium truncate ${sidebarCollapsed ? 'text-center' : ''} ${theme === 'dark' ? 'text-white' : 'text-gray-700'}`}>
-                                {sidebarCollapsed ? displayTitle.split(' ')[0] : displayTitle}
-                              </h3>
-                              {!sidebarCollapsed && (
-                                <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-500'}`}>
-                                  {formatDate(session.updatedAt)}
-                                </p>
-                              )}
+          {/* Chat History List */}
+          <div className="max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
+            {filteredSessions.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">
+                <p className="text-sm">No chats yet</p>
+              </div>
+            ) : (
+              <div className="p-2">
+                {filteredSessions
+                  .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+                  .map((session) => {
+                    const displayTitle = session.title === 'New Chat' ? generateChatName(session.messages) : session.title;
+                    return (
+                      <div
+                        key={session.id}
+                        className={`group relative p-3 rounded-lg transition-colors ${
+                          session.id === activeSessionId
+                            ? 'bg-blue-50 border border-blue-200'
+                            : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        {editingSessionId === session.id ? (
+                          // Editing Mode
+                          <div className="space-y-2 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                            <input
+                              type="text"
+                              value={editTitle}
+                              onChange={(e) => setEditTitle(e.target.value)}
+                              className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-md text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveTitle();
+                                if (e.key === 'Escape') handleCancelEdit();
+                              }}
+                              onBlur={(e) => {
+                                // Add a small delay to prevent immediate blur when editing starts
+                                setTimeout(() => {
+                                  // Only save if we're not clicking on save/cancel buttons
+                                  if (!e.relatedTarget || !e.relatedTarget.closest('button')) {
+                                    handleSaveTitle();
+                                  }
+                                }, 100);
+                              }}
+                            />
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={handleSaveTitle}
+                                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 cursor-pointer"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={handleCancelEdit}
+                                className="px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-1 cursor-pointer"
+                              >
+                                Cancel
+                              </button>
                             </div>
-                            {!sidebarCollapsed && (
-                              <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          </div>
+                        ) : (
+                          // Normal Mode
+                          <div 
+                            className="cursor-pointer"
+                            onClick={() => {
+                              handleSwitchSession(session.id);
+                              setShowChatHistoryDropdown(false);
+                            }}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1 min-w-0">
+                                <h4 className="text-sm font-medium text-gray-900 truncate">
+                                  {displayTitle}
+                                  {editingSessionId === session.id && (
+                                    <span className="ml-2 text-xs text-yellow-600">(EDITING)</span>
+                                  )}
+                                </h4>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {formatDate(new Date(session.updated_at).getTime())}
+                                </p>
+                              </div>
+                              
+                              {/* 3 Dots Menu Button */}
+                              <div className="relative">
                                 <button
-                                  onClick={(e) => handleEditTitle(e, session)}
-                                  className="p-1 hover:bg-gray-700 rounded"
-                                  title="Rename chat"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    setDropdownPosition({
+                                      top: rect.top + window.scrollY,
+                                      left: rect.right + 10 // 10px margin from the button
+                                    });
+                                    setShowSessionMenu(showSessionMenu === session.id ? null : session.id);
+                                  }}
+                                  className="p-1 hover:bg-gray-200 rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                                  title="More options"
                                 >
-                                  <svg className={`w-3 h-3 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                  </svg>
-                                </button>
-                                <button
-                                  onClick={(e) => handleDeleteSession(e, session.id)}
-                                  className={`p-1 rounded ${theme === 'dark' ? 'hover:bg-red-900 text-red-400' : 'hover:bg-red-100 text-red-500'}`}
-                                  title="Delete chat"
-                                >
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
                                   </svg>
                                 </button>
                               </div>
-                            )}
+                            </div>
                           </div>
-                        </>
-                      )}
-                    </div>
-                  );
-                })}
-            </div>
-          )}
-        </div>
-
-         {/* User Profile at Bottom */}
-         <div className="p-3 border-t border-gray-800">
-           {user ? (
-             <UserAvatarDropdown
-               onEditProfile={() => setShowEditProfile(true)}
-               onLogout={handleLogout}
-               sidebarCollapsed={sidebarCollapsed}
-               theme={theme}
-             />
-            ) : (
-              <div className={`text-center ${theme === 'dark' ? 'text-gray-300' : 'text-gray-400'}`}>
-                <p className="text-xs">Please log in to save chats</p>
+                        )}
+                      </div>
+                    );
+                  })}
               </div>
             )}
-         </div>
-        </div>
-      )}
-
-      {/* Floating Text Link when sidebar is collapsed */}
-      {sidebarCollapsed && (
-        <div className="fixed top-4 left-4 z-50">
-          <div
-            onClick={handleSidebarClick}
-            className={`flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}
-            title={user ? "Expand sidebar" : "Login to access chat history"}
-          >
-            <div className="w-6 h-6 rounded flex items-center justify-center">
-              <Image
-                src="/prakriti_logo.webp"
-                alt="Prakriti Logo"
-                width={24}
-                height={24}
-                className="w-6 h-6 rounded object-contain"
-              />
-            </div>
-            <span className={`font-medium text-sm ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Prakriti AI Assistant</span>
-            <svg className={`w-4 h-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
           </div>
         </div>
       )}
 
+      {/* Edit/Delete Dropdown - Outside Chat History Popup */}
+      {showSessionMenu && (
+        <div 
+          className="fixed bg-white border border-gray-200 rounded-lg shadow-xl z-[60] w-32"
+          data-session-dropdown
+          style={{
+            top: `${dropdownPosition.top}px`,
+            left: `${dropdownPosition.left}px`
+          }}
+        >
+          <div className="py-1">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Edit button clicked');
+                setShowSessionMenu(null);
+                const session = filteredSessions.find(s => s.id === showSessionMenu);
+                if (session) {
+                  handleEditTitle(e, session);
+                }
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center cursor-pointer"
+            >
+              <svg className="w-3 h-3 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Delete button clicked');
+                setShowSessionMenu(null);
+                handleDeleteSession(e, showSessionMenu);
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center cursor-pointer"
+            >
+              <svg className="w-3 h-3 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
+
+
       {/* Main Content Area */}
-      <div className={`flex-1 flex flex-col ${theme === 'dark' ? 'bg-gray-900' : 'bg-white'}`}>
-        {children}
+      <div className="flex-1 flex flex-col bg-white">
+        {/* Header with User Profile - Sticky */}
+        <div className="sticky top-0 z-30 border-b border-gray-200 bg-white">
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center space-x-3">
+              <Image
+                src="/prakriti_logo.webp"
+                alt="Prakriti Logo"
+                width={32}
+                height={32}
+                className="w-8 h-8 rounded-lg object-contain"
+              />
+              <h1 className="text-lg font-semibold text-gray-900">Prakriti AI Assistant</h1>
+            </div>
+            
+            {/* User Profile */}
+            <div className="flex items-center space-x-4">
+              {user ? (
+                <UserAvatarDropdown
+                  onEditProfile={() => setShowEditProfile(true)}
+                  onLogout={handleLogout}
+                  sidebarCollapsed={false}
+                  theme="light"
+                  onDropdownToggle={setIsProfileDropdownOpen}
+                />
+              ) : (
+                <button
+                  onClick={() => onLoginRedirect && onLoginRedirect()}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer"
+                >
+                  Login
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        
+        {/* Floating Chat History Button - Only show when user is logged in */}
+        {user && !showChatHistoryDropdown && (
+          <div className="fixed top-24 left-0 z-40" data-chat-history-button>
+            <button
+              onClick={() => setShowChatHistoryDropdown(true)}
+              className="flex items-center space-x-2 px-4 py-2 ml-4 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-lg transition-colors shadow-lg cursor-pointer"
+              title="Chat History"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              <span>Chat History</span>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {/* Floating New Chat Button - Only show when user is logged in and profile dropdown is closed */}
+        {user && !isProfileDropdownOpen && (
+          <div className="fixed top-24 right-4 z-[60]">
+            <button
+              onClick={handleCreateNew}
+              className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-lg cursor-pointer"
+              title="New Chat"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              <span>New Chat</span>
+            </button>
+          </div>
+        )}
+        
+        {/* Main Content */}
+        <div className="flex-1">
+          {children}
+        </div>
       </div>
 
       {/* Edit Profile Modal */}
