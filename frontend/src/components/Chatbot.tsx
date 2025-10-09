@@ -633,20 +633,6 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-normal mb-2 leading-tight text-gray-500">
                 {welcomeMessage ? renderWelcomeMessage(welcomeMessage) : "Loading..."}
               </h2>
-              {/* Show message if no active session - only for authenticated users */}
-              {!getActiveSession() && user && (
-                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <p className="text-blue-800 text-sm mb-3">
-                    Click &quot;New Chat&quot; to start a conversation
-                  </p>
-                  <button
-                    onClick={createNewSession}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-                  >
-                    New Chat
-                  </button>
-                </div>
-              )}
             </div>
             
             {/* Input Area - Centered */}
