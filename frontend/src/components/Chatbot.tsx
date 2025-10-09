@@ -275,15 +275,38 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
 
   // Send message to backend /chatbot endpoint
   const sendMessage = async () => {
-    if (!input.trim() || loading || requestInProgress) return; // Prevent sending if already loading or request in progress
+    console.log('=== SEND MESSAGE FUNCTION START ===');
+    console.log('Input:', input);
+    console.log('Loading:', loading);
+    console.log('RequestInProgress:', requestInProgress);
+    
+    if (!input.trim() || loading || requestInProgress) {
+      console.log('Early return - input empty or already processing');
+      return; // Prevent sending if already loading or request in progress
+    }
+    
+    console.log('Proceeding with message sending...');
     const userMsg: Message = { sender: 'user', text: input };
     setMessages((msgs) => [...msgs, userMsg]);
     
-    // Add user message to chat history
-    await addMessage({
-      sender: 'user',
-      text: input,
-    });
+    // Add user message to chat history and wait for it to complete
+    console.log('=== USER MESSAGE START ===');
+    console.log('Adding user message to chat history...');
+    console.log('Current activeSessionId before user message:', getActiveSession()?.id);
+    console.log('User message text:', input);
+    
+    try {
+      await addMessage({
+        sender: 'user',
+        text: input,
+      });
+      console.log('User message added to chat history successfully');
+    } catch (error) {
+      console.error('Error adding user message to chat history:', error);
+    }
+    
+    console.log('Current activeSessionId after user message:', getActiveSession()?.id);
+    console.log('=== USER MESSAGE END ===');
     
     // Add user message to conversation history
     const newHistory = [...conversationHistory, { role: 'user', content: input }];
@@ -330,12 +353,14 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       if (data.type === 'calendar' && data.response && data.response.url) {
         const botMsg = { sender: 'bot' as const, type: 'calendar' as const, url: data.response.url };
         setMessages((msgs) => [...msgs, botMsg]);
+        console.log('Adding bot calendar message to chat history...');
         await addMessage({
           sender: 'bot',
           text: data.response.url,
           type: 'calendar',
           url: data.response.url,
         });
+        console.log('Bot calendar message added to chat history');
         setIsTyping(false);
         setDisplayedBotText('');
         setHasFirstResponse(true);
@@ -405,10 +430,19 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           setMessages((msgs) => [...msgs, { sender: 'bot', text: fullText }]);
           
           // Add to chat history
+          console.log('=== BOT MESSAGE START ===');
+          console.log('Adding bot text message to chat history...');
+          console.log('Current activeSessionId before bot message:', getActiveSession()?.id);
+          console.log('Bot message text:', fullText.substring(0, 50) + '...');
+          
           await addMessage({
             sender: 'bot',
             text: fullText,
           });
+          
+          console.log('Bot text message added to chat history');
+          console.log('Current activeSessionId after bot message:', getActiveSession()?.id);
+          console.log('=== BOT MESSAGE END ===');
           
           // Mark that we've had the first response
           setHasFirstResponse(true);
@@ -435,10 +469,20 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      console.log('=== HANDLE KEY DOWN ===');
+      console.log('isGenerating:', isGenerating);
+      console.log('isTyping:', isTyping);
+      console.log('loading:', loading);
+      console.log('requestInProgress:', requestInProgress);
+      
       if (isGenerating || isTyping) {
+        console.log('Stopping generation...');
         stopGeneration();
       } else if (!loading && !requestInProgress) {
+        console.log('Calling sendMessage...');
         sendMessage();
+      } else {
+        console.log('Not calling sendMessage - loading or request in progress');
       }
     }
   };
@@ -762,28 +806,32 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               >
                 {'text' in msg && (
                   <div className="markdown-content">
-                    <ReactMarkdown 
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        // Custom styling for Markdown elements
-                        h1: ({...props}) => <h1 className="text-xl font-bold mb-2 text-gray-800" {...props} />,
-                        h2: ({...props}) => <h2 className="text-lg font-bold mb-2 text-gray-800" {...props} />,
-                        h3: ({...props}) => <h3 className="text-base font-bold mb-2 text-gray-800" {...props} />,
-                        p: ({...props}) => <p className="mb-2 leading-relaxed text-gray-700" {...props} />,
-                        ul: ({...props}) => <ul className="list-disc list-inside mb-2 space-y-1 text-gray-700" {...props} />,
-                        ol: ({...props}) => <ol className="list-decimal list-inside mb-2 space-y-1 text-gray-700" {...props} />,
-                        li: ({...props}) => <li className="mb-1 text-gray-700" {...props} />,
-                        strong: ({...props}) => <strong className="font-bold text-gray-900" {...props} />,
-                        em: ({...props}) => <em className="italic text-gray-700" {...props} />,
-                        code: ({...props}) => <code className="px-1 py-0.5 rounded text-sm font-mono bg-gray-100 text-gray-800" {...props} />,
-                        blockquote: ({...props}) => <blockquote className="border-l-4 pl-4 italic py-2 rounded-r text-gray-600 border-gray-300 bg-gray-50" style={{ borderLeftColor: 'var(--brand-primary-300)', backgroundColor: 'var(--brand-primary-50)' }} {...props} />,
-                        table: ({...props}) => <table className="border-collapse w-full mb-2 text-sm border-gray-300" {...props} />,
-                        th: ({...props}) => <th className="border px-2 py-1 font-bold border-gray-300 bg-gray-100 text-gray-800" {...props} />,
-                        td: ({...props}) => <td className="border px-2 py-1 border-gray-300 text-gray-700" {...props} />,
-                      }}
-                    >
-                      {msg.text}
-                    </ReactMarkdown>
+                    {msg.sender === 'user' ? (
+                      <div className="text-gray-800 whitespace-pre-wrap">{msg.text}</div>
+                    ) : (
+                      <ReactMarkdown 
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          // Custom styling for Markdown elements
+                          h1: ({...props}) => <h1 className="text-xl font-bold mb-2 text-gray-800" {...props} />,
+                          h2: ({...props}) => <h2 className="text-lg font-bold mb-2 text-gray-800" {...props} />,
+                          h3: ({...props}) => <h3 className="text-base font-bold mb-2 text-gray-800" {...props} />,
+                          p: ({...props}) => <p className="mb-2 leading-relaxed text-gray-700" {...props} />,
+                          ul: ({...props}) => <ul className="list-disc list-inside mb-2 space-y-1 text-gray-700" {...props} />,
+                          ol: ({...props}) => <ol className="list-decimal list-inside mb-2 space-y-1 text-gray-700" {...props} />,
+                          li: ({...props}) => <li className="mb-1 text-gray-700" {...props} />,
+                          strong: ({...props}) => <strong className="font-bold text-gray-900" {...props} />,
+                          em: ({...props}) => <em className="italic text-gray-700" {...props} />,
+                          code: ({...props}) => <code className="px-1 py-0.5 rounded text-sm font-mono bg-gray-100 text-gray-800" {...props} />,
+                          blockquote: ({...props}) => <blockquote className="border-l-4 pl-4 italic py-2 rounded-r text-gray-600 border-gray-300 bg-gray-50" style={{ borderLeftColor: 'var(--brand-primary-300)', backgroundColor: 'var(--brand-primary-50)' }} {...props} />,
+                          table: ({...props}) => <table className="border-collapse w-full mb-2 text-sm border-gray-300" {...props} />,
+                          th: ({...props}) => <th className="border px-2 py-1 font-bold border-gray-300 bg-gray-100 text-gray-800" {...props} />,
+                          td: ({...props}) => <td className="border px-2 py-1 border-gray-300 text-gray-700" {...props} />,
+                        }}
+                      >
+                        {msg.text}
+                      </ReactMarkdown>
+                    )}
                   </div>
                 )}
                 {'text' in msg && msg.sender === 'bot' && (

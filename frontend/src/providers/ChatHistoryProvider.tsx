@@ -1,5 +1,5 @@
 "use client";
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { useAuth } from './AuthProvider';
 import { useSupabase } from './SupabaseProvider';
 
@@ -51,6 +51,12 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
+  // Use ref to get current sessions state
+  const sessionsRef = useRef<ChatSession[]>([]);
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+  
   // Migrate old session IDs to UUID format
   const migrateSessionId = useCallback((id: string): string => {
     if (id && !id.includes('-')) {
@@ -91,9 +97,16 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const saveSessionToSupabase = useCallback(async (session: ChatSession) => {
     if (!supabase || !user) return;
 
-    try {
-      const { error } = await supabase
-        .from('chat_sessions')
+    console.log('Saving session to Supabase:', {
+      id: session.id,
+      title: session.title,
+      messagesCount: session.messages.length,
+      messages: session.messages.map(m => ({ sender: m.sender, text: m.text.substring(0, 50) + '...' }))
+    });
+
+      try {
+        const { error } = await supabase
+          .from('chat_sessions')
         .upsert({
           id: session.id,
           user_id: user.id,
@@ -104,10 +117,12 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
           is_active: session.isActive || false
         });
 
-      if (error) {
+        if (error) {
         console.error('Error saving session to Supabase:', error);
-      }
-    } catch (error) {
+        } else {
+        console.log('Successfully saved session to Supabase');
+        }
+      } catch (error) {
       console.error('Error saving session to Supabase:', error);
     }
   }, [supabase, user]);
@@ -159,7 +174,8 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
           }
 
           setActiveSessionId(activeSessionId);
-          console.log('Final active session:', activeSessionId);
+          console.log('Final active session set to:', activeSessionId);
+          console.log('Session details:', supabaseSessions.find(s => s.id === activeSessionId));
         } else {
           // Fallback to localStorage
           const userKey = `chat_history_${user.id}`;
@@ -429,19 +445,105 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Add message to active session
   const addMessage = useCallback(async (message: ChatMessage) => {
-    if (!user || !activeSessionId) {
-      // Create new session if none exists
-      await createNewSession();
+    if (!user) return;
+    
+    console.log('Adding message:', message);
+    console.log('Current activeSessionId:', activeSessionId);
+    console.log('Current sessions count:', sessions.length);
+    
+    let currentActiveSessionId = activeSessionId;
+    
+    if (!currentActiveSessionId) {
+      // Create new session synchronously
+      const newSession: ChatSession = {
+        id: crypto.randomUUID(),
+        title: 'New Chat',
+        messages: [message], // Add the message immediately
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        isActive: true
+      };
+
+      console.log('Creating new session with user message:', {
+        sessionId: newSession.id,
+        message: message,
+        messagesCount: newSession.messages.length
+      });
+
+      // Update URL with new session ID
+      const url = new URL(window.location.href);
+      url.searchParams.set('session', newSession.id);
+      window.history.pushState({}, '', url.toString());
+
+      // Mark all other sessions as inactive and add new session
+      const updatedSessions = sessions.map(session => ({ ...session, isActive: false }));
+      const newSessions = [newSession, ...updatedSessions];
+      currentActiveSessionId = newSession.id;
+      
+      console.log('Setting new session state:', {
+        newSessions: newSessions.length,
+        currentActiveSessionId: currentActiveSessionId,
+        newSessionMessages: newSession.messages.length
+      });
+      
+      // Update state synchronously to ensure consistency
+      setSessions(newSessions);
+      setActiveSessionId(currentActiveSessionId);
+      
+      console.log('State updated - new activeSessionId:', currentActiveSessionId);
+
+      // Save to Supabase
+      console.log('Saving new session to Supabase with message:', message);
+      await Promise.all([
+        ...updatedSessions.map(session => saveSessionToSupabase(session)),
+        saveSessionToSupabase(newSession)
+      ]);
+
+      // Save to localStorage as backup
+      const userKey = `chat_history_${user.id}`;
+      localStorage.setItem(userKey, JSON.stringify({
+        sessions: newSessions,
+        activeSessionId: currentActiveSessionId
+      }));
+
+      console.log('Created new session and added message:', currentActiveSessionId);
       return;
     }
 
-    const updatedSessions = sessions.map(session => {
-      if (session.id === activeSessionId) {
-        return {
+    // Add message to existing session
+    console.log('Adding message to existing session:', currentActiveSessionId);
+    
+    // Get the current session state from the ref (always current)
+    const latestSessions = sessionsRef.current;
+    const currentSession = latestSessions.find(s => s.id === currentActiveSessionId);
+    console.log('Current session before update:', currentSession);
+    
+    if (!currentSession) {
+      console.error('Session not found:', currentActiveSessionId);
+      return;
+    }
+    
+    console.log('Found session to update:', {
+      id: currentSession.id,
+      currentMessages: currentSession.messages.length,
+      currentMessagesContent: currentSession.messages.map(m => ({ sender: m.sender, text: m.text.substring(0, 30) + '...' }))
+    });
+    
+    const updatedSessions = latestSessions.map(session => {
+      if (session.id === currentActiveSessionId) {
+        const updatedSession = {
           ...session,
           messages: [...session.messages, message],
           updated_at: new Date().toISOString()
         };
+        
+        console.log('Updated session:', {
+          id: updatedSession.id,
+          messagesCount: updatedSession.messages.length,
+          messagesContent: updatedSession.messages.map(m => ({ sender: m.sender, text: m.text.substring(0, 30) + '...' }))
+        });
+        
+        return updatedSession;
       }
       return session;
     });
@@ -449,8 +551,9 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setSessions(updatedSessions);
 
     // Save to Supabase
-    const activeSession = updatedSessions.find(s => s.id === activeSessionId);
+    const activeSession = updatedSessions.find(s => s.id === currentActiveSessionId);
     if (activeSession) {
+      console.log('Saving updated session to Supabase with', activeSession.messages.length, 'messages');
       await saveSessionToSupabase(activeSession);
     }
 
@@ -458,11 +561,21 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const userKey = `chat_history_${user.id}`;
     localStorage.setItem(userKey, JSON.stringify({
       sessions: updatedSessions,
-      activeSessionId
+      activeSessionId: currentActiveSessionId
     }));
 
-    console.log('Added message to session:', activeSessionId);
-  }, [user, activeSessionId, sessions, createNewSession, saveSessionToSupabase]);
+    console.log('Added message to existing session:', currentActiveSessionId);
+    
+    // Debug: Check session state after update
+    setTimeout(() => {
+      const updatedSession = updatedSessions.find(s => s.id === currentActiveSessionId);
+      console.log('Session state after addMessage:', {
+        sessionId: currentActiveSessionId,
+        messagesCount: updatedSession?.messages.length || 0,
+        messages: updatedSession?.messages.map(m => ({ sender: m.sender, text: m.text.substring(0, 30) + '...' })) || []
+      });
+        }, 100);
+  }, [user, activeSessionId, sessions, saveSessionToSupabase]);
 
   // Get active session
   const getActiveSession = useCallback((): ChatSession | null => {
@@ -539,9 +652,10 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, [user, activeSessionId]);
 
-  // Create initial session if none exists
+  // Create initial session if none exists (only after loading is complete)
   useEffect(() => {
     if (user && !isLoading && sessions.length === 0 && !activeSessionId) {
+      console.log('No sessions found, creating new session');
       createNewSession();
     }
   }, [user, isLoading, sessions.length, activeSessionId, createNewSession]);
