@@ -488,8 +488,8 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
           </div>
         )}
 
-        {/* Floating New Chat Button - Only show when user is logged in and profile dropdown is closed */}
-        {user && !isProfileDropdownOpen && (
+        {/* Floating New Chat Button - Only show when user is logged in and no modals are open */}
+        {user && !isProfileDropdownOpen && !showDeleteConfirm && !showLogoutConfirm && (
           <div className="fixed top-24 right-4 z-[60]">
             <button
               onClick={handleCreateNew}
