@@ -177,7 +177,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [updateActiveSessionId]);
 
   // Save guest sessions to localStorage
   const saveGuestSessions = useCallback((sessions: ChatSession[], activeId: string | null) => {
@@ -330,7 +330,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       console.log('No user, loading guest sessions');
       await loadGuestSessions();
     }
-  }, [user, loadSessionsFromSupabase, migrateSessionId, loadGuestSessions]);
+  }, [user, loadSessionsFromSupabase, migrateSessionId, loadGuestSessions, updateActiveSessionId]);
 
   // Create new session
   const createNewSession = useCallback(async () => {
@@ -382,7 +382,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
 
     console.log('Created new session:', newSession.id);
-  }, [user, sessions, saveSessionToSupabase, saveGuestSessions]);
+  }, [user, sessions, saveSessionToSupabase, saveGuestSessions, updateActiveSessionId]);
 
   // Switch to session
   const switchToSession = useCallback(async (sessionId: string) => {
@@ -425,7 +425,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
 
     console.log('Switched to session:', sessionId);
-  }, [user, sessions, saveSessionToSupabase, saveGuestSessions]);
+  }, [user, sessions, saveSessionToSupabase, saveGuestSessions, updateActiveSessionId]);
 
   // Delete session
   const deleteSession = useCallback(async (sessionId: string) => {
@@ -477,7 +477,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
 
     console.log('Deleted session:', sessionId);
-  }, [user, sessions, activeSessionId, supabase, saveGuestSessions]);
+  }, [user, sessions, activeSessionId, supabase, saveGuestSessions, updateActiveSessionId]);
 
   // Delete all sessions
   const deleteAllSessions = useCallback(async () => {
@@ -516,7 +516,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
 
     console.log('Deleted all sessions');
-  }, [user, supabase]);
+  }, [user, supabase, updateActiveSessionId]);
 
   // Update session title
   const updateSessionTitle = useCallback(async (sessionId: string, newTitle: string) => {
@@ -755,7 +755,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
         messages: updatedSession?.messages.map(m => ({ sender: m.sender, text: m.text.substring(0, 30) + '...' })) || []
       });
     }, 100);
-  }, [user, activeSessionId, sessions, saveSessionToSupabase, saveGuestSessions, isGuestMode]);
+  }, [user, activeSessionId, sessions, saveSessionToSupabase, saveGuestSessions, isGuestMode, updateActiveSessionId]);
 
   // Get active session
   const getActiveSession = useCallback((): ChatSession | null => {
@@ -840,7 +840,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       setSessions([]);
       setIsGuestMode(false);
     }
-  }, [user, activeSessionId, isGuestMode]);
+  }, [user, activeSessionId, isGuestMode, updateActiveSessionId]);
 
   // Don't create sessions automatically - only when user explicitly clicks "New Chat"
   // This prevents unwanted session creation on page refresh
