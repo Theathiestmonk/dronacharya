@@ -39,7 +39,9 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     getActiveSession, 
     addMessage, 
     clearActiveSession, 
-    isLoading: chatHistoryLoading
+    createNewSession,
+    isLoading: chatHistoryLoading,
+    isGuestMode
   } = useChatHistory();
   
   const [messages, setMessages] = useState<Message[]>([]);
@@ -138,7 +140,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     recognition.maxAlternatives = 1;
     setListening(true);
     setMicPlaceholder('Listening...');
-    recognition.onresult = (event: Event) => {
+    recognition.onresult = async (event: Event) => {
       const results = (event as unknown as { results: SpeechRecognitionResultList }).results;
       const transcript = results[0][0].transcript;
       setInput('');
@@ -148,6 +150,8 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       if (transcript && transcript.trim()) {
         const userMsg: Message = { sender: 'user', text: transcript };
         setMessages((msgs) => [...msgs, userMsg]);
+        
+        
         setLoading(true);
         setDisplayedBotText('');
         setIsTyping(false);
@@ -285,14 +289,22 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       return; // Prevent sending if already loading or request in progress
     }
     
+    // Check if there's an active session for authenticated users only
+    const activeSession = getActiveSession();
+    if (!activeSession && user && !isGuestMode) {
+      console.log('No active session - authenticated user must click "New Chat" first');
+      alert('Please click "New Chat" to start a conversation first.');
+      return;
+    }
+    
     console.log('Proceeding with message sending...');
     const userMsg: Message = { sender: 'user', text: input };
     setMessages((msgs) => [...msgs, userMsg]);
     
+    
     // Add user message to chat history and wait for it to complete
     console.log('=== USER MESSAGE START ===');
     console.log('Adding user message to chat history...');
-    console.log('Current activeSessionId before user message:', getActiveSession()?.id);
     console.log('User message text:', input);
     
     try {
@@ -305,7 +317,6 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       console.error('Error adding user message to chat history:', error);
     }
     
-    console.log('Current activeSessionId after user message:', getActiveSession()?.id);
     console.log('=== USER MESSAGE END ===');
     
     // Add user message to conversation history
@@ -432,7 +443,6 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           // Add to chat history
           console.log('=== BOT MESSAGE START ===');
           console.log('Adding bot text message to chat history...');
-          console.log('Current activeSessionId before bot message:', getActiveSession()?.id);
           console.log('Bot message text:', fullText.substring(0, 50) + '...');
           
           await addMessage({
@@ -441,7 +451,6 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           });
           
           console.log('Bot text message added to chat history');
-          console.log('Current activeSessionId after bot message:', getActiveSession()?.id);
           console.log('=== BOT MESSAGE END ===');
           
           // Mark that we've had the first response
@@ -518,7 +527,14 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
 
   // Load messages from active session
   useEffect(() => {
+    console.log('🔄 useEffect triggered - loading messages from active session');
     const activeSession = getActiveSession();
+    console.log('📋 Active session:', activeSession ? {
+      id: activeSession.id,
+      messagesCount: activeSession.messages.length,
+      messages: activeSession.messages.map(m => ({ sender: m.sender, text: m.text.substring(0, 50) + '...' }))
+    } : 'null');
+    
     if (activeSession) {
       const sessionMessages: Message[] = activeSession.messages.map(msg => ({
         sender: msg.sender,
@@ -527,6 +543,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         ...(msg.url && { url: msg.url }),
         ...(msg.videos && { videos: msg.videos }),
       }));
+      console.log('📝 Setting messages from session:', sessionMessages.length, 'messages');
       setMessages(sessionMessages);
       
       // Check if there are any bot messages to set hasFirstResponse
@@ -540,6 +557,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       }));
       setConversationHistory(history);
     } else {
+      console.log('❌ No active session - clearing messages');
       setMessages([]);
       setConversationHistory([]);
       setHasFirstResponse(false);
@@ -615,6 +633,20 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-normal mb-2 leading-tight text-gray-500">
                 {welcomeMessage ? renderWelcomeMessage(welcomeMessage) : "Loading..."}
               </h2>
+              {/* Show message if no active session - only for authenticated users */}
+              {!getActiveSession() && user && (
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-blue-800 text-sm mb-3">
+                    Click "New Chat" to start a conversation
+                  </p>
+                  <button
+                    onClick={createNewSession}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                  >
+                    New Chat
+                  </button>
+                </div>
+              )}
             </div>
             
             {/* Input Area - Centered */}
