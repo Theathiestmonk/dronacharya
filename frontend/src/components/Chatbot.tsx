@@ -292,9 +292,23 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     // Check if there's an active session for authenticated users only
     const activeSession = getActiveSession();
     if (!activeSession && user && !isGuestMode) {
-      console.log('No active session - authenticated user must click "New Chat" first');
-      alert('Please click "New Chat" to start a conversation first.');
-      return;
+      console.log('No active session - creating new session automatically for authenticated user');
+      // Automatically create a new session for authenticated users
+      try {
+        await createNewSession();
+        // After creating the session, get the new active session
+        const newActiveSession = getActiveSession();
+        if (!newActiveSession) {
+          console.log('Failed to create new session');
+          alert('Please click "New Chat" to start a conversation first.');
+          return;
+        }
+        console.log('New session created successfully:', newActiveSession.id);
+      } catch (error) {
+        console.error('Error creating new session:', error);
+        alert('Please click "New Chat" to start a conversation first.');
+        return;
+      }
     }
     
     console.log('Proceeding with message sending...');
@@ -1012,4 +1026,4 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
 
 Chatbot.displayName = 'Chatbot';
 
-export default Chatbot; 
+export default Chatbot;

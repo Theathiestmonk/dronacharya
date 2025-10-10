@@ -33,6 +33,7 @@ interface ChatHistoryContextType {
   addMessage: (message: ChatMessage) => Promise<void>;
   getActiveSession: () => ChatSession | null;
   clearActiveSession: () => void;
+  clearGuestHistory: () => void;
 }
 
 const ChatHistoryContext = createContext<ChatHistoryContextType | undefined>(undefined);
@@ -821,10 +822,45 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return () => window.removeEventListener('popstate', handlePopState);
   }, [activeSessionId, sessions, switchToSession]);
 
+  // Clear guest chat history when user logs in
+  const clearGuestHistory = useCallback(() => {
+    try {
+      console.log('🧹 Clearing guest chat history...');
+      
+      // Clear guest sessions from localStorage
+      const guestKey = 'guest_chat_sessions';
+      localStorage.removeItem(guestKey);
+      
+      // Clear any guest-related data
+      localStorage.removeItem('guest_chat_history');
+      
+      // Reset guest mode state
+      setIsGuestMode(false);
+      
+      // Clear current sessions if we're in guest mode
+      if (isGuestMode) {
+        setSessions([]);
+        updateActiveSessionId(null);
+      }
+      
+      console.log('✅ Guest chat history cleared successfully');
+    } catch (error) {
+      console.error('Error clearing guest history:', error);
+    }
+  }, [isGuestMode, updateActiveSessionId]);
+
   // Load sessions when user changes
   useEffect(() => {
     loadFromLocalStorage();
   }, [loadFromLocalStorage]);
+
+  // Clear guest history when user logs in
+  useEffect(() => {
+    if (user && isGuestMode) {
+      console.log('🔄 User logged in - clearing guest history');
+      clearGuestHistory();
+    }
+  }, [user, isGuestMode, clearGuestHistory]);
 
   // Clear session from URL when user logs out
   // Clear session when user logs out (but not for guest users)
@@ -857,7 +893,8 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     updateSessionTitle,
     addMessage,
     getActiveSession,
-    clearActiveSession
+    clearActiveSession,
+    clearGuestHistory
   };
 
   return (
