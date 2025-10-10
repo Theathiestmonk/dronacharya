@@ -29,20 +29,20 @@ const AppContent: React.FC<{
   const { isLoading: chatHistoryLoading } = useChatHistory();
   const [isFullyInitialized, setIsFullyInitialized] = useState(false);
 
-  // Simple loading logic - just wait for auth to complete
+  // Improved loading logic - wait for auth and chat history
   useEffect(() => {
-    if (!loading) {
-      console.log('Auth loading completed, initializing app');
+    if (!loading && !chatHistoryLoading) {
+      console.log('Auth and chat history loading completed, initializing app');
       setIsFullyInitialized(true);
     }
-  }, [loading]);
+  }, [loading, chatHistoryLoading]);
 
-  // Fallback timeout to prevent infinite loading
+  // Reduced fallback timeout to prevent long demo display
   useEffect(() => {
     const fallbackTimer = setTimeout(() => {
       console.log('Fallback timeout - forcing initialization');
       setIsFullyInitialized(true);
-    }, 2000); // 2 second fallback
+    }, 500); // Reduced to 500ms fallback
 
     return () => clearTimeout(fallbackTimer);
   }, []);

@@ -40,6 +40,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     addMessage, 
     clearActiveSession, 
     createNewSession,
+    activeSessionId,
     isLoading: chatHistoryLoading,
     isGuestMode
   } = useChatHistory();
@@ -289,26 +290,14 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       return; // Prevent sending if already loading or request in progress
     }
     
-    // Check if there's an active session for authenticated users only
-    const activeSession = getActiveSession();
-    if (!activeSession && user && !isGuestMode) {
-      console.log('No active session - creating new session automatically for authenticated user');
-      // Automatically create a new session for authenticated users
-      try {
-        await createNewSession();
-        // After creating the session, get the new active session
-        const newActiveSession = getActiveSession();
-        if (!newActiveSession) {
-          console.log('Failed to create new session');
-          alert('Please click "New Chat" to start a conversation first.');
-          return;
-        }
-        console.log('New session created successfully:', newActiveSession.id);
-      } catch (error) {
-        console.error('Error creating new session:', error);
-        alert('Please click "New Chat" to start a conversation first.');
-        return;
-      }
+    // Check if there's an active session
+    let activeSession = getActiveSession();
+    
+    // If no active session, show message to user
+    if (!activeSession) {
+      console.log('No active session - user must click "New Chat" first');
+      alert('Please click "New Chat" to start a conversation first.');
+      return;
     }
     
     console.log('Proceeding with message sending...');
@@ -322,11 +311,16 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     console.log('User message text:', input);
     
     try {
-      await addMessage({
-        sender: 'user',
-        text: input,
-      });
-      console.log('User message added to chat history successfully');
+      // Add message to chat history if we have an active session
+      if (activeSession) {
+        await addMessage({
+          sender: 'user',
+          text: input,
+        });
+        console.log('User message added to chat history successfully');
+      } else {
+        console.log('No active session available for adding message');
+      }
     } catch (error) {
       console.error('Error adding user message to chat history:', error);
     }
@@ -576,7 +570,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       setConversationHistory([]);
       setHasFirstResponse(false);
     }
-  }, [getActiveSession]);
+  }, [activeSessionId]); // Use activeSessionId instead of getActiveSession
 
   // For copy feedback per message
   const handleCopy = (text: string, idx: number) => {

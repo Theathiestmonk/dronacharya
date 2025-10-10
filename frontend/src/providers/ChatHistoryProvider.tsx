@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { useAuth } from './AuthProvider';
 import { useSupabase } from './SupabaseProvider';
+import SaveChatDialog from '../components/SaveChatDialog';
 
 export interface ChatMessage {
   sender: 'user' | 'bot';
@@ -18,6 +19,8 @@ export interface ChatSession {
   created_at: string;
   updated_at: string;
   isActive?: boolean;
+  isSavedToSupabase?: boolean; // Track if session is saved to Supabase
+  isDirty?: boolean; // Track if session has unsaved changes
 }
 
 interface ChatHistoryContextType {
@@ -34,6 +37,9 @@ interface ChatHistoryContextType {
   getActiveSession: () => ChatSession | null;
   clearActiveSession: () => void;
   clearGuestHistory: () => void;
+  saveSessionToSupabase: (sessionId: string) => Promise<void>;
+  hasUnsavedSessions: () => boolean;
+  saveAllUnsavedSessions: () => Promise<void>;
 }
 
 const ChatHistoryContext = createContext<ChatHistoryContextType | undefined>(undefined);
@@ -54,6 +60,10 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [isLoading, setIsLoading] = useState(true);
   const [isGuestMode, setIsGuestMode] = useState(false);
   
+  // Save dialog state
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  
   // Use ref to get current sessions state
   const sessionsRef = useRef<ChatSession[]>([]);
   const activeSessionIdRef = useRef<string | null>(null);
@@ -71,7 +81,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       refValue: activeSessionIdRef.current,
       stateValue: sessionId
     });
-  }, [activeSessionId]);
+  }, []); // Remove activeSessionId from dependencies to prevent loop
   
   useEffect(() => {
     console.log('🔄 useEffect triggered - sessions changed:', {
@@ -154,31 +164,54 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, [supabase, user]);
 
-  // Load guest sessions from localStorage
-  const loadGuestSessions = useCallback(async () => {
-    try {
-      const guestKey = 'guest_chat_sessions';
-      const saved = localStorage.getItem(guestKey);
-      console.log('Loading guest sessions from localStorage');
-      
-      if (saved) {
-        const data = JSON.parse(saved);
-        const guestSessions = data.sessions || [];
-        setSessions(guestSessions);
-        updateActiveSessionId(data.activeSessionId || null);
-        setIsGuestMode(true);
-        console.log('Loaded guest sessions:', guestSessions.length);
-      } else {
-        console.log('No guest sessions found');
-        setIsGuestMode(true);
-      }
-    } catch (error) {
-      console.error('Error loading guest sessions:', error);
-      setIsGuestMode(true);
-    } finally {
-      setIsLoading(false);
+  // Intelligent storage functions
+  const saveSessionToSupabaseById = useCallback(async (sessionId: string) => {
+    if (!supabase || !user) return;
+    
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) {
+      console.log('Session not found for Supabase save:', sessionId);
+      return;
     }
-  }, [updateActiveSessionId]);
+    
+    await saveSessionToSupabase(session);
+    
+    // Mark session as saved
+    setSessions(prevSessions => 
+      prevSessions.map(s => 
+        s.id === sessionId 
+          ? { ...s, isSavedToSupabase: true, isDirty: false }
+          : s
+      )
+    );
+  }, [supabase, user, sessions, saveSessionToSupabase]);
+
+  const hasUnsavedSessions = useCallback(() => {
+    return sessions.some(session => session.isDirty && !session.isSavedToSupabase);
+  }, [sessions]);
+
+  const saveAllUnsavedSessions = useCallback(async () => {
+    if (!user) return;
+    
+    const unsavedSessions = sessions.filter(session => session.isDirty && !session.isSavedToSupabase);
+    
+    console.log(`🔄 Saving ${unsavedSessions.length} unsaved sessions to Supabase...`);
+    
+    for (const session of unsavedSessions) {
+      await saveSessionToSupabase(session);
+    }
+    
+    // Mark all sessions as saved
+    setSessions(prevSessions => 
+      prevSessions.map(session => ({
+        ...session,
+        isSavedToSupabase: true,
+        isDirty: false
+      }))
+    );
+    
+    console.log('✅ All sessions saved to Supabase');
+  }, [user, sessions, saveSessionToSupabase]);
 
   // Save guest sessions to localStorage
   const saveGuestSessions = useCallback((sessions: ChatSession[], activeId: string | null) => {
@@ -200,6 +233,87 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, []);
 
+  // Load guest sessions from localStorage
+  const loadGuestSessions = useCallback(async () => {
+    try {
+      const guestKey = 'guest_chat_sessions';
+      const saved = localStorage.getItem(guestKey);
+      console.log('Loading guest sessions from localStorage');
+      
+      // Check if there's a session ID in the URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlSessionId = urlParams.get('session');
+      
+      if (saved) {
+        const data = JSON.parse(saved);
+        const guestSessions = data.sessions || [];
+        setSessions(guestSessions);
+        
+        // If URL has session ID, use it if it exists in sessions, otherwise create it
+        let activeSessionId = data.activeSessionId || null;
+        if (urlSessionId) {
+          const urlSession = guestSessions.find(s => s.id === urlSessionId);
+          if (urlSession) {
+            activeSessionId = urlSessionId;
+            console.log('Using existing session from URL:', urlSessionId);
+          } else {
+            // Create a new session with the URL session ID
+            console.log('Creating new session with URL session ID:', urlSessionId);
+            const newSession: ChatSession = {
+              id: urlSessionId,
+              title: 'New Chat',
+              messages: [],
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              isActive: true,
+              isSavedToSupabase: false,
+              isDirty: false
+            };
+            const updatedSessions = [newSession, ...guestSessions];
+            setSessions(updatedSessions);
+            activeSessionId = urlSessionId;
+            
+            // Save the new session to localStorage
+            saveGuestSessions(updatedSessions, urlSessionId);
+          }
+        }
+        
+        updateActiveSessionId(activeSessionId);
+        setIsGuestMode(true);
+        console.log('Loaded guest sessions:', guestSessions.length);
+      } else {
+        console.log('No guest sessions found');
+        
+        // If URL has session ID but no localStorage data, create session
+        if (urlSessionId) {
+          console.log('Creating new session with URL session ID (no localStorage):', urlSessionId);
+          const newSession: ChatSession = {
+            id: urlSessionId,
+            title: 'New Chat',
+            messages: [],
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            isActive: true,
+            isSavedToSupabase: false,
+            isDirty: false
+          };
+          setSessions([newSession]);
+          updateActiveSessionId(urlSessionId);
+          
+          // Save the new session to localStorage
+          saveGuestSessions([newSession], urlSessionId);
+        }
+        
+        setIsGuestMode(true);
+      }
+    } catch (error) {
+      console.error('Error loading guest sessions:', error);
+      setIsGuestMode(true);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [updateActiveSessionId, saveGuestSessions]);
+
   // Load from localStorage with priority order
   const loadFromLocalStorage = useCallback(async () => {
     if (user) {
@@ -211,7 +325,38 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       try {
         console.log('Loading chat history for user:', user.id);
 
-        // First try to load from Supabase
+        // First try to load from localStorage for faster initial load
+        const userKey = `chat_history_${user.id}`;
+        const localData = localStorage.getItem(userKey);
+        
+        if (localData) {
+          const parsedData = JSON.parse(localData);
+          console.log('LocalStorage sessions loaded:', parsedData.sessions?.length || 0);
+          
+          if (parsedData.sessions && parsedData.sessions.length > 0) {
+            // Use localStorage data immediately for faster loading
+            setSessions(parsedData.sessions);
+            
+            // Set active session from localStorage
+            let activeSessionId = parsedData.activeSessionId;
+            
+            if (urlSessionId) {
+              const urlSession = parsedData.sessions.find((s: ChatSession) => s.id === urlSessionId);
+              if (urlSession) {
+                activeSessionId = urlSessionId;
+                console.log('Using session from URL:', urlSessionId);
+              }
+            }
+            
+            updateActiveSessionId(activeSessionId);
+            console.log('Active session set from localStorage:', activeSessionId);
+            
+            // Mark as loaded but continue to sync with Supabase in background
+            setIsLoading(false);
+          }
+        }
+
+        // Then sync with Supabase in background
         const supabaseSessions = await loadSessionsFromSupabase();
         console.log('Supabase sessions loaded:', supabaseSessions.length);
         
@@ -230,6 +375,29 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
             if (urlSession) {
               activeSessionId = urlSessionId;
               console.log('Using session from URL:', urlSessionId);
+            } else {
+              // Create a new session with the URL session ID
+              console.log('Creating new session with URL session ID:', urlSessionId);
+              const newSession: ChatSession = {
+                id: urlSessionId,
+                title: 'New Chat',
+                messages: [],
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                isActive: true,
+                isSavedToSupabase: false,
+                isDirty: false
+              };
+              const updatedSessions = [newSession, ...supabaseSessions];
+              setSessions(updatedSessions);
+              activeSessionId = urlSessionId;
+              
+              // Save to localStorage immediately
+              const userKey = `chat_history_${user.id}`;
+              localStorage.setItem(userKey, JSON.stringify({
+                sessions: updatedSessions,
+                activeSessionId: urlSessionId
+              }));
             }
           }
 
@@ -333,15 +501,158 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, [user, loadSessionsFromSupabase, migrateSessionId, loadGuestSessions, updateActiveSessionId]);
 
+  // Ensure URL session ID is handled or create one if none exists
+  const ensureUrlSessionHandled = useCallback(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlSessionId = urlParams.get('session');
+    const currentSessions = sessionsRef.current;
+    const currentActiveSessionId = activeSessionIdRef.current;
+    
+    // If there's no active session, create one
+    if (!currentActiveSessionId) {
+      console.log('🔍 No active session found, creating one automatically');
+      
+      let newSessionId: string;
+      if (urlSessionId) {
+        // Use the session ID from URL
+        newSessionId = urlSessionId;
+        console.log('🆕 Using session ID from URL:', urlSessionId);
+      } else {
+        // Create a new session ID
+        newSessionId = crypto.randomUUID();
+        console.log('🆕 Creating new session ID:', newSessionId);
+        
+        // Update URL with new session ID
+        const url = new URL(window.location.href);
+        url.searchParams.set('session', newSessionId);
+        window.history.pushState({}, '', url.toString());
+      }
+      
+      const newSession: ChatSession = {
+        id: newSessionId,
+        title: 'New Chat',
+        messages: [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        isActive: true,
+        isSavedToSupabase: false,
+        isDirty: false
+      };
+      
+      const updatedSessions = [newSession, ...currentSessions];
+      setSessions(updatedSessions);
+      sessionsRef.current = updatedSessions;
+      updateActiveSessionId(newSessionId);
+      
+      // Save to appropriate storage
+      if (user) {
+        const userKey = `chat_history_${user.id}`;
+        localStorage.setItem(userKey, JSON.stringify({
+          sessions: updatedSessions,
+          activeSessionId: newSessionId
+        }));
+      } else {
+        saveGuestSessions(updatedSessions, newSessionId);
+      }
+      
+      console.log('✅ Session created and saved automatically');
+    } else if (urlSessionId && urlSessionId !== currentActiveSessionId) {
+      // URL has session ID but it's different from current active session
+      console.log('🔍 URL session ID differs from active session:', urlSessionId, 'vs', currentActiveSessionId);
+      const urlSession = currentSessions.find(s => s.id === urlSessionId);
+      
+      if (!urlSession) {
+        console.log('🆕 Creating session for URL session ID:', urlSessionId);
+        const newSession: ChatSession = {
+          id: urlSessionId,
+          title: 'New Chat',
+          messages: [],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          isActive: true,
+          isSavedToSupabase: false,
+          isDirty: false
+        };
+        
+        const updatedSessions = [newSession, ...currentSessions];
+        setSessions(updatedSessions);
+        sessionsRef.current = updatedSessions;
+        updateActiveSessionId(urlSessionId);
+        
+        // Save to appropriate storage
+        if (user) {
+          const userKey = `chat_history_${user.id}`;
+          localStorage.setItem(userKey, JSON.stringify({
+            sessions: updatedSessions,
+            activeSessionId: urlSessionId
+          }));
+        } else {
+          saveGuestSessions(updatedSessions, urlSessionId);
+        }
+        
+        console.log('✅ URL session created and saved');
+      } else {
+        console.log('✅ URL session already exists, switching to it');
+        updateActiveSessionId(urlSessionId);
+      }
+    } else {
+      console.log('✅ Session already exists and matches URL');
+    }
+  }, [user, saveGuestSessions, updateActiveSessionId]);
+
   // Create new session
   const createNewSession = useCallback(async () => {
+    console.log('🔄 Creating new session...');
+    
+    // Ensure current session is properly saved before creating new one
+    if (activeSessionIdRef.current) {
+      const currentSessions = sessionsRef.current;
+      const currentSession = currentSessions.find(s => s.id === activeSessionIdRef.current);
+      
+      if (currentSession) {
+        console.log('🔄 Ensuring current session is saved before creating new one...');
+        
+        // For authenticated users, save to Supabase if dirty
+        if (user && currentSession.isDirty && !currentSession.isSavedToSupabase) {
+          console.log('🔄 Auto-saving previous session to Supabase...');
+          await saveSessionToSupabase(currentSession);
+          
+          // Mark as saved
+          setSessions(prevSessions => 
+            prevSessions.map(s => 
+              s.id === activeSessionIdRef.current 
+                ? { ...s, isSavedToSupabase: true, isDirty: false }
+                : s
+            )
+          );
+          console.log('✅ Previous session auto-saved to Supabase');
+        }
+        
+        // For all users (authenticated and guest), ensure localStorage is up to date
+        if (user) {
+          const userKey = `chat_history_${user.id}`;
+          localStorage.setItem(userKey, JSON.stringify({
+            sessions: currentSessions,
+            activeSessionId: activeSessionIdRef.current
+          }));
+          console.log('💾 Updated localStorage for authenticated user');
+        } else {
+          // Guest user - ensure localStorage is up to date
+          saveGuestSessions(currentSessions, activeSessionIdRef.current);
+          console.log('💾 Updated localStorage for guest user');
+        }
+      }
+    }
+
     const newSession: ChatSession = {
       id: crypto.randomUUID(),
       title: 'New Chat',
       messages: [],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      isActive: true
+      isActive: true,
+      isSavedToSupabase: false, // New session starts unsaved
+      isDirty: false // New session starts clean
     };
 
     // Update URL with new session ID
@@ -350,28 +661,26 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     window.history.pushState({}, '', url.toString());
 
     if (user) {
-      // Authenticated user - save to Supabase and localStorage
-    const updatedSessions = sessions.map(session => ({ ...session, isActive: false }));
-    const newSessions = [newSession, ...updatedSessions];
-    
-    setSessions(newSessions);
+      // Authenticated user - save to localStorage first for speed
+      const currentSessions = sessionsRef.current;
+      const updatedSessions = currentSessions.map(session => ({ ...session, isActive: false }));
+      const newSessions = [newSession, ...updatedSessions];
+      
+      setSessions(newSessions);
       updateActiveSessionId(newSession.id);
 
-    // Save to Supabase
-    await Promise.all([
-      ...updatedSessions.map(session => saveSessionToSupabase(session)),
-      saveSessionToSupabase(newSession)
-    ]);
-
-    // Save to localStorage as backup
-    const userKey = `chat_history_${user.id}`;
-    localStorage.setItem(userKey, JSON.stringify({
-      sessions: newSessions,
-      activeSessionId: newSession.id
-    }));
+      // Save to localStorage immediately for fast access
+      const userKey = `chat_history_${user.id}`;
+      localStorage.setItem(userKey, JSON.stringify({
+        sessions: newSessions,
+        activeSessionId: newSession.id
+      }));
+      
+      console.log('💾 New session created and saved to localStorage. Supabase sync will happen later.');
     } else {
       // Guest user - save to localStorage only
-      const updatedSessions = sessions.map(session => ({ ...session, isActive: false }));
+      const currentSessions = sessionsRef.current;
+      const updatedSessions = currentSessions.map(session => ({ ...session, isActive: false }));
       const newSessions = [newSession, ...updatedSessions];
       
       setSessions(newSessions);
@@ -382,8 +691,8 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       saveGuestSessions(newSessions, newSession.id);
     }
 
-    console.log('Created new session:', newSession.id);
-  }, [user, sessions, saveSessionToSupabase, saveGuestSessions, updateActiveSessionId]);
+    console.log('✅ Created new session:', newSession.id);
+  }, [user, saveSessionToSupabase, saveGuestSessions, updateActiveSessionId]);
 
   // Switch to session
   const switchToSession = useCallback(async (sessionId: string) => {
@@ -608,80 +917,10 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       availableSessions: latestSessions.map(s => ({ id: s.id, isActive: s.isActive }))
     });
     
-    // If no active session, create one for guest users
+    // If no active session, don't create one automatically - user must click "New Chat"
     if (!currentActiveSessionId) {
-      console.log('No active session - creating new session automatically for guest user');
-      if (!user || isGuestMode) {
-        // Create a new session for guest users
-        const newSession: ChatSession = {
-          id: crypto.randomUUID(),
-          title: 'New Chat',
-          messages: [],
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          isActive: true
-        };
-
-        // Update URL with new session ID
-        const url = new URL(window.location.href);
-        url.searchParams.set('session', newSession.id);
-        window.history.pushState({}, '', url.toString());
-
-        if (user) {
-          // Authenticated user - save to Supabase and localStorage
-          const updatedSessions = sessions.map(session => ({ ...session, isActive: false }));
-          const newSessions = [newSession, ...updatedSessions];
-          
-          setSessions(newSessions);
-          updateActiveSessionId(newSession.id);
-
-          // Save to Supabase
-          await Promise.all([
-            ...updatedSessions.map(session => saveSessionToSupabase(session)),
-            saveSessionToSupabase(newSession)
-          ]);
-
-          // Save to localStorage as backup
-          const userKey = `chat_history_${user.id}`;
-          localStorage.setItem(userKey, JSON.stringify({
-            sessions: newSessions,
-            activeSessionId: newSession.id
-          }));
-        } else {
-          // Guest user - save to localStorage only
-          const updatedSessions = sessions.map(session => ({ ...session, isActive: false }));
-          const newSessions = [newSession, ...updatedSessions];
-          
-          setSessions(newSessions);
-          updateActiveSessionId(newSession.id);
-          setIsGuestMode(true);
-
-          // Save guest sessions to localStorage
-          saveGuestSessions(newSessions, newSession.id);
-        }
-
-        console.log('Created new session automatically:', newSession.id);
-        
-        // Update the sessionsRef to reflect the new session immediately
-        const updatedSessionsForRef = user ? 
-          [...sessions.map(session => ({ ...session, isActive: false })), newSession] :
-          [...sessions.map(session => ({ ...session, isActive: false })), newSession];
-        sessionsRef.current = updatedSessionsForRef;
-        // activeSessionIdRef is now updated by updateActiveSessionId
-        
-        // Use the new session ID immediately
-        currentActiveSessionId = newSession.id;
-        
-        console.log('✅ Session created and refs updated immediately:', {
-          sessionId: newSession.id,
-          totalSessions: updatedSessionsForRef.length,
-          activeSession: updatedSessionsForRef.find(s => s.isActive)?.id,
-          activeSessionIdRef: activeSessionIdRef.current
-        });
-      } else {
       console.log('No active session - message will be discarded. User must click "New Chat" first.');
       return;
-      }
     }
 
     // Add message to existing session
@@ -724,25 +963,31 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       return session;
     });
 
-    setSessions(updatedSessions);
+    // Mark session as dirty (has unsaved changes)
+    const updatedSessionsWithDirtyFlag = updatedSessions.map(session => {
+      if (session.id === currentActiveSessionId) {
+        return { ...session, isDirty: true };
+      }
+      return session;
+    });
+
+    setSessions(updatedSessionsWithDirtyFlag);
+    
+    // Immediately update the ref to ensure createNewSession gets the latest data
+    sessionsRef.current = updatedSessionsWithDirtyFlag;
 
     if (user) {
-      // Authenticated user - save to Supabase
-      const activeSession = updatedSessions.find(s => s.id === currentActiveSessionId);
-    if (activeSession) {
-      console.log('Saving updated session to Supabase with', activeSession.messages.length, 'messages');
-      await saveSessionToSupabase(activeSession);
-    }
-
-    // Save to localStorage as backup
-    const userKey = `chat_history_${user.id}`;
-    localStorage.setItem(userKey, JSON.stringify({
-      sessions: updatedSessions,
+      // Authenticated user - save to localStorage first for speed
+      const userKey = `chat_history_${user.id}`;
+      localStorage.setItem(userKey, JSON.stringify({
+        sessions: updatedSessionsWithDirtyFlag,
         activeSessionId: currentActiveSessionId
-    }));
+      }));
+      
+      console.log('💾 Saved to localStorage for fast access. Supabase sync will happen later.');
     } else {
       // Guest user - save to localStorage only
-      saveGuestSessions(updatedSessions, currentActiveSessionId || null);
+      saveGuestSessions(updatedSessionsWithDirtyFlag, currentActiveSessionId || null);
     }
 
     console.log('Added message to existing session:', currentActiveSessionId);
@@ -822,6 +1067,13 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return () => window.removeEventListener('popstate', handlePopState);
   }, [activeSessionId, sessions, switchToSession]);
 
+  // Ensure URL session ID is handled after loading
+  useEffect(() => {
+    if (!isLoading) {
+      ensureUrlSessionHandled();
+    }
+  }, [isLoading, ensureUrlSessionHandled]);
+
   // Clear guest chat history when user logs in
   const clearGuestHistory = useCallback(() => {
     try {
@@ -878,6 +1130,95 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, [user, activeSessionId, isGuestMode, updateActiveSessionId]);
 
+  // Page refresh detection with custom save dialog
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (user && hasUnsavedSessions() && !showSaveDialog) {
+        // Show our custom dialog and prevent browser dialog
+        setShowSaveDialog(true);
+        event.preventDefault();
+        event.returnValue = '';
+        return '';
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Detect Ctrl+R, F5, or Ctrl+Shift+R (refresh shortcuts)
+      if ((event.ctrlKey && event.key === 'r') || 
+          event.key === 'F5' || 
+          (event.ctrlKey && event.shiftKey && event.key === 'R')) {
+        if (user && hasUnsavedSessions() && !showSaveDialog) {
+          event.preventDefault();
+          setShowSaveDialog(true);
+        }
+      }
+    };
+
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted && user && hasUnsavedSessions()) {
+        // Page was restored from cache and has unsaved sessions
+        console.log('🔄 Page restored from cache with unsaved sessions');
+        setShowSaveDialog(true);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('pageshow', handlePageShow);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('pageshow', handlePageShow);
+    };
+  }, [user, hasUnsavedSessions, showSaveDialog]);
+
+  // Handle save dialog actions
+  const handleSaveSessions = useCallback(async () => {
+    setIsSaving(true);
+    try {
+      await saveAllUnsavedSessions();
+      setShowSaveDialog(false);
+      console.log('✅ All sessions saved successfully');
+      // Reload the page after saving
+      window.location.reload();
+    } catch (error) {
+      console.error('Error saving sessions:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [saveAllUnsavedSessions]);
+
+  const handleDiscardSessions = useCallback(() => {
+    setShowSaveDialog(false);
+    console.log('🗑️ User chose to discard unsaved sessions');
+    // Clear the unsaved sessions from localStorage
+    if (user) {
+      const userKey = `chat_history_${user.id}`;
+      const savedData = localStorage.getItem(userKey);
+      if (savedData) {
+        const parsedData = JSON.parse(savedData);
+        // Mark all sessions as saved to prevent the dialog from showing again
+        const updatedSessions = parsedData.sessions.map((session: any) => ({
+          ...session,
+          isDirty: false,
+          isSavedToSupabase: true
+        }));
+        localStorage.setItem(userKey, JSON.stringify({
+          ...parsedData,
+          sessions: updatedSessions
+        }));
+      }
+    }
+    // Reload the page without saving
+    window.location.reload();
+  }, [user]);
+
+  const handleCloseDialog = useCallback(() => {
+    setShowSaveDialog(false);
+    console.log('❌ User cancelled save dialog');
+  }, []);
+
   // Don't create sessions automatically - only when user explicitly clicks "New Chat"
   // This prevents unwanted session creation on page refresh
 
@@ -894,12 +1235,23 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     addMessage,
     getActiveSession,
     clearActiveSession,
-    clearGuestHistory
+    clearGuestHistory,
+    saveSessionToSupabase: saveSessionToSupabaseById,
+    hasUnsavedSessions,
+    saveAllUnsavedSessions
   };
 
   return (
     <ChatHistoryContext.Provider value={value}>
       {children}
+      <SaveChatDialog
+        isOpen={showSaveDialog}
+        onClose={handleCloseDialog}
+        onSave={handleSaveSessions}
+        onDiscard={handleDiscardSessions}
+        isLoading={isSaving}
+        unsavedCount={sessions.filter(s => s.isDirty && !s.isSavedToSupabase).length}
+      />
     </ChatHistoryContext.Provider>
   );
 };
