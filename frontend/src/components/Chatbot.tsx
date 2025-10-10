@@ -39,10 +39,8 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     getActiveSession, 
     addMessage, 
     clearActiveSession, 
-    createNewSession,
     activeSessionId,
-    isLoading: chatHistoryLoading,
-    isGuestMode
+    isLoading: chatHistoryLoading
   } = useChatHistory();
   
   const [messages, setMessages] = useState<Message[]>([]);
@@ -291,13 +289,12 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     }
     
     // Check if there's an active session
-    let activeSession = getActiveSession();
+    const activeSession = getActiveSession();
     
-    // If no active session, show message to user
+    // If no active session, just proceed anyway - don't block the user
     if (!activeSession) {
-      console.log('No active session - user must click "New Chat" first');
-      alert('Please click "New Chat" to start a conversation first.');
-      return;
+      console.log('No active session - proceeding anyway to avoid blocking user');
+      // Don't show alert, just continue with message sending
     }
     
     console.log('Proceeding with message sending...');
@@ -570,7 +567,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       setConversationHistory([]);
       setHasFirstResponse(false);
     }
-  }, [activeSessionId]); // Use activeSessionId instead of getActiveSession
+  }, [activeSessionId, getActiveSession]); // Include getActiveSession in dependencies
 
   // For copy feedback per message
   const handleCopy = (text: string, idx: number) => {

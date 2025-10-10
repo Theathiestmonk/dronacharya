@@ -59,6 +59,10 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGuestMode, setIsGuestMode] = useState(false);
+  const [hasCheckedDatabase, setHasCheckedDatabase] = useState(false);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [lastCreateSessionTime, setLastCreateSessionTime] = useState(0);
+  const [justCreatedManualSession, setJustCreatedManualSession] = useState(false);
   
   // Save dialog state
   const [showSaveDialog, setShowSaveDialog] = useState(false);
@@ -81,7 +85,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       refValue: activeSessionIdRef.current,
       stateValue: sessionId
     });
-  }, []); // Remove activeSessionId from dependencies to prevent loop
+  }, [activeSessionId]); // Remove activeSessionId from dependencies to prevent loop
   
   useEffect(() => {
     console.log('🔄 useEffect triggered - sessions changed:', {
@@ -252,7 +256,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
         // If URL has session ID, use it if it exists in sessions, otherwise create it
         let activeSessionId = data.activeSessionId || null;
         if (urlSessionId) {
-          const urlSession = guestSessions.find(s => s.id === urlSessionId);
+          const urlSession = guestSessions.find((s: ChatSession) => s.id === urlSessionId);
           if (urlSession) {
             activeSessionId = urlSessionId;
             console.log('Using existing session from URL:', urlSessionId);
@@ -359,6 +363,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
         // Then sync with Supabase in background
         const supabaseSessions = await loadSessionsFromSupabase();
         console.log('Supabase sessions loaded:', supabaseSessions.length);
+        setHasCheckedDatabase(true); // Mark that we've checked the database
         
         if (supabaseSessions.length > 0) {
           // Use Supabase data
@@ -376,32 +381,24 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
               activeSessionId = urlSessionId;
               console.log('Using session from URL:', urlSessionId);
             } else {
-              // Create a new session with the URL session ID
-              console.log('Creating new session with URL session ID:', urlSessionId);
-              const newSession: ChatSession = {
-                id: urlSessionId,
-                title: 'New Chat',
-                messages: [],
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-                isActive: true,
-                isSavedToSupabase: false,
-                isDirty: false
-              };
-              const updatedSessions = [newSession, ...supabaseSessions];
-              setSessions(updatedSessions);
-              activeSessionId = urlSessionId;
+              // CRITICAL: Don't override manually created sessions
+              if (justCreatedManualSession || isCreatingSession) {
+                console.log('🚫 URL session not found in Supabase, but NOT switching - manual session creation in progress');
+                return;
+              }
               
-              // Save to localStorage immediately
-              const userKey = `chat_history_${user.id}`;
-              localStorage.setItem(userKey, JSON.stringify({
-                sessions: updatedSessions,
-                activeSessionId: urlSessionId
-              }));
+              // Don't auto-create sessions here - let ensureUrlSessionHandled handle it
+              console.log('URL session ID not found in existing chats, will be handled by ensureUrlSessionHandled');
             }
           }
 
           if (!activeSessionId) {
+            // CRITICAL: Don't override manually created sessions
+            if (justCreatedManualSession || isCreatingSession) {
+              console.log('🚫 Skipping Supabase session override - manual session creation in progress');
+              return;
+            }
+            
             const activeSession = supabaseSessions.find((s: ChatSession) => s.isActive);
             if (activeSession) {
               activeSessionId = activeSession.id;
@@ -410,6 +407,12 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
           }
 
           if (!activeSessionId) {
+            // CRITICAL: Don't override manually created sessions
+            if (justCreatedManualSession || isCreatingSession) {
+              console.log('🚫 Skipping Supabase session override - manual session creation in progress');
+              return;
+            }
+            
             activeSessionId = supabaseSessions[0]?.id || null;
             console.log('Using most recent session:', activeSessionId);
           }
@@ -418,6 +421,10 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
           console.log('Final active session set to:', activeSessionId);
           console.log('Session details:', supabaseSessions.find(s => s.id === activeSessionId));
         } else {
+          // User has NO existing chats in database
+          console.log('❌ User has NO existing chats in database');
+          setHasCheckedDatabase(true); // Mark that we've checked the database
+          
           // Fallback to localStorage
           const userKey = `chat_history_${user.id}`;
           const saved = localStorage.getItem(userKey);
@@ -508,9 +515,64 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const currentSessions = sessionsRef.current;
     const currentActiveSessionId = activeSessionIdRef.current;
     
-    // If there's no active session, create one
-    if (!currentActiveSessionId) {
-      console.log('🔍 No active session found, creating one automatically');
+    console.log('🔍 ensureUrlSessionHandled called:', {
+      urlSessionId,
+      currentActiveSessionId,
+      sessionsCount: currentSessions.length,
+      isLoggedIn: !!user,
+      isGuestMode,
+      isCreatingSession
+    });
+    
+    // Don't auto-create if manual session creation is in progress
+    if (isCreatingSession) {
+      console.log('🚫 Manual session creation in progress - skipping auto-creation');
+      return;
+    }
+    
+    // Don't interfere if we just created a manual session
+    if (justCreatedManualSession) {
+      console.log('🚫 Just created manual session - skipping auto-creation to prevent race conditions');
+      return;
+    }
+    
+    // CRITICAL: Only run auto-creation logic if there's NO active session
+    // If there's already an active session, don't interfere with it
+    if (currentActiveSessionId) {
+      console.log('🚫 Active session already exists - NO auto-creation needed');
+      
+      // DON'T try to switch to URL sessions when there's already an active session
+      // This prevents race conditions with manual "New Chat" button
+      if (urlSessionId && urlSessionId !== currentActiveSessionId) {
+        console.log('🚫 URL session differs from active session, but NOT switching to prevent race conditions');
+        console.log('   Active session:', currentActiveSessionId);
+        console.log('   URL session:', urlSessionId);
+        console.log('   This prevents interference with manual "New Chat" button');
+      }
+      return; // Exit early - don't interfere with existing active session
+    }
+    
+    // ONLY block AUTO-creation for logged-in users with existing chats
+    // This does NOT block manual "New Chat" button clicks
+    if (user && hasCheckedDatabase && currentSessions.length > 0) {
+      console.log('🚫 Logged-in user with existing chats - NO AUTO-creation allowed (but manual New Chat button still works)');
+      return; // Exit early - only block AUTO-creation, not manual creation
+    }
+    
+    // Only auto-create for:
+    // 1. Guest users (isGuestMode = true)
+    // 2. Logged-in users who have been checked and have NO existing chats
+    console.log('🔍 Auto-creation check:', {
+      hasActiveSession: !!currentActiveSessionId,
+      isGuestMode,
+      isLoggedIn: !!user,
+      hasCheckedDatabase,
+      sessionsCount: currentSessions.length,
+      shouldAutoCreate: !currentActiveSessionId && (isGuestMode || (user && hasCheckedDatabase && currentSessions.length === 0))
+    });
+    
+    if (!currentActiveSessionId && (isGuestMode || (user && hasCheckedDatabase && currentSessions.length === 0))) {
+      console.log('🆕 Auto-creating session for:', isGuestMode ? 'guest user' : 'new logged-in user');
       
       let newSessionId: string;
       if (urlSessionId) {
@@ -556,53 +618,27 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
       
       console.log('✅ Session created and saved automatically');
-    } else if (urlSessionId && urlSessionId !== currentActiveSessionId) {
-      // URL has session ID but it's different from current active session
-      console.log('🔍 URL session ID differs from active session:', urlSessionId, 'vs', currentActiveSessionId);
-      const urlSession = currentSessions.find(s => s.id === urlSessionId);
-      
-      if (!urlSession) {
-        console.log('🆕 Creating session for URL session ID:', urlSessionId);
-        const newSession: ChatSession = {
-          id: urlSessionId,
-          title: 'New Chat',
-          messages: [],
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          isActive: true,
-          isSavedToSupabase: false,
-          isDirty: false
-        };
-        
-        const updatedSessions = [newSession, ...currentSessions];
-        setSessions(updatedSessions);
-        sessionsRef.current = updatedSessions;
-        updateActiveSessionId(urlSessionId);
-        
-        // Save to appropriate storage
-        if (user) {
-          const userKey = `chat_history_${user.id}`;
-          localStorage.setItem(userKey, JSON.stringify({
-            sessions: updatedSessions,
-            activeSessionId: urlSessionId
-          }));
-        } else {
-          saveGuestSessions(updatedSessions, urlSessionId);
-        }
-        
-        console.log('✅ URL session created and saved');
-      } else {
-        console.log('✅ URL session already exists, switching to it');
-        updateActiveSessionId(urlSessionId);
-      }
     } else {
-      console.log('✅ Session already exists and matches URL');
+      console.log('✅ No auto-creation needed - user has existing chats or already has active session');
     }
-  }, [user, saveGuestSessions, updateActiveSessionId]);
+  }, [user, isGuestMode, saveGuestSessions, updateActiveSessionId, hasCheckedDatabase, isCreatingSession, justCreatedManualSession]);
 
-  // Create new session
+  // Create new session - MANUAL creation that ALWAYS works regardless of existing chats
   const createNewSession = useCallback(async () => {
-    console.log('🔄 Creating new session...');
+    const now = Date.now();
+    
+    // Debounce: Prevent multiple rapid calls within 1 second
+    if (now - lastCreateSessionTime < 1000) {
+      console.log('🚫 Debouncing createNewSession - too soon since last call');
+      return;
+    }
+    
+    console.log('🔄 Creating new session MANUALLY (always works regardless of existing chats)...');
+    setIsCreatingSession(true); // Prevent auto-creation during manual creation
+    setJustCreatedManualSession(true); // Mark that we just created a manual session
+    setLastCreateSessionTime(now);
+    
+    try {
     
     // Ensure current session is properly saved before creating new one
     if (activeSessionIdRef.current) {
@@ -668,6 +704,10 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       
       setSessions(newSessions);
       updateActiveSessionId(newSession.id);
+      
+      // Immediately update the refs to prevent auto-creation conflicts
+      sessionsRef.current = newSessions;
+      activeSessionIdRef.current = newSession.id;
 
       // Save to localStorage immediately for fast access
       const userKey = `chat_history_${user.id}`;
@@ -676,7 +716,20 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
         activeSessionId: newSession.id
       }));
       
-      console.log('💾 New session created and saved to localStorage. Supabase sync will happen later.');
+      // CRITICAL: Save to Supabase immediately to prevent "Session not found" errors
+      console.log('🔄 Saving new session to Supabase immediately...');
+      await saveSessionToSupabase(newSession);
+      
+      // Mark session as saved to Supabase
+      setSessions(prevSessions => 
+        prevSessions.map(s => 
+          s.id === newSession.id 
+            ? { ...s, isSavedToSupabase: true }
+            : s
+        )
+      );
+      
+      console.log('✅ New session created and saved to both localStorage and Supabase.');
     } else {
       // Guest user - save to localStorage only
       const currentSessions = sessionsRef.current;
@@ -686,13 +739,24 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       setSessions(newSessions);
       updateActiveSessionId(newSession.id);
       setIsGuestMode(true);
+      
+      // Immediately update the refs to prevent auto-creation conflicts
+      sessionsRef.current = newSessions;
+      activeSessionIdRef.current = newSession.id;
 
       // Save guest sessions to localStorage
       saveGuestSessions(newSessions, newSession.id);
     }
 
     console.log('✅ Created new session:', newSession.id);
-  }, [user, saveSessionToSupabase, saveGuestSessions, updateActiveSessionId]);
+    } catch (error) {
+      console.error('Error creating new session:', error);
+    } finally {
+      setIsCreatingSession(false); // Reset flag after creation
+      // Reset the manual session flag after a short delay to prevent race conditions
+      setTimeout(() => setJustCreatedManualSession(false), 1000);
+    }
+  }, [user, saveSessionToSupabase, saveGuestSessions, updateActiveSessionId, lastCreateSessionTime]);
 
   // Switch to session
   const switchToSession = useCallback(async (sessionId: string) => {
@@ -1001,11 +1065,17 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
         messages: updatedSession?.messages.map(m => ({ sender: m.sender, text: m.text.substring(0, 30) + '...' })) || []
       });
     }, 100);
-  }, [user, activeSessionId, sessions, saveSessionToSupabase, saveGuestSessions, isGuestMode, updateActiveSessionId]);
+  }, [user, activeSessionId, sessions, saveGuestSessions, isGuestMode, updateActiveSessionId]);
 
   // Get active session
   const getActiveSession = useCallback((): ChatSession | null => {
-    return sessions.find(session => session.id === activeSessionId) || null;
+    // Use refs for immediate consistency to prevent race conditions
+    const currentSessions = sessionsRef.current;
+    const currentActiveSessionId = activeSessionIdRef.current;
+    
+    if (!currentActiveSessionId) return null;
+    
+    return currentSessions.find(session => session.id === currentActiveSessionId) || null;
   }, [sessions, activeSessionId]);
 
   // Clear active session
@@ -1103,6 +1173,10 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Load sessions when user changes
   useEffect(() => {
+    setHasCheckedDatabase(false); // Reset database check flag when user changes
+    setIsCreatingSession(false); // Reset session creation flag when user changes
+    setLastCreateSessionTime(0); // Reset debounce timer when user changes
+    setJustCreatedManualSession(false); // Reset manual session flag when user changes
     loadFromLocalStorage();
   }, [loadFromLocalStorage]);
 
@@ -1199,7 +1273,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       if (savedData) {
         const parsedData = JSON.parse(savedData);
         // Mark all sessions as saved to prevent the dialog from showing again
-        const updatedSessions = parsedData.sessions.map((session: any) => ({
+        const updatedSessions = parsedData.sessions.map((session: ChatSession) => ({
           ...session,
           isDirty: false,
           isSavedToSupabase: true
