@@ -1110,14 +1110,7 @@ Remember: Every response should reflect Prakriti School's unique identity and ed
 
     # If all attempts failed, return a basic response
 
-    return "I apologize, but I'm having trouble generating a complete response at the moment. Please try rephrasing your question or ask for more specific information." 
-
-
-        )
-
-        content = response.choices[0].message.content
-
-        return content.strip() if content else canonical_answer
+    return "I apologize, but I'm having trouble generating a complete response at the moment. Please try rephrasing your question or ask for more specific information."
 
 
 
