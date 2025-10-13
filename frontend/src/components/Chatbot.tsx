@@ -850,6 +850,18 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                           table: ({...props}) => <table className="border-collapse w-full mb-2 text-sm border-gray-300" {...props} />,
                           th: ({...props}) => <th className="border px-2 py-1 font-bold border-gray-300 bg-gray-100 text-gray-800" {...props} />,
                           td: ({...props}) => <td className="border px-2 py-1 border-gray-300 text-gray-700" {...props} />,
+                          // Custom link component - blue color and opens in new tab
+                          a: ({href, children, ...props}) => (
+                            <a 
+                              href={href} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 underline transition-colors"
+                              {...props}
+                            >
+                              {children}
+                            </a>
+                          ),
                         }}
                       >
                         {msg.text}
@@ -899,6 +911,18 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                     table: ({...props}) => <table className="border-collapse w-full mb-2 text-sm border-gray-300" {...props} />,
                     th: ({...props}) => <th className="border px-2 py-1 font-bold border-gray-300 bg-gray-100 text-gray-800" {...props} />,
                     td: ({...props}) => <td className="border px-2 py-1 border-gray-300 text-gray-700" {...props} />,
+                    // Custom link component - blue color and opens in new tab
+                    a: ({href, children, ...props}) => (
+                      <a 
+                        href={href} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 underline transition-colors"
+                        {...props}
+                      >
+                        {children}
+                      </a>
+                    ),
                   }}
                 >
                   {displayedBotText}

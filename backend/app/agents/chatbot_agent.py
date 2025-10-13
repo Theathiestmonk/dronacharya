@@ -2,6 +2,7 @@ import os
 import json
 from app.core.openai_client import get_openai_client
 from app.agents.youtube_intent_classifier import process_video_query
+from app.agents.web_crawler_agent import get_web_enhanced_response
 from dotenv import load_dotenv
 
 # Ensure environment variables are loaded
@@ -53,8 +54,13 @@ def generate_chatbot_response(request):
 
     
     # Step 0: Check if this is a greeting and provide role-specific greeting (PRIORITY)
-    greeting_keywords = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening', 'greetings']
-    is_greeting = any(keyword in user_query.lower() for keyword in greeting_keywords)
+    import re
+    greeting_patterns = [
+        r'\bhi\b', r'\bhello\b', r'\bhey\b', 
+        r'\bgood morning\b', r'\bgood afternoon\b', r'\bgood evening\b', 
+        r'\bgreetings\b'
+    ]
+    is_greeting = any(re.search(pattern, user_query.lower()) for pattern in greeting_patterns)
     
     # Check for "how are you" type questions
     how_are_you_keywords = ['how are you', 'how are you doing', 'how do you do', 'how\'s it going', 'how\'s everything']
@@ -426,17 +432,22 @@ def generate_chatbot_response(request):
         map_url = "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3502.123456789!2d77.123456!3d28.123456!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x390ce4b123456789:0xabcdefabcdefabcd!2sPrakriti%20School!5e0!3m2!1sen!2sin!4v1710000000000!5m2!1sen!2sin"
         return [content.strip() if content else canonical_answer, {"type": "map", "url": map_url}]
 
-    # Step 0.12: YouTube Video Intent Detection
+    # Step 0.12: YouTube Video Intent Detection (only for clear video requests)
     video_keywords = [
         "video", "show me", "watch", "see", "demonstration", "example", "gardening", "art", "sports", 
         "science", "mindfulness", "meditation", "campus", "facilities", "tour", "performance", 
         "exhibition", "workshop", "activity", "program", "class", "lesson"
     ]
-    if any(kw in user_query.lower() for kw in video_keywords):
+    
+    # Only detect video intent for clear video-related queries, not for article/text queries
+    is_article_query = any(word in user_query.lower() for word in ["article", "articles", "substack", "blog", "news", "text", "read"])
+    is_video_query = any(kw in user_query.lower() for kw in video_keywords)
+    
+    if is_video_query and not is_article_query:
         print("[Chatbot] Detected video intent, processing with LangGraph...")
         try:
             video_result = process_video_query(user_query)
-            if video_result["videos"]:
+            if video_result and "videos" in video_result and video_result["videos"]:
                 # Return mixed response with text and videos
                 response_text = video_result["response"]
                 videos = video_result["videos"]
@@ -447,6 +458,44 @@ def generate_chatbot_response(request):
         except Exception as e:
             print(f"[Chatbot] Error processing video query: {e}")
             # Fall through to regular LLM response
+
+    # Step 1.5: Web Crawling Enhancement for PrakritSchool queries
+    print("[Chatbot] Checking for web crawling enhancement...")
+    
+    # Check if this query would benefit from web crawling
+    web_enhancement_keywords = [
+        'latest', 'recent', 'news', 'update', 'current', 'new', 'recently',
+        'what is', 'tell me about', 'information about', 'details about',
+        'prakriti school', 'prakrit school', 'progressive education',
+        'alternative school', 'igcse', 'a level', 'bridge programme',
+        'admission', 'fees', 'curriculum', 'activities', 'facilities',
+        'team', 'staff', 'faculty', 'teacher', 'member', 'members',
+        'who is', 'about', 'little bit about', 'introduction of',
+        'article', 'articles', 'substack', 'philosophy', 'learning approach',
+        'educational approach', 'teaching method', 'learning method',
+        'holiday', 'holidays', 'calendar', 'schedule', 'event', 'events',
+        'week', 'day', 'days', 'month', 'months', 'year', 'years',
+        'break', 'breaks', 'vacation', 'vacations', 'term', 'terms',
+        'semester', 'semesters', 'session', 'sessions', 'exam', 'exams',
+        'assessment', 'assessments', 'this week', 'next week', 'last week',
+        'today', 'tomorrow', 'yesterday', 'upcoming', 'coming up',
+        'when is', 'what day', 'which day', 'date', 'dates'
+    ]
+    
+    should_use_web_crawling = any(keyword in user_query.lower() for keyword in web_enhancement_keywords)
+    
+    web_enhanced_info = ""
+    if should_use_web_crawling:
+        try:
+            print("[Chatbot] Getting web-enhanced information...")
+            web_enhanced_info = get_web_enhanced_response(user_query)
+            if web_enhanced_info:
+                print(f"[Chatbot] Web enhancement found: {len(web_enhanced_info)} characters")
+            else:
+                print("[Chatbot] No web enhancement found")
+        except Exception as e:
+            print(f"[Chatbot] Error in web crawling: {e}")
+            web_enhanced_info = ""
 
     # Step 2: Fallback to LLM with streaming approach
     print("[Chatbot] Answer from GPT-4")
@@ -591,6 +640,9 @@ def generate_chatbot_response(request):
 - Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points)
 - End responses with proper conclusions that reinforce Prakriti's educational philosophy
 - **Always use the user's first name (properly capitalized) and appropriate title (Sir/Madam) when addressing them**
+- **If additional web search information is provided, incorporate it naturally into your response to provide the most current and comprehensive information**
+- **IMPORTANT: For PrakritSchool-related information, ONLY use the links provided in the web search information. Do NOT generate or create any manual links to prakriti.edu.in or any other PrakritSchool URLs. Only use the exact links that are provided in the source information.**
+- **CALENDAR QUERIES: When web search information contains CALENDAR_DATA, ALWAYS use this information to answer calendar/event/holiday queries. NEVER say you don't have access to calendar information if CALENDAR_DATA is provided. Use the calendar data to provide helpful responses about events, festivals, and schedules.**
 
 Remember: Every response should reflect Prakriti School's unique identity, educational approach, and warm, personal communication style."""
             else:
@@ -625,6 +677,9 @@ Remember: Every response should reflect Prakriti School's unique identity, educa
 - Be informative and aligned with Prakriti's educational values
 - Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points)
 - End responses with proper conclusions that reinforce Prakriti's educational philosophy
+- **If additional web search information is provided, incorporate it naturally into your response to provide the most current and comprehensive information**
+- **IMPORTANT: For PrakritSchool-related information, ONLY use the links provided in the web search information. Do NOT generate or create any manual links to prakriti.edu.in or any other PrakritSchool URLs. Only use the exact links that are provided in the source information.**
+- **CALENDAR QUERIES: When web search information contains CALENDAR_DATA, ALWAYS use this information to answer calendar/event/holiday queries. NEVER say you don't have access to calendar information if CALENDAR_DATA is provided. Use the calendar data to provide helpful responses about events, festivals, and schedules.**
 
 Remember: Every response should reflect Prakriti School's unique identity and educational approach. Keep responses professional and informative without personal compliments or references."""
             
@@ -635,8 +690,13 @@ Remember: Every response should reflect Prakriti School's unique identity and ed
             for msg in recent_history:
                 messages.append({"role": msg["role"], "content": msg["content"]})
             
-            # Add current user query
-            messages.append({"role": "user", "content": f"Question: {user_query}\n\nPlease provide a complete answer that fully addresses this question. Make sure to end with a proper conclusion and do not cut off mid-sentence."})
+            # Add current user query with web enhancement if available
+            user_content = f"Question: {user_query}\n\n"
+            if web_enhanced_info:
+                user_content += f"Additional Information from Web Search:\n{web_enhanced_info}\n\n"
+            user_content += "Please provide a complete answer that fully addresses this question. Make sure to end with a proper conclusion and do not cut off mid-sentence."
+            
+            messages.append({"role": "user", "content": user_content})
             
             response = openai_client.chat.completions.create(
                 model="gpt-4",

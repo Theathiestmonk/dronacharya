@@ -618,7 +618,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
       
       console.log('✅ Session created and saved automatically');
-    } else {
+        } else {
       console.log('✅ No auto-creation needed - user has existing chats or already has active session');
     }
   }, [user, isGuestMode, saveGuestSessions, updateActiveSessionId, hasCheckedDatabase, isCreatingSession, justCreatedManualSession]);
