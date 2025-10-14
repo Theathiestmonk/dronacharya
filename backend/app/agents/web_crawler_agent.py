@@ -143,10 +143,11 @@ class WebCrawlerAgent:
         
         # First, check if the query contains a potential person name (2+ capitalized words)
         import re
-        name_pattern = r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}\b'
-        potential_names = re.findall(name_pattern, query)
+        # Look for 2-word names specifically (First Last)
+        two_word_pattern = r'\b[a-zA-Z]+\s+[a-zA-Z]+\b'
+        potential_names = re.findall(two_word_pattern, query_lower)
         
-        # If no potential names found, it's not a person query
+        # If still no potential names found, it's not a person query
         if not potential_names:
             return False
         
@@ -183,14 +184,14 @@ class WebCrawlerAgent:
             'can you tell me', 'what do you know about', 'do you know',
             'little bit about', 'little bit of', 'bit about', 'bit of',
             'give me', 'give me little bit', 'give me information', 'give me details',
-            'litle bit', 'litle bit info', 'litle bit about'
+            'litle bit', 'litle bit info', 'litle bit about', 'check for'
         ]
         
         for pattern in question_patterns:
             cleaned_query = cleaned_query.replace(pattern, '').strip()
         
         # Remove individual common words that might interfere
-        common_words = ['little', 'bit', 'about', 'of', 'the', 'a', 'an', 'and', 'or', 'but', 'give', 'me', 'information', 'details', 'litle', 'info']
+        common_words = ['little', 'bit', 'about', 'of', 'the', 'a', 'an', 'and', 'or', 'but', 'give', 'me', 'information', 'details', 'litle', 'info', 'check', 'for', 'this', 'that', 'these', 'those', 'with', 'introduction', 'detail', 'what', 'facilaor', 'facilitator']
         words = cleaned_query.split()
         cleaned_words = [word for word in words if word.lower() not in common_words]
         cleaned_query = ' '.join(cleaned_words)
@@ -212,7 +213,7 @@ class WebCrawlerAgent:
             # Return the longest match (most likely to be the full name)
             longest_match = max(matches, key=len)
             # Additional check: ensure it's not just common words
-            common_words = ['little', 'bit', 'about', 'tell', 'me', 'who', 'is', 'information']
+            common_words = ['little', 'bit', 'about', 'tell', 'me', 'who', 'is', 'information', 'check', 'for', 'this', 'that', 'with', 'introduction', 'detail', 'what', 'facilaor', 'facilitator']
             if not any(word in longest_match.lower() for word in common_words):
                 return longest_match
         
@@ -383,11 +384,23 @@ class WebCrawlerAgent:
             'semester', 'semesters', 'session', 'sessions', 'exam', 'exams',
             'assessment', 'assessments', 'this week', 'next week', 'last week',
             'today', 'tomorrow', 'yesterday', 'upcoming', 'coming up',
-            'when is', 'what day', 'which day', 'date', 'dates'
+            'when is', 'what day', 'which day', 'date', 'dates',
+            'this month', 'next month', 'last month', 'current month'
         ]
         
         query_lower = query.lower()
-        return any(keyword in query_lower for keyword in calendar_keywords)
+        
+        # Check for exact keyword matches
+        if any(keyword in query_lower for keyword in calendar_keywords):
+            return True
+        
+        # Check for specific patterns like "this months", "upcoming events"
+        calendar_patterns = [
+            'this months', 'next months', 'upcoming events', 'events of',
+            'events in', 'events for', 'monthly events', 'month events'
+        ]
+        
+        return any(pattern in query_lower for pattern in calendar_patterns)
     
     def is_upcoming_query(self, query: str) -> bool:
         """Check if query specifically asks for upcoming/future events"""
@@ -785,7 +798,7 @@ class WebCrawlerAgent:
                 if event_date:
                     is_upcoming = event_date >= current_date
                     
-                    # Check if query is asking for "this week" specifically
+                    # Check if query is asking for "this week" or "this month" specifically
                     query_lower = query_context.lower()
                     if 'this week' in query_lower:
                         # Calculate this week's date range (Monday to Sunday)
@@ -797,6 +810,11 @@ class WebCrawlerAgent:
                         is_this_week = week_start <= event_date <= week_end
                         print(f"[WebCrawler] Event: '{event_text[:50]}...' -> Date: {event_date} -> This week ({week_start} to {week_end}): {is_this_week}")
                         return is_this_week
+                    elif any(month_query in query_lower for month_query in ['this month', 'this months', 'current month']):
+                        # Check if event is in current month
+                        is_this_month = event_date.month == current_date.month and event_date.year == current_date.year
+                        print(f"[WebCrawler] Event: '{event_text[:50]}...' -> Date: {event_date} -> This month ({current_date.month}/{current_date.year}): {is_this_month}")
+                        return is_this_month
                     else:
                         print(f"[WebCrawler] Event: '{event_text[:50]}...' -> Date: {event_date} -> Upcoming: {is_upcoming}")
                         return is_upcoming
@@ -935,11 +953,15 @@ class WebCrawlerAgent:
                     print(f"[WebCrawler] Found {len(past_events)} past events, no upcoming events")
                     if 'this week' in query.lower():
                         return "CALENDAR_DATA: No events are scheduled for this week (October 13-19, 2025) at Prakriti School. The calendar shows past events and future events, but no specific events are planned for the current week. For upcoming events in future weeks, please check the school's official calendar or contact administration."
+                    elif any(month_query in query.lower() for month_query in ['this month', 'this months', 'current month']):
+                        return "CALENDAR_DATA: No upcoming events are scheduled for this month (October 2025) at Prakriti School. The calendar shows past events and future events, but no specific events are planned for the current month. For upcoming events in future months, please check the school's official calendar or contact administration."
                     else:
                         return "CALENDAR_DATA: No upcoming events found in the current calendar view. The calendar shows past events, but no future events are currently visible. Prakriti School regularly organizes cultural festivals (including Diwali, Holi, Eid, Christmas, and other cultural celebrations), sports meets, art exhibitions, academic workshops, and parent-teacher meetings throughout the year. For specific upcoming event dates, please check the school's official calendar or contact administration."
                 else:
                     if 'this week' in query.lower():
                         return "CALENDAR_DATA: No events are scheduled for this week (October 13-19, 2025) at Prakriti School. The calendar shows an events archive with navigation for different months and years, but no specific events are planned for the current week. For upcoming events in future weeks, please check the school's official calendar or contact administration."
+                    elif any(month_query in query.lower() for month_query in ['this month', 'this months', 'current month']):
+                        return "CALENDAR_DATA: No upcoming events are scheduled for this month (October 2025) at Prakriti School. The calendar shows an events archive with navigation for different months and years, but no specific events are planned for the current month. For upcoming events in future months, please check the school's official calendar or contact administration."
                     else:
                         return "CALENDAR_DATA: The Prakriti School calendar page shows an events archive with navigation for different months (January through December) and years (2023-2027). The calendar interface is currently showing October 2025. While specific events for the current week are not visible in the static calendar view, Prakriti School regularly organizes cultural festivals (including Diwali, Holi, Eid, Christmas, and other cultural celebrations), sports meets, art exhibitions, academic workshops, and parent-teacher meetings throughout the year. The calendar system is available for checking upcoming events and schedules. For specific festival dates like Diwali, please check the school's official calendar or contact administration."
                     

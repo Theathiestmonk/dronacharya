@@ -73,6 +73,7 @@ const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({ onEditProfile, 
       {/* Avatar Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
+        title={`${profile.first_name} ${profile.last_name}`}
         className={`relative rounded-lg transition-all duration-200 group border-2 cursor-pointer ${
           theme === 'dark' 
             ? 'border-transparent hover:bg-gray-800 hover:border-gray-600 hover:shadow-lg' 
@@ -80,7 +81,7 @@ const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({ onEditProfile, 
         } ${
           sidebarCollapsed 
             ? 'p-2 flex items-center justify-center' 
-            : 'p-2 w-full flex items-center space-x-3'
+            : 'p-2 w-full flex items-center space-x-3 sm:space-x-3'
         }`}
       >
         {profile.profile_picture_url ? (
@@ -89,7 +90,7 @@ const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({ onEditProfile, 
             alt={`${profile.first_name} ${profile.last_name}`}
             width={40}
             height={40}
-            className="w-10 h-10 rounded-full object-cover border-2 border-gray-200 group-hover:border-gray-300 transition-colors"
+            className="w-10 h-10 sm:w-10 sm:h-10 rounded-full object-cover border-2 border-gray-200 group-hover:border-gray-300 transition-colors"
             onError={(e) => {
               // Fallback to initials if image fails to load
               const target = e.target as HTMLImageElement;
@@ -97,7 +98,7 @@ const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({ onEditProfile, 
               const parent = target.parentElement;
               if (parent) {
                 parent.innerHTML = `
-                  <div class="w-10 h-10 rounded-full flex items-center justify-center text-white text-lg font-semibold group-hover:scale-105 transition-transform" style="background-color: ${getAvatarColor()}">
+                  <div class="w-10 h-10 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-white text-lg font-semibold group-hover:scale-105 transition-transform" style="background-color: ${getAvatarColor()}">
                     ${getInitials()}
                   </div>
                 `;
@@ -106,17 +107,17 @@ const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({ onEditProfile, 
           />
         ) : (
           <div 
-            className="w-10 h-10 rounded-full flex items-center justify-center text-white text-lg font-semibold group-hover:scale-105 transition-transform"
+            className="w-10 h-10 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-white text-lg font-semibold group-hover:scale-105 transition-transform"
             style={{ backgroundColor: getAvatarColor() }}
           >
             {getInitials()}
           </div>
         )}
         
-        {/* User Info - Only show when not collapsed */}
+        {/* User Info - Only show when not collapsed and on desktop/tablet */}
         {!sidebarCollapsed && (
           <>
-            <div className="text-left flex-1 min-w-0">
+            <div className="text-left flex-1 min-w-0 hidden sm:block">
               <div className={`text-sm font-medium truncate ${theme === 'dark' ? 'text-white' : 'text-gray-700'}`}>
                 {profile.first_name} {profile.last_name}
               </div>
@@ -125,8 +126,8 @@ const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({ onEditProfile, 
               </div>
             </div>
             
-            {/* Dropdown Arrow */}
-            <svg className={`w-4 h-4 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {/* Dropdown Arrow - Only show on desktop/tablet */}
+            <svg className={`w-4 h-4 hidden sm:block ${theme === 'dark' ? 'text-gray-300' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </>
@@ -136,7 +137,7 @@ const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({ onEditProfile, 
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className={`absolute ${sidebarCollapsed ? 'left-full ml-2 top-1/2 transform -translate-y-1/2 -translate-y-8' : 'right-0 top-full mt-2'} w-56 ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} rounded-lg shadow-xl ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'} py-2 z-50 animate-in fade-in-0 zoom-in-95 duration-200`}>
+        <div className={`absolute ${sidebarCollapsed ? 'left-full ml-2 top-1/2 transform -translate-y-1/2 -translate-y-8' : 'right-0 top-full mt-2'} w-56 sm:w-56 ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} rounded-lg shadow-xl ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'} py-2 z-50 animate-in fade-in-0 zoom-in-95 duration-200`}>
           {/* Menu Items */}
           <div className="py-1">
             <button

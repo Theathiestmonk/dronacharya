@@ -235,7 +235,7 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
       
       {/* Chat History Dropdown */}
       {showChatHistoryDropdown && (
-        <div className="fixed top-32 left-0 z-50 w-80 bg-white border border-gray-200 rounded-lg shadow-xl ml-4" data-chat-history-popup>
+        <div className="fixed top-24 sm:top-32 left-2 sm:left-4 z-50 w-72 sm:w-80 bg-white border border-gray-200 rounded-lg shadow-xl" data-chat-history-popup>
           {/* Header */}
           <div className="p-3 border-b border-gray-200">
             <div className="flex items-center justify-between">
@@ -253,7 +253,7 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
 
 
           {/* Search */}
-          <div className="p-3 border-b border-gray-200">
+          <div className="p-2 sm:p-3 border-b border-gray-200">
             <div className="relative">
               <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -263,19 +263,19 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
                 placeholder="Search chats"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 rounded-lg focus:outline-none focus:ring-1 bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-500 focus:ring-blue-400"
+                className="w-full pl-10 pr-4 py-2 text-sm sm:text-base rounded-lg focus:outline-none focus:ring-1 bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-500 focus:ring-blue-400"
               />
             </div>
           </div>
 
           {/* Chat History List */}
-          <div className="max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
+          <div className="max-h-80 sm:max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
             {filteredSessions.length === 0 ? (
-              <div className="text-center py-8 text-gray-400">
-                <p className="text-sm">No chats yet</p>
+              <div className="text-center py-6 sm:py-8 text-gray-400">
+                <p className="text-xs sm:text-sm">No chats yet</p>
               </div>
             ) : (
-              <div className="p-2">
+              <div className="p-1 sm:p-2">
                 {filteredSessions
                   .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
                   .map((session) => {
@@ -283,7 +283,7 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
                     return (
                       <div
                         key={session.id}
-                        className={`group relative p-3 rounded-lg transition-colors ${
+                        className={`group relative p-2 sm:p-3 rounded-lg transition-colors ${
                           session.id === activeSessionId
                             ? 'bg-blue-50 border border-blue-200'
                             : 'hover:bg-gray-50'
@@ -291,12 +291,12 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
                       >
                         {editingSessionId === session.id ? (
                           // Editing Mode
-                          <div className="space-y-2 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                          <div className="space-y-2 bg-gray-50 p-2 sm:p-3 rounded-lg border border-gray-200">
                             <input
                               type="text"
                               value={editTitle}
                               onChange={(e) => setEditTitle(e.target.value)}
-                              className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-md text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm bg-white border border-gray-300 rounded-md text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') handleSaveTitle();
                                 if (e.key === 'Escape') handleCancelEdit();
@@ -311,16 +311,16 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
                                 }, 100);
                               }}
                             />
-                            <div className="flex space-x-2">
+                            <div className="flex space-x-1 sm:space-x-2">
                               <button
                                 onClick={handleSaveTitle}
-                                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 cursor-pointer"
+                                className="px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 cursor-pointer"
                               >
                                 Save
                               </button>
                               <button
                                 onClick={handleCancelEdit}
-                                className="px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-1 cursor-pointer"
+                                className="px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-1 cursor-pointer"
                               >
                                 Cancel
                               </button>
@@ -337,13 +337,13 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex-1 min-w-0">
-                                <h4 className="text-sm font-medium text-gray-900 truncate">
+                                <h4 className="text-xs sm:text-sm font-medium text-gray-900 truncate">
                                   {displayTitle}
                                   {editingSessionId === session.id && (
-                                    <span className="ml-2 text-xs text-yellow-600">(EDITING)</span>
+                                    <span className="ml-1 sm:ml-2 text-xs text-yellow-600">(EDITING)</span>
                                   )}
                                 </h4>
-                                <p className="text-xs text-gray-500 mt-1">
+                                <p className="text-xs text-gray-500 mt-0.5 sm:mt-1">
                                   {formatDate(new Date(session.updated_at).getTime())}
                                 </p>
                               </div>
@@ -435,20 +435,20 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
       <div className="flex-1 flex flex-col bg-white">
         {/* Header with User Profile - Sticky */}
         <div className="sticky top-0 z-30 border-b border-gray-200 bg-white">
-          <div className="flex items-center justify-between px-4 py-3">
-            <div className="flex items-center space-x-3">
+          <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3">
+            <div className="flex items-center space-x-2 sm:space-x-3">
               <Image
                 src="/prakriti_logo.webp"
                 alt="Prakriti Logo"
                 width={32}
                 height={32}
-                className="w-8 h-8 rounded-lg object-contain"
+                className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg object-contain"
               />
-              <h1 className="text-lg font-semibold text-gray-900">Prakriti AI Assistant</h1>
+              <h1 className="text-sm sm:text-lg font-semibold text-gray-900">Prakriti AI Assistant</h1>
             </div>
             
             {/* User Profile */}
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-1 sm:space-x-2 md:space-x-4">
               {user ? (
                 <UserAvatarDropdown
                   onEditProfile={() => setShowEditProfile(true)}
@@ -460,7 +460,7 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
               ) : (
                 <button
                   onClick={() => onLoginRedirect && onLoginRedirect()}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer"
+                  className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer"
                 >
                   Login
                 </button>
@@ -471,17 +471,18 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
         
         {/* Floating Chat History Button - Only show when user is logged in */}
         {user && !showChatHistoryDropdown && (
-          <div className="fixed top-24 left-0 z-40" data-chat-history-button>
+          <div className="fixed top-20 sm:top-24 left-0 z-40" data-chat-history-button>
             <button
               onClick={() => setShowChatHistoryDropdown(true)}
-              className="flex items-center space-x-2 px-4 py-2 ml-4 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-lg transition-colors shadow-lg cursor-pointer"
+              className="flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-1.5 sm:py-2 ml-2 sm:ml-4 text-xs sm:text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-lg transition-colors shadow-lg cursor-pointer"
               title="Chat History"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
-              <span>Chat History</span>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <span className="hidden sm:inline">Chat History</span>
+              <span className="sm:hidden">History</span>
+              <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </button>
@@ -490,16 +491,17 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
 
         {/* Floating New Chat Button - Only show when user is logged in and no modals are open */}
         {user && !isProfileDropdownOpen && !showDeleteConfirm && !showLogoutConfirm && (
-          <div className="fixed top-24 right-4 z-[60]">
+          <div className="fixed top-20 sm:top-24 right-2 sm:right-4 z-[60]">
             <button
               onClick={handleCreateNew}
-              className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-lg cursor-pointer"
+              className="flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-lg cursor-pointer"
               title="New Chat"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
-              <span>New Chat</span>
+              <span className="hidden sm:inline">New Chat</span>
+              <span className="sm:hidden">New</span>
             </button>
           </div>
         )}

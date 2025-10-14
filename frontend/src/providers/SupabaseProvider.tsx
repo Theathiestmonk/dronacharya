@@ -27,13 +27,7 @@ export const SupabaseProvider = ({ children }: { children: React.ReactNode }) =>
     }
     
     try {
-      const client = createClient(supabaseUrl, supabaseAnonKey, {
-        auth: {
-          autoRefreshToken: true,
-          persistSession: true,
-          detectSessionInUrl: true
-        }
-      });
+      const client = createClient(supabaseUrl, supabaseAnonKey);
       console.log('Supabase client created successfully');
       return client;
     } catch (error) {

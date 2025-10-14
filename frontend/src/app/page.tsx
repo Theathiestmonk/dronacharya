@@ -104,10 +104,10 @@ const AppContent: React.FC<{
 
   // Show chatbot for all users (public access)
   return (
-    <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
       <ChatGPTLayout onLoginRedirect={handleLoginRedirect}>
-        <main className="flex-1 flex items-center justify-center px-2 sm:px-4">
-          <div className="w-full max-w-4xl h-full flex flex-col justify-center">
+        <main className="flex-1 flex items-center justify-center px-2 sm:px-4 md:px-6 lg:px-8">
+          <div className="w-full max-w-4xl h-full flex flex-col justify-center min-h-[calc(100vh-120px)]">
             <Chatbot key={chatKey} ref={chatbotRef} />
           </div>
         </main>
