@@ -15,12 +15,14 @@ const AuthForm: React.FC = () => {
     e.preventDefault();
     setError(null);
     setLoading(true);
+    
+    if (!supabase) {
+      setError('Authentication service not available');
+      setLoading(false);
+      return;
+    }
+    
     try {
-      if (!supabase) {
-        setError('Authentication not available');
-        return;
-      }
-      
       let result;
       if (isSignup) {
         result = await supabase.auth.signUp({ email, password });
@@ -42,17 +44,19 @@ const AuthForm: React.FC = () => {
   const handleGoogle = async () => {
     setError(null);
     setLoading(true);
+    
+    if (!supabase) {
+      setError('Authentication service not available');
+      setLoading(false);
+      return;
+    }
+    
     try {
-      if (!supabase) {
-        setError('Authentication not available');
-        return;
-      }
-      
       const { error } = await supabase.auth.signInWithOAuth({ 
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
+          redirectTo: `${window.location.origin}/auth/callback`
+        }
       });
       if (error) setError(error.message);
     } catch (err: unknown) {
@@ -84,8 +88,7 @@ const AuthForm: React.FC = () => {
         <form onSubmit={handleAuth} className="flex flex-col gap-4">
           <input
             type="email"
-            className="border border-gray-400 rounded px-4 py-2 text-gray-900 bg-gray-50 focus:outline-none focus:ring"
-            style={{ borderColor: 'var(--brand-primary)', boxShadow: '0 0 0 1px var(--brand-primary)' }}
+            className="border border-gray-400 rounded px-4 py-2 text-gray-900 bg-gray-50 focus:outline-none focus:ring focus:border-blue-500"
             placeholder="Email"
             value={email}
             onChange={e => setEmail(e.target.value)}
@@ -93,8 +96,7 @@ const AuthForm: React.FC = () => {
           />
           <input
             type="password"
-            className="border border-gray-400 rounded px-4 py-2 text-gray-900 bg-gray-50 focus:outline-none focus:ring"
-            style={{ borderColor: 'var(--brand-primary)', boxShadow: '0 0 0 1px var(--brand-primary)' }}
+            className="border border-gray-400 rounded px-4 py-2 text-gray-900 bg-gray-50 focus:outline-none focus:ring focus:border-blue-500"
             placeholder="Password"
             value={password}
             onChange={e => setPassword(e.target.value)}
@@ -103,10 +105,7 @@ const AuthForm: React.FC = () => {
           {error && <div className="text-red-700 text-sm font-semibold bg-red-50 border border-red-200 rounded px-2 py-1">{error}</div>}
           <button
             type="submit"
-            className="w-full text-white py-2 rounded transition font-semibold shadow mb-2"
-            style={{ backgroundColor: 'var(--brand-primary)' }}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary-800)'}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary)'}
+            className="w-full bg-blue-700 text-white py-2 rounded hover:bg-blue-800 transition font-semibold shadow mb-2"
             disabled={loading}
           >
             {isSignup ? 'Sign Up' : 'Login'}
@@ -114,10 +113,7 @@ const AuthForm: React.FC = () => {
           <button
             onClick={handleGoogle}
             type="button"
-            className="w-full text-white py-2 rounded transition font-semibold shadow"
-            style={{ backgroundColor: 'var(--brand-secondary)' }}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-secondary-800)'}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-secondary)'}
+            className="w-full bg-green-800 text-white py-2 rounded hover:bg-green-900 transition font-semibold shadow"
             disabled={loading}
           >
             Continue with Google
@@ -125,8 +121,7 @@ const AuthForm: React.FC = () => {
         </form>
         <div className="mt-4 text-center">
           <button
-            className="hover:underline font-semibold"
-            style={{ color: 'var(--brand-primary)' }}
+            className="text-blue-700 hover:underline font-semibold"
             onClick={() => setIsSignup(!isSignup)}
           >
             {isSignup ? 'Already have an account? Login' : "Don't have an account? Sign Up"}

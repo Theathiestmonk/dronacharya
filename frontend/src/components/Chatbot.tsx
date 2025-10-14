@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useState as useCopyState } from 'react';
-import Image from 'next/image';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useAuth } from '@/providers/AuthProvider';
@@ -627,11 +626,10 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           <div className="flex-1 flex flex-col justify-center items-center">
             {/* Image above heading */}
             <div className="flex justify-center mb-3 sm:mb-4 md:mb-6">
-              <Image 
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img 
                 src="/prakriti_logo.webp" 
                 alt="Prakriti Visual" 
-                width={128}
-                height={128}
                 className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 lg:w-32 lg:h-32 object-contain" 
               />
             </div>
@@ -784,11 +782,9 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                   <div key={videoIdx} className="bg-white border border-gray-200 rounded-lg p-3 sm:p-4 shadow-sm">
                     <div className="flex flex-col gap-3 sm:gap-4">
                       <div className="flex-shrink-0">
-                        <Image
+                        <img
                           src={video.thumbnail_url}
                           alt={video.title}
-                          width={400}
-                          height={160}
                           className="w-full h-40 sm:h-32 object-cover rounded-lg"
                         />
                       </div>

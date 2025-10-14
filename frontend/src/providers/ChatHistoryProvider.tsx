@@ -506,7 +506,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       console.log('No user, loading guest sessions');
       await loadGuestSessions();
     }
-  }, [user, loadSessionsFromSupabase, migrateSessionId, loadGuestSessions, updateActiveSessionId, isCreatingSession, justCreatedManualSession]);
+  }, [user, loadSessionsFromSupabase, migrateSessionId, loadGuestSessions, updateActiveSessionId]);
 
   // Ensure URL session ID is handled or create one if none exists
   const ensureUrlSessionHandled = useCallback(() => {
@@ -1076,7 +1076,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (!currentActiveSessionId) return null;
     
     return currentSessions.find(session => session.id === currentActiveSessionId) || null;
-  }, []);
+  }, [sessions, activeSessionId]);
 
   // Clear active session
   const clearActiveSession = useCallback(() => {
