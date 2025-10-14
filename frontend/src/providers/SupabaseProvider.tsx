@@ -8,7 +8,16 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const SupabaseContext = createContext<SupabaseClient | null>(null);
 
 export const SupabaseProvider = ({ children }: { children: React.ReactNode }) => {
-  const supabase = useMemo(() => createClient(supabaseUrl, supabaseAnonKey), []);
+  const supabase = useMemo(() => {
+    const options = {
+      auth: {
+        redirectTo: typeof window !== 'undefined' 
+          ? `${window.location.origin}/auth/callback`
+          : 'http://localhost:3000/auth/callback'
+      }
+    };
+    return createClient(supabaseUrl, supabaseAnonKey, options);
+  }, []);
   return (
     <SupabaseContext.Provider value={supabase}>{children}</SupabaseContext.Provider>
   );

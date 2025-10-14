@@ -36,9 +36,24 @@ const HomePage: React.FC = () => {
     setChatKey(prev => prev + 1); // Force re-render of Chatbot
   };
 
+  // Function to handle logout
+  const handleLogout = async () => {
+    try {
+      // Immediately clear the session state for instant UI update
+      setSession(null);
+      // Then sign out from Supabase
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Error during logout:', error);
+      // If there's an error, restore the session
+      const { data } = await supabase.auth.getSession();
+      setSession(data.session);
+    }
+  };
+
   return (
     <div className="flex min-h-screen h-screen">
-      <LeftPanel user={session.user} onLogoClick={handleClearChat} />
+      <LeftPanel user={session.user} onLogoClick={handleClearChat} onLogout={handleLogout} />
       <main className="flex-1 flex items-center justify-center h-screen">
         <div className="w-full max-w-2xl h-full flex flex-col justify-center">
           <Chatbot key={chatKey} />
