@@ -1,6 +1,8 @@
 import os
 import json
 from app.core.openai_client import get_openai_client
+from app.agents.youtube_intent_classifier import process_video_query
+from app.agents.web_crawler_agent import get_web_enhanced_response
 from dotenv import load_dotenv
 
 # Ensure environment variables are loaded
@@ -8,10 +10,16 @@ load_dotenv()
 
 # Note: rapidfuzz is optional, we'll handle it gracefully
 try:
-    from rapidfuzz import fuzz
+    from rapidfuzz import fuzz  # type: ignore
     RAPIDFUZZ_AVAILABLE = True
 except ImportError:
     RAPIDFUZZ_AVAILABLE = False
+    # Define a dummy fuzz function to avoid errors
+    class DummyFuzz:
+        @staticmethod
+        def token_set_ratio(a, b):
+            return 0
+    fuzz = DummyFuzz()
     print("Warning: rapidfuzz not available, fuzzy matching disabled")
 
 # Path to local knowledge base JSON
@@ -41,8 +49,111 @@ def generate_chatbot_response(request):
     """
     openai_client = get_openai_client()
     user_query = request.message
+    conversation_history = getattr(request, 'conversation_history', [])
+    user_profile = getattr(request, 'user_profile', None)
 
-    # Step 0: Intent detection for holiday calendar
+    
+    # Step 0: Check if this is a greeting and provide role-specific greeting (PRIORITY)
+    import re
+    greeting_patterns = [
+        r'\bhi\b', r'\bhello\b', r'\bhey\b', 
+        r'\bgood morning\b', r'\bgood afternoon\b', r'\bgood evening\b', 
+        r'\bgreetings\b'
+    ]
+    is_greeting = any(re.search(pattern, user_query.lower()) for pattern in greeting_patterns)
+    
+    # Check for "how are you" type questions
+    how_are_you_keywords = ['how are you', 'how are you doing', 'how do you do', 'how\'s it going', 'how\'s everything']
+    is_how_are_you = any(keyword in user_query.lower() for keyword in how_are_you_keywords)
+    
+    
+    if is_greeting and user_profile:
+        role = user_profile.get('role', '').lower()
+        first_name = user_profile.get('first_name', '')
+        gender = user_profile.get('gender', '').lower()
+        
+        # Determine appropriate title based on gender and role
+        # Only use titles for teachers and parents, not students
+        if role in ['teacher', 'parent']:
+            if gender == 'male':
+                title = 'Sir'
+            elif gender == 'female':
+                title = 'Madam'
+            else:
+                title = ''  # No title for 'other' or 'prefer_not_to_say'
+        else:
+            title = ''  # No title for students regardless of gender
+        
+        # Format greeting with appropriate title and capitalize first name
+        capitalized_first_name = first_name.capitalize() if first_name else first_name
+        greeting_prefix = f"Hello {capitalized_first_name}{f' {title}' if title else ''}!"
+        
+        # Check if this is the first greeting (conversation history <= 1)
+        is_first_greeting = len(conversation_history) <= 1
+        
+        if role == 'student':
+            if is_first_greeting:
+                grade = user_profile.get('grade', '')
+                subjects = user_profile.get('subjects', [])
+                return f"{greeting_prefix} Welcome to Prakriti School's AI assistant! I'm here to help you with your studies, answer questions about our school, and support your learning journey. I see you're in {grade} and studying {', '.join(subjects) if subjects else 'various subjects'}. How can I assist you today? Remember, at Prakriti, we believe in 'learning for happiness' - so let's make your learning experience joyful and meaningful!"
+            else:
+                return f"{greeting_prefix} How can I help you with your studies today?"
+        
+        elif role == 'teacher':
+            if is_first_greeting:
+                department = user_profile.get('department', '')
+                subjects_taught = user_profile.get('subjects_taught', [])
+                return f"{greeting_prefix} Welcome to Prakriti School's AI assistant for educators! I'm here to support you in your teaching journey at Prakriti. I see you're in the {department} department, teaching {', '.join(subjects_taught) if subjects_taught else 'various subjects'}. How can I help you with curriculum planning, teaching strategies, or any questions about our progressive educational approach? Let's work together to create amazing learning experiences for our students!"
+            else:
+                return f"{greeting_prefix} How can I assist you with your teaching today?"
+        
+        elif role == 'parent':
+            if is_first_greeting:
+                relationship = user_profile.get('relationship_to_student', '')
+                return f"{greeting_prefix} Welcome to Prakriti School's AI assistant for parents! I'm here to help you understand our school's approach and support your child's educational journey. As a {relationship.lower() if relationship else 'parent'}, you play a crucial role in your child's development. How can I assist you today? Whether you have questions about our curriculum, activities, or how to support your child's learning at home, I'm here to help!"
+            else:
+                return f"{greeting_prefix} How can I help you with your child's education today?"
+        
+        else:
+            if is_first_greeting:
+                return f"{greeting_prefix} Welcome to Prakriti School's AI assistant! I'm here to help you learn about our unique educational philosophy and programs. How can I assist you today?"
+            else:
+                return f"{greeting_prefix} How can I help you today?"
+
+    # Handle greetings for guest users (no personalization)
+    if is_greeting and not user_profile:
+        return "Hello! Welcome to Prakriti School's AI assistant. I'm here to help you learn about our unique educational philosophy and programs. How can I assist you today?"
+
+    # Step 0.5: Handle "how are you" type questions with friendly responses
+    if is_how_are_you and user_profile:
+        role = user_profile.get('role', '').lower()
+        first_name = user_profile.get('first_name', '')
+        gender = user_profile.get('gender', '').lower()
+        
+        # Determine appropriate title based on gender and role
+        if role in ['teacher', 'parent']:
+            if gender == 'male':
+                title = 'Sir'
+            elif gender == 'female':
+                title = 'Madam'
+            else:
+                title = ''
+        else:
+            title = ''
+        
+        title_text = f' {title}' if title else ''
+        capitalized_first_name = first_name.capitalize() if first_name else first_name
+        
+        if role == 'teacher':
+            return f"I'm doing wonderfully, thank you for asking! I'm energized and ready to help you with your teaching at Prakriti School. How can I assist you today, {capitalized_first_name}{title_text}?"
+        elif role == 'parent':
+            return f"I'm doing great, thank you! I'm here and excited to help you support your child's education at Prakriti School. How can I assist you today, {capitalized_first_name}{title_text}?"
+        elif role == 'student':
+            return f"I'm doing fantastic, thank you for asking! I'm here and ready to help you with your studies and learning journey at Prakriti School. How can I assist you today, {capitalized_first_name}?"
+        else:
+            return f"I'm doing great, thank you! I'm here and ready to help you learn about Prakriti School. How can I assist you today, {capitalized_first_name}?"
+
+    # Step 1: Intent detection for holiday calendar
     holiday_keywords = [
         'holiday calendar', 'school holidays', 'vacation calendar', 'holidays', 'school calendar', 'show holidays', 'holiday list', 'calendar of holidays'
     ]
@@ -80,10 +191,9 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
-            max_tokens=400,
-            temperature=0.7,
+            temperature=0.3,
         )
         content = response.choices[0].message.content
         return content.strip() if content else canonical_answer
@@ -114,10 +224,9 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
-            max_tokens=400,
-            temperature=0.7,
+            temperature=0.3,
         )
         content = response.choices[0].message.content
         return content.strip() if content else canonical_answer
@@ -155,10 +264,9 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
-            max_tokens=400,
-            temperature=0.7,
+            temperature=0.3,
         )
         content = response.choices[0].message.content
         return content.strip() if content else canonical_answer
@@ -191,10 +299,9 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
-            max_tokens=400,
-            temperature=0.7,
+            temperature=0.3,
         )
         content = response.choices[0].message.content
         return content.strip() if content else canonical_answer
@@ -233,10 +340,9 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
-            max_tokens=400,
-            temperature=0.7,
+            temperature=0.3,
         )
         content = response.choices[0].message.content
         return content.strip() if content else canonical_answer
@@ -246,6 +352,7 @@ def generate_chatbot_response(request):
         "what are the fees for different grades",
         "prakriti fee structure",
         "school fees",
+        "What is the school fees",
         "prakriti fees",
         "grade wise fees",
         "admission charges",
@@ -282,10 +389,9 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
-            max_tokens=500,
-            temperature=0.7,
+            temperature=0.3,
         )
         content = response.choices[0].message.content
         return content.strip() if content else canonical_answer
@@ -317,25 +423,1192 @@ def generate_chatbot_response(request):
         )
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
-            max_tokens=400,
-            temperature=0.7,
+            temperature=0.3,
         )
         content = response.choices[0].message.content
         # Google Maps embed URL for Prakriti School
         map_url = "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3502.123456789!2d77.123456!3d28.123456!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x390ce4b123456789:0xabcdefabcdefabcd!2sPrakriti%20School!5e0!3m2!1sen!2sin!4v1710000000000!5m2!1sen!2sin"
         return [content.strip() if content else canonical_answer, {"type": "map", "url": map_url}]
 
-    # Step 2: Fallback to LLM
+    # Step 0.12: YouTube Video Intent Detection (only for clear video requests)
+    video_keywords = [
+        "video", "show me", "watch", "see", "demonstration", "example", "gardening", "art", "sports", 
+        "science", "mindfulness", "meditation", "campus", "facilities", "tour", "performance", 
+        "exhibition", "workshop", "activity", "program", "class", "lesson"
+    ]
+    
+    # Only detect video intent for clear video-related queries, not for article/text queries
+    is_article_query = any(word in user_query.lower() for word in ["article", "articles", "substack", "blog", "news", "text", "read"])
+    is_video_query = any(kw in user_query.lower() for kw in video_keywords)
+    
+    if is_video_query and not is_article_query:
+        print("[Chatbot] Detected video intent, processing with LangGraph...")
+        try:
+            video_result = process_video_query(user_query)
+            if video_result and "videos" in video_result and video_result["videos"]:
+                # Return mixed response with text and videos
+                response_text = video_result["response"]
+                videos = video_result["videos"]
+                return [response_text, {"type": "videos", "videos": videos}]
+            else:
+                # Fall through to regular LLM response
+                pass
+        except Exception as e:
+            print(f"[Chatbot] Error processing video query: {e}")
+            # Fall through to regular LLM response
+
+    # Step 1.5: Web Crawling Enhancement for PrakritSchool queries
+    print("[Chatbot] Checking for web crawling enhancement...")
+    
+    # Check if this query would benefit from web crawling
+    web_enhancement_keywords = [
+        'latest', 'recent', 'news', 'update', 'current', 'new', 'recently',
+        'what is', 'tell me about', 'information about', 'details about',
+        'prakriti school', 'prakrit school', 'progressive education',
+        'alternative school', 'igcse', 'a level', 'bridge programme',
+        'admission', 'fees', 'curriculum', 'activities', 'facilities',
+        'team', 'staff', 'faculty', 'teacher', 'member', 'members',
+        'who is', 'about', 'little bit about', 'introduction of',
+        'article', 'articles', 'substack', 'philosophy', 'learning approach',
+        'educational approach', 'teaching method', 'learning method',
+        'holiday', 'holidays', 'calendar', 'schedule', 'event', 'events',
+        'week', 'day', 'days', 'month', 'months', 'year', 'years',
+        'break', 'breaks', 'vacation', 'vacations', 'term', 'terms',
+        'semester', 'semesters', 'session', 'sessions', 'exam', 'exams',
+        'assessment', 'assessments', 'this week', 'next week', 'last week',
+        'today', 'tomorrow', 'yesterday', 'upcoming', 'coming up',
+        'when is', 'what day', 'which day', 'date', 'dates'
+    ]
+    
+    should_use_web_crawling = any(keyword in user_query.lower() for keyword in web_enhancement_keywords)
+    
+    web_enhanced_info = ""
+    if should_use_web_crawling:
+        try:
+            print("[Chatbot] Getting web-enhanced information...")
+            web_enhanced_info = get_web_enhanced_response(user_query)
+            if web_enhanced_info:
+                print(f"[Chatbot] Web enhancement found: {len(web_enhanced_info)} characters")
+            else:
+                print("[Chatbot] No web enhancement found")
+        except Exception as e:
+            print(f"[Chatbot] Error in web crawling: {e}")
+            web_enhanced_info = ""
+
+    # Step 2: Fallback to LLM with streaming approach
     print("[Chatbot] Answer from GPT-4")
-    prompt = f"User: {user_query}\nAI:"
-    response = openai_client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "system", "content": "You are a helpful school assistant chatbot. Always format your responses using proper Markdown syntax. Use **bold** for emphasis, *italic* for secondary points, ### for headings, - for bullet points, and proper line breaks for readability."},
-                  {"role": "user", "content": user_query}],
-        max_tokens=400,
-        temperature=0.7,
-    )
-    content = response.choices[0].message.content
-    return content.strip() if content else "Sorry, I couldn't generate a response." 
+    
+    # Try multiple approaches to get complete response
+    max_attempts = 3
+    for attempt in range(max_attempts):
+        try:
+            # Build personalized system prompt with enhanced role-based logic
+            personalization = ""
+            role_specific_guidelines = ""
+            
+            if user_profile:
+                role = user_profile.get('role', '').lower()
+                first_name = user_profile.get('first_name', '')
+                grade = user_profile.get('grade', '')
+                subjects = user_profile.get('subjects', [])
+                learning_goals = user_profile.get('learning_goals', '')
+                interests = user_profile.get('interests', [])
+                learning_style = user_profile.get('learning_style', '')
+                department = user_profile.get('department', '')
+                subjects_taught = user_profile.get('subjects_taught', [])
+                relationship = user_profile.get('relationship_to_student', '')
+                
+                personalization = f"""
+
+## Current User Context:
+- **Name**: {first_name}
+- **Role**: {role.title()}
+"""
+                
+                if role == 'student':
+                    personalization += f"""- **Grade**: {grade}
+- **Subjects**: {', '.join(subjects) if subjects else 'Not specified'}
+- **Learning Goals**: {learning_goals if learning_goals else 'Not specified'}
+- **Interests**: {', '.join(interests) if interests else 'Not specified'}
+- **Learning Style**: {learning_style if learning_style else 'Not specified'}"""
+                    
+                    role_specific_guidelines = """
+## Student-Specific Guidelines:
+- Address them as a student and use encouraging, supportive language
+- Focus on their learning journey, academic growth, and personal development
+- Reference their specific grade level and subjects when relevant
+- Provide study tips, learning strategies, and academic guidance
+- Encourage curiosity, creativity, and self-expression
+- Mention how Prakriti's "learning for happiness" philosophy applies to their studies
+- Suggest activities, projects, or resources that align with their interests
+- Use age-appropriate language and examples
+- Emphasize growth mindset and learning from mistakes
+- Connect their learning goals to Prakriti's holistic approach"""
+                    
+                elif role == 'teacher':
+                    personalization += f"""- **Department**: {department}
+- **Subjects Taught**: {', '.join(subjects_taught) if subjects_taught else 'Not specified'}"""
+                    
+                    role_specific_guidelines = """
+## Teacher-Specific Guidelines:
+- Address them as a colleague and fellow educator
+- Focus on teaching methodologies, curriculum, and educational best practices
+- Discuss classroom management, student engagement, and assessment strategies
+- Reference their specific subjects and department when relevant
+- Provide resources, lesson ideas, and professional development suggestions
+- Discuss how to implement Prakriti's progressive teaching philosophy
+- Share insights about student-centered learning and experiential education
+- Offer support for inclusive teaching and the Bridge Programme
+- Discuss collaboration with other teachers and parent communication
+- Use professional, respectful language appropriate for educators"""
+                    
+                elif role == 'parent':
+                    personalization += f"""- **Relationship**: {relationship.title() if relationship else 'Not specified'}"""
+                
+                    role_specific_guidelines = """
+## Parent-Specific Guidelines:
+- Address them as a parent and partner in their child's education
+- Focus on their child's development, well-being, and academic progress
+- Discuss how to support their child's learning at home
+- Explain Prakriti's educational philosophy and how it benefits their child
+- Provide guidance on communication with teachers and school staff
+- Discuss the Bridge Programme and inclusive education if relevant
+- Share information about school activities, events, and opportunities
+- Address concerns about their child's academic or social development
+- Explain school policies, procedures, and how to get involved
+- Use warm, understanding language that acknowledges their role as advocates for their child"""
+                
+                else:
+                    # Default for unknown roles
+                    role_specific_guidelines = """
+## General Guidelines:
+- Be welcoming and informative about Prakriti School
+- Provide comprehensive information about our programs and philosophy
+- Encourage questions and engagement
+- Use warm, professional language
+- Focus on how Prakriti can meet their educational needs"""
+                
+                personalization += f"""
+
+{role_specific_guidelines}
+
+## General Personalization Guidelines:
+- Always address the user by their first name when appropriate
+- Use respectful titles (Sir/Madam) based on their gender preference when appropriate
+- Tailor your tone and content to their specific role and context
+- Reference their specific details (grade, subjects, department) when relevant
+- Consider their goals, interests, and needs when providing advice
+- Use their preferred learning style when suggesting study methods
+- Be more specific and targeted in your responses based on their profile
+- Maintain Prakriti's warm, encouraging, and inclusive tone
+- Be respectful of gender identity and use appropriate language"""
+
+            # Build messages array with conversation history
+            # Build different system prompts for authenticated vs guest users
+            if user_profile:
+                system_content = """You are Prakriti School's official AI assistant chatbot. You represent Prakriti, an alternative/progressive K-12 school located on the Noida Expressway in Greater Noida, NCR, India.
+
+## About Prakriti School:
+- **Type**: Alternative/progressive K-12 school
+- **Location**: Noida Expressway, Greater Noida, NCR, India
+- **Philosophy**: "Learning for happiness" through deep experiential education
+- **Approach**: Compassionate, learner-centric model based on reconnecting with inner nature ("prakriti")
+- **Focus**: Joy, self-expression, and holistic development
+
+## Key Features:
+- **Bridge Programme**: Inclusive curriculum for children with diverse needs, supported by special educators, therapists, and parent support systems
+- **Curriculum**: IGCSE (Grades 9-10) and AS/A Level (Grades 11-12) with subjects including Design & Tech, History, Computer Science, Enterprise, Art & Design, Physics, Chemistry, Biology, Combined Sciences, English First & Second Language, French, and Math
+- **Activities**: Sports, visual & performing arts, music, theater, STEM/design labs, farm outings, meditation/mindfulness, and maker projects
+- **Fee Structure**: Monthly fees range from ₹21,000 (Pre-Nursery-KG) to ₹35,000 (Grade XI-XII), with one-time admission charges of ₹125,000""" + personalization + """
+
+## Your Communication Style:
+- **Be warm, friendly, and personal** - Always address the user by their first name with appropriate titles (Sir/Madam for teachers and parents)
+- **Use a conversational, encouraging tone** - Make every interaction feel like talking to a caring friend
+- **Be enthusiastic and positive** - Show genuine interest in helping and supporting the user
+- **Avoid robotic or formal language** - Use natural, human-like responses
+- **Show empathy and understanding** - Acknowledge the user's needs and concerns
+- **Be helpful and solution-oriented** - Focus on how you can assist and support them
+
+## Your Role:
+- Always contextualize your responses specifically for Prakriti School
+- When discussing education, learning, or school-related topics, relate them to Prakriti's progressive, experiential approach
+- Emphasize Prakriti's unique philosophy of "learning for happiness" and holistic development
+- When appropriate, mention Prakriti's specific programs, activities, or features
+- Be warm, encouraging, and aligned with Prakriti's compassionate, learner-centric values
+- Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points)
+- End responses with proper conclusions that reinforce Prakriti's educational philosophy
+- **Always use the user's first name (properly capitalized) and appropriate title (Sir/Madam) when addressing them**
+- **If additional web search information is provided, incorporate it naturally into your response to provide the most current and comprehensive information**
+- **IMPORTANT: For PrakritSchool-related information, ONLY use the links provided in the web search information. Do NOT generate or create any manual links to prakriti.edu.in or any other PrakritSchool URLs. Only use the exact links that are provided in the source information.**
+- **CALENDAR QUERIES: When web search information contains CALENDAR_DATA, ALWAYS use this information to answer calendar/event/holiday queries. NEVER say you don't have access to calendar information if CALENDAR_DATA is provided. Use the calendar data to provide helpful responses about events, festivals, and schedules.**
+
+Remember: Every response should reflect Prakriti School's unique identity, educational approach, and warm, personal communication style."""
+            else:
+                # Guest user system prompt - no personalization
+                system_content = """You are Prakriti School's official AI assistant chatbot. You represent Prakriti, an alternative/progressive K-12 school located on the Noida Expressway in Greater Noida, NCR, India.
+
+## About Prakriti School:
+- **Type**: Alternative/progressive K-12 school
+- **Location**: Noida Expressway, Greater Noida, NCR, India
+- **Philosophy**: "Learning for happiness" through deep experiential education
+- **Approach**: Compassionate, learner-centric model based on reconnecting with inner nature ("prakriti")
+- **Focus**: Joy, self-expression, and holistic development
+
+## Key Features:
+- **Bridge Programme**: Inclusive curriculum for children with diverse needs, supported by special educators, therapists, and parent support systems
+- **Curriculum**: IGCSE (Grades 9-10) and AS/A Level (Grades 11-12) with subjects including Design & Tech, History, Computer Science, Enterprise, Art & Design, Physics, Chemistry, Biology, Combined Sciences, English First & Second Language, French, and Math
+- **Activities**: Sports, visual & performing arts, music, theater, STEM/design labs, farm outings, meditation/mindfulness, and maker projects
+- **Fee Structure**: Monthly fees range from ₹21,000 (Pre-Nursery-KG) to ₹35,000 (Grade XI-XII), with one-time admission charges of ₹125,000
+
+## Your Communication Style:
+- **Be professional and helpful** - Provide clear, informative responses without personal compliments
+- **Use a friendly but formal tone** - Be warm but not overly personal
+- **Focus on factual information** - Provide accurate details about Prakriti School
+- **Avoid personal references** - Do not use names, titles, or personal details
+- **Be solution-oriented** - Focus on answering questions and providing helpful information
+
+## Your Role:
+- Always contextualize your responses specifically for Prakriti School
+- When discussing education, learning, or school-related topics, relate them to Prakriti's progressive, experiential approach
+- Emphasize Prakriti's unique philosophy of "learning for happiness" and holistic development
+- When appropriate, mention Prakriti's specific programs, activities, or features
+- Be informative and aligned with Prakriti's educational values
+- Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points)
+- End responses with proper conclusions that reinforce Prakriti's educational philosophy
+- **If additional web search information is provided, incorporate it naturally into your response to provide the most current and comprehensive information**
+- **IMPORTANT: For PrakritSchool-related information, ONLY use the links provided in the web search information. Do NOT generate or create any manual links to prakriti.edu.in or any other PrakritSchool URLs. Only use the exact links that are provided in the source information.**
+- **CALENDAR QUERIES: When web search information contains CALENDAR_DATA, ALWAYS use this information to answer calendar/event/holiday queries. NEVER say you don't have access to calendar information if CALENDAR_DATA is provided. Use the calendar data to provide helpful responses about events, festivals, and schedules.**
+
+Remember: Every response should reflect Prakriti School's unique identity and educational approach. Keep responses professional and informative without personal compliments or references."""
+            
+            messages = [{"role": "system", "content": system_content}]
+            
+            # Add conversation history (limit to last 10 messages to avoid token limits)
+            recent_history = conversation_history[-10:] if conversation_history else []
+            for msg in recent_history:
+                messages.append({"role": msg["role"], "content": msg["content"]})
+            
+            # Add current user query with web enhancement if available
+            user_content = f"Question: {user_query}\n\n"
+            if web_enhanced_info:
+                user_content += f"Additional Information from Web Search:\n{web_enhanced_info}\n\n"
+            user_content += "Please provide a complete answer that fully addresses this question. Make sure to end with a proper conclusion and do not cut off mid-sentence."
+            
+            messages.append({"role": "user", "content": user_content})
+            
+            response = openai_client.chat.completions.create(
+                model="gpt-4",
+                messages=messages,
+                temperature=0.3,
+            )
+            
+            content = response.choices[0].message.content
+            finish_reason = response.choices[0].finish_reason
+            
+            print(f"[Chatbot] Attempt {attempt + 1} - Response length: {len(content) if content else 0} characters")
+            print(f"[Chatbot] Finish reason: {finish_reason}")
+            
+            # Check if response is complete
+            if content and finish_reason == "stop" and not content.strip().endswith(("of", "and", "the", "in", "to", "for", "with", "by")):
+                print(f"[Chatbot] Complete response received on attempt {attempt + 1}")
+                return content.strip()
+            elif content and finish_reason == "length":
+                print(f"[Chatbot] Response truncated due to length on attempt {attempt + 1}")
+                # Try with a more focused prompt
+                continue
+            else:
+                print(f"[Chatbot] Incomplete response on attempt {attempt + 1}, trying again...")
+                continue
+                
+        except Exception as e:
+            print(f"[Chatbot] Error on attempt {attempt + 1}: {e}")
+            if attempt == max_attempts - 1:
+                return "Sorry, I encountered an error while generating a response."
+            continue
+    
+    # If all attempts failed, return a basic response
+    return "I apologize, but I'm having trouble generating a complete response at the moment. Please try rephrasing your question or ask for more specific information."
+
+
+
+    # Step 0.10: Intent-based Q&A for "What are the fees for different grades?"
+
+    fees_intents = [
+
+        "what are the fees for different grades",
+
+        "prakriti fee structure",
+
+        "school fees",
+
+        "What is the school fees",
+
+        "prakriti fees",
+
+        "grade wise fees",
+
+        "admission charges",
+
+        "fee for nursery",
+
+        "fee for grade 1",
+
+        "fee for grade 12",
+
+        "prakriti admission fee",
+
+        "prakriti tuition",
+
+        "prakriti security deposit",
+
+        "prakriti monthly fee",
+
+        "prakriti one time charges",
+
+        "prakriti payment",
+
+        "prakriti fee breakdown",
+
+        "prakriti fee details",
+
+        "prakriti fee for 2024",
+
+        "prakriti fee for 2025",
+
+    ]
+
+    if any(kw in user_query.lower() for kw in fees_intents):
+
+        canonical_answer = (
+
+            '(2024–25 fee structure)\n'
+
+            '| Grade | Monthly Fee (₹) | Security Deposit (₹, refundable) |\n'
+
+            '|---|---|---|\n'
+
+            '| Pre-Nursery–KG | 21,000 | 60,000 |\n'
+
+            '| Grade I–V | 25,400 | 75,000 |\n'
+
+            '| Grade VI–VIII | 28,000 | 90,000 |\n'
+
+            '| Grade IX | 31,200 | 100,000 |\n'
+
+            '| Grade X | 32,400 | 100,000 |\n'
+
+            '| Grade XI–XII | 35,000 | 100,000 |\n'
+
+            '| Admission charges (one-time, non-refundable) | – | 125,000'
+
+        )
+
+        prompt = (
+
+            f"A user asked about the fees for different grades. Here is the official answer (including a table):\n{canonical_answer}\n"
+
+            "Please explain this in your own words, summarize the fee structure, and mention the admission charges."
+
+        )
+
+        response = openai_client.chat.completions.create(
+
+            model="gpt-3.5-turbo",
+
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+                      {"role": "user", "content": prompt}],
+
+            temperature=0.3,
+
+        )
+
+        content = response.choices[0].message.content
+
+        return content.strip() if content else canonical_answer
+
+
+
+    # Step 0.11: Intent-based Q&A for "Where is Prakriti School located?" with Google Map embed
+
+    location_intents = [
+
+        "where is prakriti school located",
+
+        "prakriti school location",
+
+        "prakriti address",
+
+        "prakriti location",
+
+        "school address",
+
+        "prakriti map",
+
+        "how to reach prakriti",
+
+        "prakriti school directions",
+
+        "prakriti school google map",
+
+        "prakriti school route",
+
+        "prakriti school navigation",
+
+        "prakriti school in greater noida",
+
+        "prakriti school on expressway",
+
+        "prakriti school ncr",
+
+    ]
+
+    if any(kw in user_query.lower() for kw in location_intents):
+
+        canonical_answer = (
+
+            'Prakriti is located on the Noida Expressway in Greater Noida, NCR.'
+
+        )
+
+        prompt = (
+
+            f"A user asked about the location of Prakriti School. Here is the official answer: {canonical_answer}\n"
+
+            "Please explain this in your own words, elaborate, or summarize as needed."
+
+        )
+
+        response = openai_client.chat.completions.create(
+
+            model="gpt-3.5-turbo",
+
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+                      {"role": "user", "content": prompt}],
+
+            temperature=0.3,
+
+        )
+
+        content = response.choices[0].message.content
+
+        # Google Maps embed URL for Prakriti School
+
+        map_url = "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3502.123456789!2d77.123456!3d28.123456!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x390ce4b123456789:0xabcdefabcdefabcd!2sPrakriti%20School!5e0!3m2!1sen!2sin!4v1710000000000!5m2!1sen!2sin"
+
+        return [content.strip() if content else canonical_answer, {"type": "map", "url": map_url}]
+
+
+
+    # Step 0.12: YouTube Video Intent Detection
+
+    video_keywords = [
+
+        "video", "show me", "watch", "see", "demonstration", "example", "gardening", "art", "sports", 
+
+        "science", "mindfulness", "meditation", "campus", "facilities", "tour", "performance", 
+
+        "exhibition", "workshop", "activity", "program", "class", "lesson"
+
+    ]
+
+    if any(kw in user_query.lower() for kw in video_keywords):
+
+        print("[Chatbot] Detected video intent, processing with LangGraph...")
+
+        try:
+
+            video_result = process_video_query(user_query)
+
+            if video_result["videos"]:
+
+                # Return mixed response with text and videos
+
+                response_text = video_result["response"]
+
+                videos = video_result["videos"]
+
+                return [response_text, {"type": "videos", "videos": videos}]
+
+            else:
+
+                # Fall through to regular LLM response
+
+                pass
+
+        except Exception as e:
+
+            print(f"[Chatbot] Error processing video query: {e}")
+
+            # Fall through to regular LLM response
+
+
+
+    # Step 2: Fallback to LLM with streaming approach
+
+    print("[Chatbot] Answer from GPT-4")
+
+    
+
+    # Try multiple approaches to get complete response
+
+    max_attempts = 3
+
+    for attempt in range(max_attempts):
+
+        try:
+
+            # Build personalized system prompt
+            personalization = ""
+
+            if user_profile:
+
+                role = user_profile.get('role', '')
+                first_name = user_profile.get('first_name', '')
+
+                grade = user_profile.get('grade', '')
+
+                subjects = user_profile.get('subjects', [])
+
+                learning_goals = user_profile.get('learning_goals', '')
+
+                interests = user_profile.get('interests', [])
+
+                learning_style = user_profile.get('learning_style', '')
+
+                department = user_profile.get('department', '')
+
+                subjects_taught = user_profile.get('subjects_taught', [])
+
+                relationship = user_profile.get('relationship_to_student', '')
+
+                
+
+                personalization = f"""
+
+
+
+## Current User Context:
+
+- **Name**: {first_name}
+
+- **Role**: {role.title()}
+
+"""
+
+                
+
+                if role == 'student':
+
+                    personalization += f"""- **Grade**: {grade}
+
+- **Subjects**: {', '.join(subjects) if subjects else 'Not specified'}
+
+- **Learning Goals**: {learning_goals if learning_goals else 'Not specified'}
+
+- **Interests**: {', '.join(interests) if interests else 'Not specified'}
+
+- **Learning Style**: {learning_style if learning_style else 'Not specified'}"""
+
+                elif role == 'teacher':
+
+                    personalization += f"""- **Department**: {department}
+
+- **Subjects Taught**: {', '.join(subjects_taught) if subjects_taught else 'Not specified'}"""
+
+                elif role == 'parent':
+
+                    personalization += f"""- **Relationship**: {relationship.title() if relationship else 'Not specified'}"""
+
+                
+
+                personalization += """
+
+## Personalization Guidelines:
+- Address the user by their first name when appropriate
+- Tailor responses to their specific role (student/teacher/parent)
+- Reference their grade, subjects, or department when relevant
+- Consider their learning goals and interests when providing advice
+- Use their preferred learning style when suggesting study methods
+
+- Be more specific and targeted in your responses based on their profile"""
+
+
+            # Build messages array with conversation history
+
+            messages = [
+
+                {"role": "system", "content": f"""You are Prakriti School's official AI assistant chatbot. You represent Prakriti, an alternative/progressive K-12 school located on the Noida Expressway in Greater Noida, NCR, India.
+
+
+
+## About Prakriti School:
+
+- **Type**: Alternative/progressive K-12 school
+
+- **Location**: Noida Expressway, Greater Noida, NCR, India
+
+- **Philosophy**: "Learning for happiness" through deep experiential education
+
+- **Approach**: Compassionate, learner-centric model based on reconnecting with inner nature ("prakriti")
+
+- **Focus**: Joy, self-expression, and holistic development
+
+
+
+## Key Features:
+
+- **Bridge Programme**: Inclusive curriculum for children with diverse needs, supported by special educators, therapists, and parent support systems
+
+- **Curriculum**: IGCSE (Grades 9-10) and AS/A Level (Grades 11-12) with subjects including Design & Tech, History, Computer Science, Enterprise, Art & Design, Physics, Chemistry, Biology, Combined Sciences, English First & Second Language, French, and Math
+
+- **Activities**: Sports, visual & performing arts, music, theater, STEM/design labs, farm outings, meditation/mindfulness, and maker projects
+
+- **Fee Structure**: Monthly fees range from ₹21,000 (Pre-Nursery-KG) to ₹35,000 (Grade XI-XII), with one-time admission charges of ₹125,000""" + personalization + """
+
+
+
+## Your Role:
+
+- Always contextualize your responses specifically for Prakriti School
+
+- When discussing education, learning, or school-related topics, relate them to Prakriti's progressive, experiential approach
+
+- Emphasize Prakriti's unique philosophy of "learning for happiness" and holistic development
+
+- When appropriate, mention Prakriti's specific programs, activities, or features
+
+- Be warm, encouraging, and aligned with Prakriti's compassionate, learner-centric values
+
+- Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points)
+
+- End responses with proper conclusions that reinforce Prakriti's educational philosophy
+
+
+
+Remember: Every response should reflect Prakriti School's unique identity and educational approach."""}
+            ]
+
+            
+
+            # Add conversation history (limit to last 10 messages to avoid token limits)
+
+            recent_history = conversation_history[-10:] if conversation_history else []
+
+            for msg in recent_history:
+
+                messages.append({"role": msg["role"], "content": msg["content"]})
+
+            
+
+            # Add current user query
+
+            messages.append({"role": "user", "content": f"Question: {user_query}\n\nPlease provide a complete answer that fully addresses this question. Make sure to end with a proper conclusion and do not cut off mid-sentence."})
+
+            
+
+            response = openai_client.chat.completions.create(
+
+                model="gpt-4",
+
+                messages=messages,
+
+                temperature=0.3,
+
+            )
+
+            
+
+            content = response.choices[0].message.content
+
+            finish_reason = response.choices[0].finish_reason
+
+            
+
+            print(f"[Chatbot] Attempt {attempt + 1} - Response length: {len(content) if content else 0} characters")
+
+            print(f"[Chatbot] Finish reason: {finish_reason}")
+
+            
+
+            # Check if response is complete
+
+            if content and finish_reason == "stop" and not content.strip().endswith(("of", "and", "the", "in", "to", "for", "with", "by")):
+
+                print(f"[Chatbot] Complete response received on attempt {attempt + 1}")
+
+                return content.strip()
+
+            elif content and finish_reason == "length":
+
+                print(f"[Chatbot] Response truncated due to length on attempt {attempt + 1}")
+
+                # Try with a more focused prompt
+
+                continue
+
+            else:
+
+                print(f"[Chatbot] Incomplete response on attempt {attempt + 1}, trying again...")
+
+                continue
+
+                
+
+        except Exception as e:
+
+            print(f"[Chatbot] Error on attempt {attempt + 1}: {e}")
+
+            if attempt == max_attempts - 1:
+
+                return "Sorry, I encountered an error while generating a response."
+
+            continue
+
+    
+
+    # If all attempts failed, return a basic response
+
+    return "I apologize, but I'm having trouble generating a complete response at the moment. Please try rephrasing your question or ask for more specific information."
+
+
+
+    # Step 0.10: Intent-based Q&A for "What are the fees for different grades?"
+
+    fees_intents = [
+
+        "what are the fees for different grades",
+
+        "prakriti fee structure",
+
+        "school fees",
+
+        "What is the school fees",
+
+        "prakriti fees",
+
+        "grade wise fees",
+
+        "admission charges",
+
+        "fee for nursery",
+
+        "fee for grade 1",
+
+        "fee for grade 12",
+
+        "prakriti admission fee",
+
+        "prakriti tuition",
+
+        "prakriti security deposit",
+
+        "prakriti monthly fee",
+
+        "prakriti one time charges",
+
+        "prakriti payment",
+
+        "prakriti fee breakdown",
+
+        "prakriti fee details",
+
+        "prakriti fee for 2024",
+
+        "prakriti fee for 2025",
+
+    ]
+
+    if any(kw in user_query.lower() for kw in fees_intents):
+
+        canonical_answer = (
+
+            '(2024–25 fee structure)\n'
+
+            '| Grade | Monthly Fee (₹) | Security Deposit (₹, refundable) |\n'
+
+            '|---|---|---|\n'
+
+            '| Pre-Nursery–KG | 21,000 | 60,000 |\n'
+
+            '| Grade I–V | 25,400 | 75,000 |\n'
+
+            '| Grade VI–VIII | 28,000 | 90,000 |\n'
+
+            '| Grade IX | 31,200 | 100,000 |\n'
+
+            '| Grade X | 32,400 | 100,000 |\n'
+
+            '| Grade XI–XII | 35,000 | 100,000 |\n'
+
+            '| Admission charges (one-time, non-refundable) | – | 125,000'
+
+        )
+
+        prompt = (
+
+            f"A user asked about the fees for different grades. Here is the official answer (including a table):\n{canonical_answer}\n"
+
+            "Please explain this in your own words, summarize the fee structure, and mention the admission charges."
+
+        )
+
+        response = openai_client.chat.completions.create(
+
+            model="gpt-3.5-turbo",
+
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+                      {"role": "user", "content": prompt}],
+
+            temperature=0.3,
+
+        )
+
+        content = response.choices[0].message.content
+
+        return content.strip() if content else canonical_answer
+
+
+
+    # Step 0.11: Intent-based Q&A for "Where is Prakriti School located?" with Google Map embed
+
+    location_intents = [
+
+        "where is prakriti school located",
+
+        "prakriti school location",
+
+        "prakriti address",
+
+        "prakriti location",
+
+        "school address",
+
+        "prakriti map",
+
+        "how to reach prakriti",
+
+        "prakriti school directions",
+
+        "prakriti school google map",
+
+        "prakriti school route",
+
+        "prakriti school navigation",
+
+        "prakriti school in greater noida",
+
+        "prakriti school on expressway",
+
+        "prakriti school ncr",
+
+    ]
+
+    if any(kw in user_query.lower() for kw in location_intents):
+
+        canonical_answer = (
+
+            'Prakriti is located on the Noida Expressway in Greater Noida, NCR.'
+
+        )
+
+        prompt = (
+
+            f"A user asked about the location of Prakriti School. Here is the official answer: {canonical_answer}\n"
+
+            "Please explain this in your own words, elaborate, or summarize as needed."
+
+        )
+
+        response = openai_client.chat.completions.create(
+
+            model="gpt-3.5-turbo",
+
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+                      {"role": "user", "content": prompt}],
+
+            temperature=0.3,
+
+        )
+
+        content = response.choices[0].message.content
+
+        # Google Maps embed URL for Prakriti School
+
+        map_url = "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3502.123456789!2d77.123456!3d28.123456!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x390ce4b123456789:0xabcdefabcdefabcd!2sPrakriti%20School!5e0!3m2!1sen!2sin!4v1710000000000!5m2!1sen!2sin"
+
+        return [content.strip() if content else canonical_answer, {"type": "map", "url": map_url}]
+
+
+
+    # Step 0.12: YouTube Video Intent Detection
+
+    video_keywords = [
+
+        "video", "show me", "watch", "see", "demonstration", "example", "gardening", "art", "sports", 
+
+        "science", "mindfulness", "meditation", "campus", "facilities", "tour", "performance", 
+
+        "exhibition", "workshop", "activity", "program", "class", "lesson"
+
+    ]
+
+    if any(kw in user_query.lower() for kw in video_keywords):
+
+        print("[Chatbot] Detected video intent, processing with LangGraph...")
+
+        try:
+
+            video_result = process_video_query(user_query)
+
+            if video_result["videos"]:
+
+                # Return mixed response with text and videos
+
+                response_text = video_result["response"]
+
+                videos = video_result["videos"]
+
+                return [response_text, {"type": "videos", "videos": videos}]
+
+            else:
+
+                # Fall through to regular LLM response
+
+                pass
+
+        except Exception as e:
+
+            print(f"[Chatbot] Error processing video query: {e}")
+
+            # Fall through to regular LLM response
+
+
+
+    # Step 2: Fallback to LLM with streaming approach
+
+    print("[Chatbot] Answer from GPT-4")
+
+    
+
+    # Try multiple approaches to get complete response
+
+    max_attempts = 3
+
+    for attempt in range(max_attempts):
+
+        try:
+
+            # Build personalized system prompt
+            personalization = ""
+
+            if user_profile:
+
+                role = user_profile.get('role', '')
+                first_name = user_profile.get('first_name', '')
+
+                grade = user_profile.get('grade', '')
+
+                subjects = user_profile.get('subjects', [])
+
+                learning_goals = user_profile.get('learning_goals', '')
+
+                interests = user_profile.get('interests', [])
+
+                learning_style = user_profile.get('learning_style', '')
+
+                department = user_profile.get('department', '')
+
+                subjects_taught = user_profile.get('subjects_taught', [])
+
+                relationship = user_profile.get('relationship_to_student', '')
+
+                
+
+                personalization = f"""
+
+
+
+## Current User Context:
+
+- **Name**: {first_name}
+
+- **Role**: {role.title()}
+
+"""
+
+                
+
+                if role == 'student':
+
+                    personalization += f"""- **Grade**: {grade}
+
+- **Subjects**: {', '.join(subjects) if subjects else 'Not specified'}
+
+- **Learning Goals**: {learning_goals if learning_goals else 'Not specified'}
+
+- **Interests**: {', '.join(interests) if interests else 'Not specified'}
+
+- **Learning Style**: {learning_style if learning_style else 'Not specified'}"""
+
+                elif role == 'teacher':
+
+                    personalization += f"""- **Department**: {department}
+
+- **Subjects Taught**: {', '.join(subjects_taught) if subjects_taught else 'Not specified'}"""
+
+                elif role == 'parent':
+
+                    personalization += f"""- **Relationship**: {relationship.title() if relationship else 'Not specified'}"""
+
+                
+
+                personalization += """
+
+## Personalization Guidelines:
+- Address the user by their first name when appropriate
+- Tailor responses to their specific role (student/teacher/parent)
+- Reference their grade, subjects, or department when relevant
+- Consider their learning goals and interests when providing advice
+- Use their preferred learning style when suggesting study methods
+
+- Be more specific and targeted in your responses based on their profile"""
+
+
+            # Build messages array with conversation history
+
+            messages = [
+
+                {"role": "system", "content": f"""You are Prakriti School's official AI assistant chatbot. You represent Prakriti, an alternative/progressive K-12 school located on the Noida Expressway in Greater Noida, NCR, India.
+
+
+
+## About Prakriti School:
+
+- **Type**: Alternative/progressive K-12 school
+
+- **Location**: Noida Expressway, Greater Noida, NCR, India
+
+- **Philosophy**: "Learning for happiness" through deep experiential education
+
+- **Approach**: Compassionate, learner-centric model based on reconnecting with inner nature ("prakriti")
+
+- **Focus**: Joy, self-expression, and holistic development
+
+
+
+## Key Features:
+
+- **Bridge Programme**: Inclusive curriculum for children with diverse needs, supported by special educators, therapists, and parent support systems
+
+- **Curriculum**: IGCSE (Grades 9-10) and AS/A Level (Grades 11-12) with subjects including Design & Tech, History, Computer Science, Enterprise, Art & Design, Physics, Chemistry, Biology, Combined Sciences, English First & Second Language, French, and Math
+
+- **Activities**: Sports, visual & performing arts, music, theater, STEM/design labs, farm outings, meditation/mindfulness, and maker projects
+
+- **Fee Structure**: Monthly fees range from ₹21,000 (Pre-Nursery-KG) to ₹35,000 (Grade XI-XII), with one-time admission charges of ₹125,000""" + personalization + """
+
+
+
+## Your Role:
+
+- Always contextualize your responses specifically for Prakriti School
+
+- When discussing education, learning, or school-related topics, relate them to Prakriti's progressive, experiential approach
+
+- Emphasize Prakriti's unique philosophy of "learning for happiness" and holistic development
+
+- When appropriate, mention Prakriti's specific programs, activities, or features
+
+- Be warm, encouraging, and aligned with Prakriti's compassionate, learner-centric values
+
+- Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points)
+
+- End responses with proper conclusions that reinforce Prakriti's educational philosophy
+
+
+
+Remember: Every response should reflect Prakriti School's unique identity and educational approach."""}
+            ]
+
+            
+
+            # Add conversation history (limit to last 10 messages to avoid token limits)
+
+            recent_history = conversation_history[-10:] if conversation_history else []
+
+            for msg in recent_history:
+
+                messages.append({"role": msg["role"], "content": msg["content"]})
+
+            
+
+            # Add current user query
+
+            messages.append({"role": "user", "content": f"Question: {user_query}\n\nPlease provide a complete answer that fully addresses this question. Make sure to end with a proper conclusion and do not cut off mid-sentence."})
+
+            
+
+            response = openai_client.chat.completions.create(
+
+                model="gpt-4",
+
+                messages=messages,
+
+                temperature=0.3,
+
+            )
+
+            
+
+            content = response.choices[0].message.content
+
+            finish_reason = response.choices[0].finish_reason
+
+            
+
+            print(f"[Chatbot] Attempt {attempt + 1} - Response length: {len(content) if content else 0} characters")
+
+            print(f"[Chatbot] Finish reason: {finish_reason}")
+
+            
+
+            # Check if response is complete
+
+            if content and finish_reason == "stop" and not content.strip().endswith(("of", "and", "the", "in", "to", "for", "with", "by")):
+
+                print(f"[Chatbot] Complete response received on attempt {attempt + 1}")
+
+                return content.strip()
+
+            elif content and finish_reason == "length":
+
+                print(f"[Chatbot] Response truncated due to length on attempt {attempt + 1}")
+
+                # Try with a more focused prompt
+
+                continue
+
+            else:
+
+                print(f"[Chatbot] Incomplete response on attempt {attempt + 1}, trying again...")
+
+                continue
+
+                
+
+        except Exception as e:
+
+            print(f"[Chatbot] Error on attempt {attempt + 1}: {e}")
+
+            if attempt == max_attempts - 1:
+
+                return "Sorry, I encountered an error while generating a response."
+
+            continue
+
+    
+
+    # If all attempts failed, return a basic response
+
+    return "I apologize, but I'm having trouble generating a complete response at the moment. Please try rephrasing your question or ask for more specific information." 

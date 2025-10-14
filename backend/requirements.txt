@@ -9,4 +9,9 @@ requests
 typing-extensions
 python-multipart
 rapidfuzz
-email-validator 
+email-validator
+beautifulsoup4
+selenium
+webdriver-manager
+lxml
+html5lib 

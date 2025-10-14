@@ -1,6 +1,7 @@
 import './globals.css';
 
 import { SupabaseProvider } from '../providers/SupabaseProvider';
+import { AuthProvider } from '../providers/AuthProvider';
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from "next/font/google";
 
@@ -17,16 +18,28 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: 'AI School Chatbot',
   description: 'AI-powered school automation system',
+  icons: {
+    icon: '/prakriti_logo.webp',
+    shortcut: '/prakriti_logo.webp',
+    apple: '/prakriti_logo.webp',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="icon" href="/prakriti_logo.webp" type="image/webp" />
+        <link rel="shortcut icon" href="/prakriti_logo.webp" type="image/webp" />
+        <link rel="apple-touch-icon" href="/prakriti_logo.webp" />
+      </head>
+      <body className="min-h-screen" suppressHydrationWarning>
         <SupabaseProvider>
-          <div className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-            {children}
-          </div>
+          <AuthProvider>
+            <div className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+              {children}
+            </div>
+          </AuthProvider>
         </SupabaseProvider>
       </body>
     </html>

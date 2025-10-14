@@ -16,6 +16,7 @@ async def chat_with_bot(request: ChatbotRequest):
     """
     try:
         print(f"Chatbot request: {request.message}")  # Debug log
+        print(f"Conversation history length: {len(request.conversation_history) if request.conversation_history else 0}")  # Debug log
         
         # Use the chatbot agent
         result = generate_chatbot_response(request)

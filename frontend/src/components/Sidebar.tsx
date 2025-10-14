@@ -44,7 +44,8 @@ const Sidebar: React.FC<SidebarProps> = ({ role, onSelect }) => {
           <button
             key={item.page}
             onClick={() => onSelect(item.page)}
-            className="text-left px-4 py-2 rounded-lg hover:bg-blue-100 transition"
+            className="text-left px-4 py-2 rounded-lg transition"
+            style={{ backgroundColor: 'var(--brand-primary-50)' }}
           >
             {item.label}
           </button>
