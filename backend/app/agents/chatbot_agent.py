@@ -124,9 +124,13 @@ def generate_chatbot_response(request):
     
     
     if is_greeting and user_profile:
-        role = user_profile.get('role', '').lower()
-        first_name = user_profile.get('first_name', '')
-        gender = user_profile.get('gender', '').lower()
+        role = user_profile.get('role', '') or ''
+        first_name = user_profile.get('first_name', '') or ''
+        gender = user_profile.get('gender', '') or ''
+        
+        # Convert to lowercase safely
+        role = role.lower() if role else ''
+        gender = gender.lower() if gender else ''
         
         # Determine appropriate title based on gender and role
         # Only use titles for teachers and parents, not students
@@ -182,9 +186,13 @@ def generate_chatbot_response(request):
 
     # Step 0.5: Handle "how are you" type questions with friendly responses
     if is_how_are_you and user_profile:
-        role = user_profile.get('role', '').lower()
-        first_name = user_profile.get('first_name', '')
-        gender = user_profile.get('gender', '').lower()
+        role = user_profile.get('role', '') or ''
+        first_name = user_profile.get('first_name', '') or ''
+        gender = user_profile.get('gender', '') or ''
+        
+        # Convert to lowercase safely
+        role = role.lower() if role else ''
+        gender = gender.lower() if gender else ''
         
         # Determine appropriate title based on gender and role
         if role in ['teacher', 'parent']:
@@ -578,7 +586,8 @@ def generate_chatbot_response(request):
             role_specific_guidelines = ""
             
             if user_profile:
-                role = user_profile.get('role', '').lower()
+                role = user_profile.get('role', '') or ''
+                role = role.lower() if role else ''
                 first_name = user_profile.get('first_name', '')
                 grade = user_profile.get('grade', '')
                 subjects = user_profile.get('subjects', [])

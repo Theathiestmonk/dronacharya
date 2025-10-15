@@ -567,7 +567,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       setConversationHistory([]);
       setHasFirstResponse(false);
     }
-  }, [activeSessionId, getActiveSession]); // Include getActiveSession in dependencies
+  }, [activeSessionId]); // Only depend on activeSessionId, not getActiveSession function
 
   // For copy feedback per message
   const handleCopy = (text: string, idx: number) => {

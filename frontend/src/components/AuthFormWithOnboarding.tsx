@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/providers/AuthProvider';
 import OnboardingForm from './OnboardingForm';
+import { useRouter } from 'next/navigation';
 
 interface AuthFormWithOnboardingProps {
   onBack?: () => void;
@@ -14,6 +15,7 @@ const AuthFormWithOnboarding: React.FC<AuthFormWithOnboardingProps> = ({ onBack 
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
   
   const { signIn, signInWithGoogle, signUp, user, needsOnboarding } = useAuth();
 
@@ -29,6 +31,7 @@ const AuthFormWithOnboarding: React.FC<AuthFormWithOnboardingProps> = ({ onBack 
       />
     );
   }
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -190,7 +193,7 @@ const AuthFormWithOnboarding: React.FC<AuthFormWithOnboardingProps> = ({ onBack 
             </button>
           </div>
 
-          <div className="text-center">
+          <div className="text-center space-y-2">
             <button
               type="button"
               onClick={() => {
@@ -207,6 +210,17 @@ const AuthFormWithOnboarding: React.FC<AuthFormWithOnboardingProps> = ({ onBack 
                 : "Already have an account? Sign in"
               }
             </button>
+            {isLogin && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => router.push('/forgot-password')}
+                  className="text-gray-600 hover:text-gray-500 text-sm"
+                >
+                  Forgot your password?
+                </button>
+              </div>
+            )}
           </div>
         </form>
 

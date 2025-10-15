@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from 'react';
 import { useSupabase } from '../providers/SupabaseProvider';
+import { useRouter } from 'next/navigation';
 
 const AuthForm: React.FC = () => {
   const supabase = useSupabase();
@@ -10,6 +11,7 @@ const AuthForm: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [confirmationSent, setConfirmationSent] = useState(false);
+  const router = useRouter();
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,6 +69,7 @@ const AuthForm: React.FC = () => {
     }
   };
 
+
   if (confirmationSent) {
     return (
       <div className="w-full max-w-md mx-auto bg-white rounded-xl shadow-lg p-8 mt-12 border border-gray-200 text-center">
@@ -119,13 +122,23 @@ const AuthForm: React.FC = () => {
             Continue with Google
           </button>
         </form>
-        <div className="mt-4 text-center">
+        <div className="mt-4 text-center space-y-2">
           <button
             className="text-blue-700 hover:underline font-semibold"
             onClick={() => setIsSignup(!isSignup)}
           >
             {isSignup ? 'Already have an account? Login' : "Don't have an account? Sign Up"}
           </button>
+          {!isSignup && (
+            <div>
+              <button
+                className="text-gray-600 hover:underline text-sm"
+                onClick={() => router.push('/forgot-password')}
+              >
+                Forgot your password?
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

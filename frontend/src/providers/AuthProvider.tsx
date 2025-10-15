@@ -62,6 +62,8 @@ interface AuthContextType {
   updateProfile: (profileData: Partial<UserProfile>) => Promise<{ error: Error | null }>;
   completeOnboarding: () => void;
   needsOnboarding: boolean;
+  resetPassword: (email: string) => Promise<{ error: Error | null }>;
+  updatePassword: (newPassword: string) => Promise<{ error: Error | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -360,6 +362,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const resetPassword = async (email: string) => {
+    if (!supabase) {
+      return { error: new Error('Authentication not available') };
+    }
+    
+    try {
+      console.log('🔄 Supabase resetPasswordForEmail called with:', {
+        email,
+        redirectTo: `${window.location.origin}/reset-password`
+      });
+      
+      const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      
+      console.log('📧 Supabase response:', { data, error });
+      
+      if (error) {
+        console.error('❌ Supabase error details:', error);
+        // Check if it's a "user not found" error
+        if (error.message.includes('User not found') || error.message.includes('Invalid email')) {
+          return { error: new Error('No account found with this email address') };
+        }
+        return { error };
+      }
+      
+      return { error: null };
+    } catch (error) {
+      console.error('❌ Exception in resetPassword:', error);
+      return { error: error instanceof Error ? error : new Error('Failed to send reset email') };
+    }
+  };
+
+  const updatePassword = async (newPassword: string) => {
+    if (!supabase) {
+      return { error: new Error('Authentication not available') };
+    }
+    
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+      return { error };
+    } catch (error) {
+      return { error: error instanceof Error ? error : new Error('Failed to update password') };
+    }
+  };
+
   // Check localStorage for onboarding completion when there's a profile load error
   const getOnboardingFromStorage = () => {
     if (typeof window !== 'undefined') {
@@ -387,6 +437,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     updateProfile,
     completeOnboarding,
     needsOnboarding,
+    resetPassword,
+    updatePassword,
   };
 
   return (
