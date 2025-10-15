@@ -6,7 +6,8 @@ import { User } from '@supabase/supabase-js';
 interface UserProfile {
   id: string;
   user_id: string;
-  role: 'student' | 'teacher' | 'parent';
+  role: 'student' | 'teacher' | 'parent' | 'admin';
+  admin_privileges?: boolean;
   email: string;
   first_name: string;
   last_name: string;
@@ -74,7 +75,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profileLoadError, setProfileLoadError] = useState(false);
   const supabase = useSupabase();
 
-  const fetchUserProfile = useCallback(async (userId: string) => {
+  const fetchUserProfile = useCallback(async (userId: string, userEmail?: string) => {
     try {
       const response = await fetch(`/api/user-profile?user_id=${userId}`, {
         method: 'GET',
@@ -90,11 +91,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsFirstLogin(false);
         setProfileLoadError(false);
       } else if (response.status === 404) {
-        // Profile not found - this is a first-time user
-        console.log('User profile not found - first time user');
-        setProfile(null);
-        setIsFirstLogin(true);
-        setProfileLoadError(false);
+        // Profile not found - try to create a basic profile
+        console.log('User profile not found - attempting to create basic profile');
+        
+        try {
+          // Try to create a basic profile
+          const createResponse = await fetch('/api/user-profile', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              user_id: userId,
+              email: userEmail || '',
+              role: 'student', // Default role
+              first_name: 'User',
+              last_name: 'User',
+              is_active: true,
+              onboarding_completed: false,
+            }),
+          });
+
+          if (createResponse.ok) {
+            const newProfile = await createResponse.json();
+            console.log('Basic profile created successfully:', newProfile);
+            setProfile(newProfile);
+            setIsFirstLogin(true);
+            setProfileLoadError(false);
+          } else {
+            console.log('Failed to create basic profile, treating as first-time user');
+            setProfile(null);
+            setIsFirstLogin(true);
+            setProfileLoadError(false);
+          }
+        } catch (createError) {
+          console.log('Error creating basic profile, treating as first-time user:', createError);
+          setProfile(null);
+          setIsFirstLogin(true);
+          setProfileLoadError(false);
+        }
       } else {
         console.error('Error fetching user profile:', response.status, response.statusText);
         setProfile(null);
@@ -136,7 +171,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setHasCheckedAuth(true);
         
         if (session?.user) {
-          await fetchUserProfile(session.user.id);
+          await fetchUserProfile(session.user.id, session.user.email);
         } else {
           // Only set loading to false if we're sure there's no user
           console.log('No user session found - setting loading to false');
@@ -161,7 +196,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setHasCheckedAuth(true);
       
       if (session?.user) {
-        await fetchUserProfile(session.user.id);
+        await fetchUserProfile(session.user.id, session.user.email);
       } else {
         setProfile(null);
         setLoading(false);
@@ -321,7 +356,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     // Fetch the updated profile from the server to ensure we have the latest data
     if (user) {
-      await fetchUserProfile(user.id);
+      await fetchUserProfile(user.id, user.email);
     }
   };
 

@@ -1,0 +1,24 @@
+# Supabase Configuration for Admin Assignment
+# Copy this file to backend/.env and replace with your actual Supabase project values
+
+# Your Supabase project URL (found in Project Settings > API)
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url_here
+
+# Your Supabase service role key (found in Project Settings > API > service_role key)
+# WARNING: Keep this key secret! It has admin privileges
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
+
+# Example:
+# NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
+# SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+# Instructions:
+# 1. Go to your Supabase dashboard
+# 2. Navigate to Project Settings > API
+# 3. Copy your Project URL and paste it as NEXT_PUBLIC_SUPABASE_URL
+# 4. Copy your service_role key and paste it as SUPABASE_SERVICE_ROLE_KEY
+# 5. Save this file as backend/.env
+# 6. Run: python backend/assign_admin.py your_email@example.com
+
+
+

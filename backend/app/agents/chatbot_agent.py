@@ -4,6 +4,14 @@ from app.core.openai_client import get_openai_client
 from app.agents.youtube_intent_classifier import process_video_query
 from app.agents.web_crawler_agent import get_web_enhanced_response
 from dotenv import load_dotenv
+try:
+    from sqlalchemy.orm import Session
+    from app.core.database import get_db
+    from app.models.admin import Admin, ClassroomData, CalendarData
+    ADMIN_FEATURES_AVAILABLE = True
+except ImportError:
+    ADMIN_FEATURES_AVAILABLE = False
+    print("Warning: Admin features not available - missing dependencies")
 
 # Ensure environment variables are loaded
 load_dotenv()
@@ -42,6 +50,54 @@ def retrieve_from_json(query: str, threshold: int = 50) -> str | None:
     except Exception as e:
         print(f"[Chatbot] Error reading KB: {e}")
     return None
+
+def get_admin_data(user_id: str, db: Session) -> dict:
+    """Get admin data for enhanced chatbot responses."""
+    try:
+        # Check if user is admin
+        admin = db.query(Admin).filter(Admin.email == user_id).first()
+        if not admin:
+            return {"classroom_data": [], "calendar_data": []}
+        
+        # Get classroom data
+        classroom_courses = db.query(ClassroomData).filter(
+            ClassroomData.admin_id == admin.id
+        ).all()
+        
+        # Get calendar data (upcoming events)
+        from datetime import datetime
+        calendar_events = db.query(CalendarData).filter(
+            CalendarData.admin_id == admin.id,
+            CalendarData.event_start >= datetime.utcnow()
+        ).order_by(CalendarData.event_start).limit(10).all()
+        
+        return {
+            "classroom_data": [
+                {
+                    "name": course.course_name,
+                    "description": course.course_description,
+                    "room": course.course_room,
+                    "section": course.course_section,
+                    "state": course.course_state,
+                    "teacher_email": course.teacher_email
+                }
+                for course in classroom_courses
+            ],
+            "calendar_data": [
+                {
+                    "title": event.event_title,
+                    "description": event.event_description,
+                    "start": event.event_start.isoformat(),
+                    "end": event.event_end.isoformat(),
+                    "location": event.event_location,
+                    "status": event.event_status
+                }
+                for event in calendar_events
+            ]
+        }
+    except Exception as e:
+        print(f"[Chatbot] Error getting admin data: {e}")
+        return {"classroom_data": [], "calendar_data": []}
 
 def generate_chatbot_response(request):
     """
@@ -497,6 +553,19 @@ def generate_chatbot_response(request):
             print(f"[Chatbot] Error in web crawling: {e}")
             web_enhanced_info = ""
 
+    # Get admin data for enhanced responses
+    admin_data = {"classroom_data": [], "calendar_data": []}
+    if ADMIN_FEATURES_AVAILABLE and user_profile and user_profile.get('role') == 'admin':
+        try:
+            print("[Chatbot] Getting admin data...")
+            db = next(get_db())
+            admin_data = get_admin_data(user_profile.get('email', ''), db)
+            if admin_data.get('classroom_data') or admin_data.get('calendar_data'):
+                print(f"[Chatbot] Admin data found: {len(admin_data.get('classroom_data', []))} courses, {len(admin_data.get('calendar_data', []))} events")
+        except Exception as e:
+            print(f"[Chatbot] Error getting admin data: {e}")
+            admin_data = {"classroom_data": [], "calendar_data": []}
+
     # Step 2: Fallback to LLM with streaming approach
     print("[Chatbot] Answer from GPT-4")
     
@@ -694,6 +763,15 @@ Remember: Every response should reflect Prakriti School's unique identity and ed
             user_content = f"Question: {user_query}\n\n"
             if web_enhanced_info:
                 user_content += f"Additional Information from Web Search:\n{web_enhanced_info}\n\n"
+            
+            # Add admin data if available
+            if admin_data.get('classroom_data') or admin_data.get('calendar_data'):
+                user_content += "ADMIN DATA (Use this information to provide enhanced responses):\n"
+                if admin_data.get('classroom_data'):
+                    user_content += f"Google Classroom Courses:\n{json.dumps(admin_data['classroom_data'], indent=2)}\n\n"
+                if admin_data.get('calendar_data'):
+                    user_content += f"Google Calendar Events:\n{json.dumps(admin_data['calendar_data'], indent=2)}\n\n"
+            
             user_content += "Please provide a complete answer that fully addresses this question. Make sure to end with a proper conclusion and do not cut off mid-sentence."
             
             messages.append({"role": "user", "content": user_content})

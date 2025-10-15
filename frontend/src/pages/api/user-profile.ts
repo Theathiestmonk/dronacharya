@@ -118,7 +118,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       // Validate role
-      const validRoles = ['student', 'teacher', 'parent'];
+      const validRoles = ['student', 'teacher', 'parent', 'admin'];
       if (!validRoles.includes(profileData.role)) {
         return res.status(400).json({ error: 'Invalid role' });
       }

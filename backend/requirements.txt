@@ -14,4 +14,7 @@ beautifulsoup4
 selenium
 webdriver-manager
 lxml
-html5lib 
+html5lib
+sqlalchemy
+psycopg2-binary
+httpx 
