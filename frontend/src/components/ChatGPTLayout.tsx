@@ -23,7 +23,6 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
     switchToSession, 
     deleteSession, 
     updateSessionTitle,
-    refreshChatComponents,
     isLoading: chatHistoryLoading
   } = useChatHistory();
   
@@ -502,22 +501,6 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
         {/* Floating Action Buttons - Only show when user is logged in and no modals are open */}
         {user && !isProfileDropdownOpen && !showDeleteConfirm && !showLogoutConfirm && (
           <div className="fixed top-20 sm:top-24 right-2 sm:right-4 z-[60] flex flex-col space-y-2">
-            {/* Refresh Button */}
-            <button
-              onClick={refreshChatComponents}
-              className="flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-lg transition-colors shadow-lg cursor-pointer"
-              title="Refresh Chat"
-            >
-              <svg 
-                className="w-3 h-3 sm:w-4 sm:h-4" 
-                fill="none" 
-                stroke="currentColor" 
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
             
             {/* New Chat Button */}
             <button
