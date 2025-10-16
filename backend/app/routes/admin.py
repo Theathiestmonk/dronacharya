@@ -50,7 +50,7 @@ async def admin_login(login_data: AdminLogin, db: Session = Depends(get_db)):
 # Google OAuth configuration
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:3000/admin/callback")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:3000/api/admin/callback")
 
 # Google API scopes
 GOOGLE_CLASSROOM_SCOPES = [

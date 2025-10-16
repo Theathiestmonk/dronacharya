@@ -40,6 +40,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     addMessage, 
     clearActiveSession, 
     activeSessionId,
+    refreshChatComponents,
     isLoading: chatHistoryLoading
   } = useChatHistory();
   
@@ -567,7 +568,18 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       setConversationHistory([]);
       setHasFirstResponse(false);
     }
-  }, [activeSessionId]); // Only depend on activeSessionId, not getActiveSession function
+  }, [activeSessionId, getActiveSession]); // Include getActiveSession in dependencies
+
+  // Listen for custom refresh event
+  useEffect(() => {
+    const handleRefreshEvent = () => {
+      console.log('🔄 Custom refresh event received - refreshing chat components');
+      refreshChatComponents();
+    };
+
+    window.addEventListener('refreshChatComponents', handleRefreshEvent);
+    return () => window.removeEventListener('refreshChatComponents', handleRefreshEvent);
+  }, [refreshChatComponents]);
 
   // For copy feedback per message
   const handleCopy = (text: string, idx: number) => {
@@ -619,7 +631,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   }), [handleClearChat]);
 
   return (
-    <div className="flex flex-col h-[60vh] sm:h-[70vh] md:h-[75vh] lg:h-[80vh] w-full max-w-xl mx-auto bg-transparent p-2 sm:p-0">
+    <div className={`flex flex-col h-[60vh] sm:h-[70vh] md:h-[75vh] lg:h-[80vh] w-full max-w-xl mx-auto bg-transparent p-2 sm:p-0 transition-all duration-200 ${chatHistoryLoading ? 'opacity-40 scale-[0.98]' : 'opacity-100 scale-100'}`}>
       {messages.length === 0 ? (
         <>
           {/* Welcome Screen - Centered Layout */}
@@ -699,8 +711,8 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                 </button>
               </div>
               
-              {/* Chat Shortcuts - Centered - Only show before first response and when not loading */}
-              {!hasFirstResponse && !chatHistoryLoading && (
+              {/* Chat Shortcuts - Centered - Only show before first response */}
+              {!hasFirstResponse && (
                 <div className="mt-3 sm:mt-4 px-1 sm:px-0">
                   <div className="flex flex-wrap gap-1.5 sm:gap-2 justify-center">
                   {[
@@ -998,8 +1010,8 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             </button>
           </div>
           
-          {/* Chat Shortcuts - Only show before first response and when not loading */}
-          {!hasFirstResponse && !chatHistoryLoading && (
+          {/* Chat Shortcuts - Only show before first response */}
+          {!hasFirstResponse && (
             <div className="mt-2 sm:mt-3 px-1 sm:px-0">
               <div className="flex flex-wrap gap-1.5 sm:gap-2 justify-center">
               {[

@@ -2,7 +2,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { useAuth } from './AuthProvider';
 import { useSupabase } from './SupabaseProvider';
-import SaveChatDialog from '../components/SaveChatDialog';
 
 export interface ChatMessage {
   sender: 'user' | 'bot';
@@ -40,6 +39,7 @@ interface ChatHistoryContextType {
   saveSessionToSupabase: (sessionId: string) => Promise<void>;
   hasUnsavedSessions: () => boolean;
   saveAllUnsavedSessions: () => Promise<void>;
+  refreshChatComponents: () => Promise<void>;
 }
 
 const ChatHistoryContext = createContext<ChatHistoryContextType | undefined>(undefined);
@@ -64,9 +64,8 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [lastCreateSessionTime, setLastCreateSessionTime] = useState(0);
   const [justCreatedManualSession, setJustCreatedManualSession] = useState(false);
   
-  // Save dialog state
-  const [showSaveDialog, setShowSaveDialog] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  // Blink effect state for refresh
+  const [isBlinking, setIsBlinking] = useState(false);
   
   // Use ref to get current sessions state
   const sessionsRef = useRef<ChatSession[]>([]);
@@ -506,7 +505,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       console.log('No user, loading guest sessions');
       await loadGuestSessions();
     }
-  }, [user, loadSessionsFromSupabase, migrateSessionId, loadGuestSessions, updateActiveSessionId]);
+  }, [user, loadSessionsFromSupabase, migrateSessionId, loadGuestSessions, updateActiveSessionId, isCreatingSession, justCreatedManualSession]);
 
   // Ensure URL session ID is handled or create one if none exists
   const ensureUrlSessionHandled = useCallback(() => {
@@ -1076,7 +1075,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (!currentActiveSessionId) return null;
     
     return currentSessions.find(session => session.id === currentActiveSessionId) || null;
-  }, [sessions, activeSessionId]);
+  }, []);
 
   // Clear active session
   const clearActiveSession = useCallback(() => {
@@ -1204,15 +1203,18 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, [user, activeSessionId, isGuestMode, updateActiveSessionId]);
 
-  // Page refresh detection with custom save dialog
+  // Auto-save sessions before page unload (no popup)
   useEffect(() => {
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (user && hasUnsavedSessions() && !showSaveDialog) {
-        // Show our custom dialog and prevent browser dialog
-        setShowSaveDialog(true);
-        event.preventDefault();
-        event.returnValue = '';
-        return '';
+    const handleBeforeUnload = async () => {
+      if (user && hasUnsavedSessions()) {
+        // Auto-save without showing popup
+        console.log('🔄 Auto-saving sessions before page unload...');
+        try {
+          await saveAllUnsavedSessions();
+          console.log('✅ Sessions auto-saved successfully');
+        } catch (error) {
+          console.error('Error auto-saving sessions:', error);
+        }
       }
     };
 
@@ -1221,77 +1223,55 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       if ((event.ctrlKey && event.key === 'r') || 
           event.key === 'F5' || 
           (event.ctrlKey && event.shiftKey && event.key === 'R')) {
-        if (user && hasUnsavedSessions() && !showSaveDialog) {
+        if (user && hasUnsavedSessions()) {
+          // Auto-save and refresh only chat components
           event.preventDefault();
-          setShowSaveDialog(true);
+          console.log('🔄 Refresh detected - auto-saving and refreshing chat components...');
+          saveAllUnsavedSessions().then(() => {
+            // Trigger a custom refresh event for chat components
+            window.dispatchEvent(new CustomEvent('refreshChatComponents'));
+          });
         }
-      }
-    };
-
-    const handlePageShow = (event: PageTransitionEvent) => {
-      if (event.persisted && user && hasUnsavedSessions()) {
-        // Page was restored from cache and has unsaved sessions
-        console.log('🔄 Page restored from cache with unsaved sessions');
-        setShowSaveDialog(true);
       }
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('pageshow', handlePageShow);
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('pageshow', handlePageShow);
     };
-  }, [user, hasUnsavedSessions, showSaveDialog]);
+  }, [user, hasUnsavedSessions, saveAllUnsavedSessions]);
 
-  // Handle save dialog actions
-  const handleSaveSessions = useCallback(async () => {
-    setIsSaving(true);
+  // Refresh chat components function with blink effect
+  const refreshChatComponents = useCallback(async () => {
+    console.log('🔄 Refreshing chat components...');
+    
+    // Trigger blink effect
+    setIsBlinking(true);
+    
     try {
-      await saveAllUnsavedSessions();
-      setShowSaveDialog(false);
-      console.log('✅ All sessions saved successfully');
-      // Reload the page after saving
-      window.location.reload();
-    } catch (error) {
-      console.error('Error saving sessions:', error);
-    } finally {
-      setIsSaving(false);
-    }
-  }, [saveAllUnsavedSessions]);
-
-  const handleDiscardSessions = useCallback(() => {
-    setShowSaveDialog(false);
-    console.log('🗑️ User chose to discard unsaved sessions');
-    // Clear the unsaved sessions from localStorage
-    if (user) {
-      const userKey = `chat_history_${user.id}`;
-      const savedData = localStorage.getItem(userKey);
-      if (savedData) {
-        const parsedData = JSON.parse(savedData);
-        // Mark all sessions as saved to prevent the dialog from showing again
-        const updatedSessions = parsedData.sessions.map((session: ChatSession) => ({
-          ...session,
-          isDirty: false,
-          isSavedToSupabase: true
-        }));
-        localStorage.setItem(userKey, JSON.stringify({
-          ...parsedData,
-          sessions: updatedSessions
-        }));
+      // Auto-save any unsaved sessions first (non-blocking)
+      if (user && hasUnsavedSessions()) {
+        saveAllUnsavedSessions().catch(error => {
+          console.error('Error auto-saving sessions:', error);
+        });
       }
+      
+      // Reload sessions from the database/localStorage immediately
+      await loadFromLocalStorage();
+      
+      console.log('✅ Chat components refreshed successfully');
+    } catch (error) {
+      console.error('Error refreshing chat components:', error);
+    } finally {
+      // Stop blink effect after a short delay
+      setTimeout(() => {
+        setIsBlinking(false);
+      }, 300);
     }
-    // Reload the page without saving
-    window.location.reload();
-  }, [user]);
-
-  const handleCloseDialog = useCallback(() => {
-    setShowSaveDialog(false);
-    console.log('❌ User cancelled save dialog');
-  }, []);
+  }, [user, hasUnsavedSessions, saveAllUnsavedSessions, loadFromLocalStorage]);
 
   // Don't create sessions automatically - only when user explicitly clicks "New Chat"
   // This prevents unwanted session creation on page refresh
@@ -1299,7 +1279,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const value: ChatHistoryContextType = {
     sessions,
     activeSessionId,
-    isLoading,
+    isLoading: isLoading || isBlinking,
     isGuestMode,
     createNewSession,
     switchToSession,
@@ -1312,20 +1292,13 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     clearGuestHistory,
     saveSessionToSupabase: saveSessionToSupabaseById,
     hasUnsavedSessions,
-    saveAllUnsavedSessions
+    saveAllUnsavedSessions,
+    refreshChatComponents
   };
 
   return (
     <ChatHistoryContext.Provider value={value}>
       {children}
-      <SaveChatDialog
-        isOpen={showSaveDialog}
-        onClose={handleCloseDialog}
-        onSave={handleSaveSessions}
-        onDiscard={handleDiscardSessions}
-        isLoading={isSaving}
-        unsavedCount={sessions.filter(s => s.isDirty && !s.isSavedToSupabase).length}
-      />
     </ChatHistoryContext.Provider>
   );
 };

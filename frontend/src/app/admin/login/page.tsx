@@ -2,7 +2,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 
 const AdminLoginPage: React.FC = () => {
   const { signIn, loading } = useAuth();
@@ -35,8 +34,32 @@ const AdminLoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+      {/* Go to Chat Button */}
+      <div className="bg-white border-b border-gray-200 px-4 py-3">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={() => {
+                // Use replace to avoid adding to history stack
+                router.replace('/');
+              }}
+              className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              <span className="font-medium">Go to Chat</span>
+            </button>
+            <div className="h-6 w-px bg-gray-300"></div>
+            <h1 className="text-lg font-semibold text-gray-900">Admin Login</h1>
+          </div>
+        </div>
+      </div>
+      
+      {/* Login Form */}
+      <div className="flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-md w-full space-y-8">
         <div className="text-center">
           <div className="mx-auto h-16 w-16 bg-indigo-600 rounded-full flex items-center justify-center">
             <svg className="h-8 w-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -128,9 +151,12 @@ const AdminLoginPage: React.FC = () => {
           <div className="text-center">
             <p className="text-sm text-gray-600">
               Not an admin?{' '}
-              <Link href="/" className="font-medium text-indigo-600 hover:text-indigo-500">
-                Go to main app
-              </Link>
+              <button
+                onClick={() => router.replace('/')}
+                className="font-medium text-indigo-600 hover:text-indigo-500 transition-colors"
+              >
+                Go to Chat
+              </button>
             </p>
           </div>
         </form>
@@ -146,6 +172,7 @@ const AdminLoginPage: React.FC = () => {
               </span>
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>

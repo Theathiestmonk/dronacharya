@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/providers/AuthProvider';
 import { useChatHistory } from '@/providers/ChatHistoryProvider';
+import { useRouter } from 'next/navigation';
 import UserAvatarDropdown from './UserAvatarDropdown';
 import EditProfileModal from './EditProfileModal';
 import ConfirmationModal from './ConfirmationModal';
@@ -14,13 +15,16 @@ interface ChatGPTLayoutProps {
 
 const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect }) => {
   const { user, signOut } = useAuth();
+  const router = useRouter();
   const { 
     sessions, 
     activeSessionId, 
     createNewSession, 
     switchToSession, 
     deleteSession, 
-    updateSessionTitle 
+    updateSessionTitle,
+    refreshChatComponents,
+    isLoading: chatHistoryLoading
   } = useChatHistory();
   
   const [showEditProfile, setShowEditProfile] = useState(false);
@@ -179,6 +183,11 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
     setShowLogoutConfirm(true);
   };
 
+  const handleAdminAccess = () => {
+    // Navigate to admin page using Next.js router
+    router.push('/admin');
+  };
+
   const confirmLogout = async () => {
     setIsProcessing(true);
     try {
@@ -235,7 +244,7 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
       
       {/* Chat History Dropdown */}
       {showChatHistoryDropdown && (
-        <div className="fixed top-24 sm:top-32 left-2 sm:left-4 z-50 w-72 sm:w-80 bg-white border border-gray-200 rounded-lg shadow-xl" data-chat-history-popup>
+        <div className={`fixed top-24 sm:top-32 left-2 sm:left-4 z-50 w-72 sm:w-80 bg-white border border-gray-200 rounded-lg shadow-xl transition-all duration-200 ${chatHistoryLoading ? 'opacity-40 scale-[0.98]' : 'opacity-100 scale-100'}`} data-chat-history-popup>
           {/* Header */}
           <div className="p-3 border-b border-gray-200">
             <div className="flex items-center justify-between">
@@ -453,6 +462,7 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
                 <UserAvatarDropdown
                   onEditProfile={() => setShowEditProfile(true)}
                   onLogout={handleLogout}
+                  onAdminAccess={handleAdminAccess}
                   sidebarCollapsed={false}
                   theme="light"
                   onDropdownToggle={setIsProfileDropdownOpen}
@@ -489,9 +499,27 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
           </div>
         )}
 
-        {/* Floating New Chat Button - Only show when user is logged in and no modals are open */}
+        {/* Floating Action Buttons - Only show when user is logged in and no modals are open */}
         {user && !isProfileDropdownOpen && !showDeleteConfirm && !showLogoutConfirm && (
-          <div className="fixed top-20 sm:top-24 right-2 sm:right-4 z-[60]">
+          <div className="fixed top-20 sm:top-24 right-2 sm:right-4 z-[60] flex flex-col space-y-2">
+            {/* Refresh Button */}
+            <button
+              onClick={refreshChatComponents}
+              className="flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-lg transition-colors shadow-lg cursor-pointer"
+              title="Refresh Chat"
+            >
+              <svg 
+                className="w-3 h-3 sm:w-4 sm:h-4" 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+            
+            {/* New Chat Button */}
             <button
               onClick={handleCreateNew}
               className="flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-lg cursor-pointer"
@@ -507,7 +535,7 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
         )}
         
         {/* Main Content */}
-        <div className="flex-1">
+        <div className={`flex-1 transition-all duration-200 ${chatHistoryLoading ? 'opacity-40 scale-[0.98]' : 'opacity-100 scale-100'}`}>
           {children}
         </div>
       </div>

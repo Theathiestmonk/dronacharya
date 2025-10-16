@@ -60,3 +60,4 @@ WHERE up.is_active = true;
 GRANT ALL ON admin_user_view TO authenticated;
 
 
+

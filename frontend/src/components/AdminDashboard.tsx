@@ -1,7 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/providers/AuthProvider';
-import Link from 'next/link';
 
 interface IntegrationStatus {
   classroom_enabled: boolean;
@@ -36,7 +35,7 @@ interface CalendarEvent {
 }
 
 const AdminDashboard: React.FC = () => {
-  const { profile, signOut } = useAuth();
+  const { } = useAuth();
   const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatus | null>(null);
   const [classroomData, setClassroomData] = useState<ClassroomCourse[]>([]);
   const [calendarData, setCalendarData] = useState<CalendarEvent[]>([]);
@@ -138,26 +137,9 @@ const AdminDashboard: React.FC = () => {
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-8">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-              <p className="mt-2 text-gray-600">Manage Google Classroom and Calendar integrations</p>
-            </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">Welcome, {profile?.first_name} {profile?.last_name}</span>
-              <Link
-                href="/admin/management"
-                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm"
-              >
-                Manage Admins
-              </Link>
-              <button
-                onClick={signOut}
-                className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 text-sm"
-              >
-                Logout
-              </button>
-            </div>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+            <p className="mt-2 text-gray-600">Manage Google Classroom and Calendar integrations</p>
           </div>
         </div>
 

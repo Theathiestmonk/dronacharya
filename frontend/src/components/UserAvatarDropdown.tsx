@@ -6,12 +6,13 @@ import Image from 'next/image';
 interface UserAvatarDropdownProps {
   onEditProfile: () => void;
   onLogout: () => void;
+  onAdminAccess?: () => void;
   sidebarCollapsed?: boolean;
   theme?: 'light' | 'dark';
   onDropdownToggle?: (isOpen: boolean) => void;
 }
 
-const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({ onEditProfile, onLogout, sidebarCollapsed = false, theme = 'light', onDropdownToggle }) => {
+const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({ onEditProfile, onLogout, onAdminAccess, sidebarCollapsed = false, theme = 'light', onDropdownToggle }) => {
   const { user, profile } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -152,6 +153,22 @@ const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({ onEditProfile, 
               </svg>
               Edit Profile
             </button>
+            
+            {/* Admin Access Link - Only show for users with admin privileges */}
+            {profile?.admin_privileges && onAdminAccess && (
+              <button
+                onClick={() => {
+                  setIsOpen(false);
+                  onAdminAccess();
+                }}
+                className={`w-full px-4 py-2 text-left text-sm flex items-center cursor-pointer ${theme === 'dark' ? 'text-yellow-300 hover:bg-gray-700' : 'text-yellow-600 hover:bg-gray-100'}`}
+              >
+                <svg className={`w-4 h-4 mr-3 ${theme === 'dark' ? 'text-yellow-400' : 'text-yellow-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+                Admin Panel
+              </button>
+            )}
             
             <button
               onClick={() => {
