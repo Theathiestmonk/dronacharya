@@ -349,14 +349,22 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     }, 100);
     
     try {
+      // Check browser cache for web crawler data before making API call
+      const { getCachedWebData, setCachedWebData, extractWebDataFromResponse } = await import('@/utils/webCrawlerCache');
+      const cachedWebData = getCachedWebData(input);
+      
       const requestData = { 
         message: input,
         conversation_history: newHistory,
         user_id: user?.id || null,
-        user_profile: profile || null  // Pass the complete user profile including gender
+        user_profile: profile || null,  // Pass the complete user profile including gender
+        cached_web_data: cachedWebData || null  // Send cached web data to backend if available
       };
       
       console.log('Chatbot sending request data:', JSON.stringify(requestData, null, 2));
+      if (cachedWebData) {
+        console.log('[Chatbot] 📦 Using cached web data from browser (fast response)');
+      }
       
       const res = await fetch('/api/chatbot', {
         method: 'POST',
@@ -365,6 +373,12 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         signal: controller.signal,
       });
       const data = await res.json();
+      
+      // After receiving response, cache web data if present
+      const extractedWebData = extractWebDataFromResponse(input, data.response || '');
+      if (extractedWebData) {
+        setCachedWebData(input, extractedWebData);
+      }
       
       // Check for structured responses with type field
       if (data.type === 'calendar' && data.response && data.response.url) {
@@ -531,7 +545,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     }
   }, [messages]);
 
-  // Load messages from active session
+  // Load messages from active session (optimized to prevent blinking)
   useEffect(() => {
     console.log('🔄 useEffect triggered - loading messages from active session');
     const activeSession = getActiveSession();
@@ -541,33 +555,39 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       messages: activeSession.messages.map(m => ({ sender: m.sender, text: m.text.substring(0, 50) + '...' }))
     } : 'null');
     
-    if (activeSession) {
-      const sessionMessages: Message[] = activeSession.messages.map(msg => ({
-        sender: msg.sender,
-        text: msg.text,
-        ...(msg.type && { type: msg.type }),
-        ...(msg.url && { url: msg.url }),
-        ...(msg.videos && { videos: msg.videos }),
-      }));
-      console.log('📝 Setting messages from session:', sessionMessages.length, 'messages');
-      setMessages(sessionMessages);
-      
-      // Check if there are any bot messages to set hasFirstResponse
-      const hasBotMessages = sessionMessages.some(msg => msg.sender === 'bot');
-      setHasFirstResponse(hasBotMessages);
-      
-      // Update conversation history for API calls
-      const history = activeSession.messages.map(msg => ({
-        role: msg.sender === 'bot' ? 'assistant' : msg.sender,
-        content: msg.text,
-      }));
-      setConversationHistory(history);
-    } else {
-      console.log('❌ No active session - clearing messages');
-      setMessages([]);
-      setConversationHistory([]);
-      setHasFirstResponse(false);
-    }
+    // Use requestAnimationFrame to batch state updates and prevent blinking
+    requestAnimationFrame(() => {
+      if (activeSession) {
+        const sessionMessages: Message[] = activeSession.messages.map(msg => ({
+          sender: msg.sender,
+          text: msg.text,
+          ...(msg.type && { type: msg.type }),
+          ...(msg.url && { url: msg.url }),
+          ...(msg.videos && { videos: msg.videos }),
+        }));
+        console.log('📝 Setting messages from session:', sessionMessages.length, 'messages');
+        
+        // Batch all state updates together to prevent intermediate renders
+        setMessages(sessionMessages);
+        
+        // Check if there are any bot messages to set hasFirstResponse
+        const hasBotMessages = sessionMessages.some(msg => msg.sender === 'bot');
+        setHasFirstResponse(hasBotMessages);
+        
+        // Update conversation history for API calls
+        const history = activeSession.messages.map(msg => ({
+          role: msg.sender === 'bot' ? 'assistant' : msg.sender,
+          content: msg.text,
+        }));
+        setConversationHistory(history);
+      } else {
+        console.log('❌ No active session - clearing messages');
+        // Batch clearing operations
+        setMessages([]);
+        setConversationHistory([]);
+        setHasFirstResponse(false);
+      }
+    });
   }, [activeSessionId, getActiveSession]); // Include getActiveSession in dependencies
 
   // Listen for custom refresh event
@@ -631,7 +651,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   }), [handleClearChat]);
 
   return (
-    <div className={`flex flex-col h-[60vh] sm:h-[70vh] md:h-[75vh] lg:h-[80vh] w-full max-w-xl mx-auto bg-transparent p-2 sm:p-0 transition-all duration-200 ${chatHistoryLoading ? 'opacity-40 scale-[0.98]' : 'opacity-100 scale-100'}`}>
+    <div className={`flex flex-col h-[calc(100vh-140px)] sm:h-[calc(100vh-160px)] md:h-[calc(100vh-180px)] w-full max-w-xl mx-auto bg-transparent p-2 sm:p-0 transition-all duration-200 ${chatHistoryLoading ? 'opacity-40 scale-[0.98]' : 'opacity-100 scale-100'}`}>
       {messages.length === 0 ? (
         <>
           {/* Welcome Screen - Centered Layout */}
@@ -829,63 +849,63 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           ) : (
             <div
               key={idx}
-              className={`flex ${'text' in msg && msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`flex ${'text' in msg && msg.sender === 'user' ? 'justify-end' : 'justify-start'} mb-4 sm:mb-5`}
             >
+              {'text' in msg && msg.sender === 'user' ? (
               <div
-              className={`max-w-[90%] sm:max-w-[85%] md:max-w-[80%] break-words ${
-                'text' in msg && msg.sender === 'user'
-                  ? 'text-blue-900 text-right justify-end'
-                  : 'text-gray-900 text-left'
-              }`}
-                style={{ background: 'none', padding: '0.5rem 0', borderRadius: 0 }}
+              className="max-w-[85%] sm:max-w-[75%] md:max-w-[70%] break-words bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 sm:px-5 sm:py-3 shadow-sm"
               >
                 {'text' in msg && (
-                  <div className="markdown-content">
-                    {msg.sender === 'user' ? (
-                      <div className="text-gray-800 whitespace-pre-wrap">{msg.text}</div>
-                    ) : (
-                      <ReactMarkdown 
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          // Custom styling for Markdown elements
-                          h1: ({...props}) => <h1 className="text-xl font-bold mb-2 text-gray-800" {...props} />,
-                          h2: ({...props}) => <h2 className="text-lg font-bold mb-2 text-gray-800" {...props} />,
-                          h3: ({...props}) => <h3 className="text-base font-bold mb-2 text-gray-800" {...props} />,
-                          p: ({...props}) => <p className="mb-2 leading-relaxed text-gray-700" {...props} />,
-                          ul: ({...props}) => <ul className="list-disc list-inside mb-2 space-y-1 text-gray-700" {...props} />,
-                          ol: ({...props}) => <ol className="list-decimal list-inside mb-2 space-y-1 text-gray-700" {...props} />,
-                          li: ({...props}) => <li className="mb-1 text-gray-700" {...props} />,
-                          strong: ({...props}) => <strong className="font-bold text-gray-900" {...props} />,
-                          em: ({...props}) => <em className="italic text-gray-700" {...props} />,
-                          code: ({...props}) => <code className="px-1 py-0.5 rounded text-sm font-mono bg-gray-100 text-gray-800" {...props} />,
-                          blockquote: ({...props}) => <blockquote className="border-l-4 pl-4 italic py-2 rounded-r text-gray-600 border-gray-300 bg-gray-50" style={{ borderLeftColor: 'var(--brand-primary-300)', backgroundColor: 'var(--brand-primary-50)' }} {...props} />,
-                          table: ({...props}) => <table className="border-collapse w-full mb-2 text-sm border-gray-300" {...props} />,
-                          th: ({...props}) => <th className="border px-2 py-1 font-bold border-gray-300 bg-gray-100 text-gray-800" {...props} />,
-                          td: ({...props}) => <td className="border px-2 py-1 border-gray-300 text-gray-700" {...props} />,
-                          // Custom link component - blue color and opens in new tab
-                          a: ({href, children, ...props}) => (
-                            <a 
-                              href={href} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="text-blue-600 hover:text-blue-800 underline transition-colors"
-                              {...props}
-                            >
-                              {children}
-                            </a>
-                          ),
-                        }}
-                      >
-                        {msg.text}
-                      </ReactMarkdown>
-                    )}
+                  <div className="markdown-content text-sm sm:text-base leading-relaxed">
+                    <div className="whitespace-pre-wrap text-white font-bold">{msg.text}</div>
+                  </div>
+                )}
+              </div>
+              ) : (
+              <div className="max-w-[95%] sm:max-w-[90%] md:max-w-[85%] break-words text-gray-900">
+                {'text' in msg && (
+                  <div className="markdown-content text-sm sm:text-base leading-relaxed text-gray-900">
+                    <ReactMarkdown 
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        // Custom styling for Markdown elements
+                        h1: ({...props}) => <h1 className="text-xl font-bold mb-2 text-gray-900" {...props} />,
+                        h2: ({...props}) => <h2 className="text-lg font-bold mb-2 text-gray-900" {...props} />,
+                        h3: ({...props}) => <h3 className="text-base font-bold mb-2 text-gray-900" {...props} />,
+                        p: ({...props}) => <p className="mb-2 leading-relaxed text-gray-800" {...props} />,
+                        ul: ({...props}) => <ul className="list-disc list-inside mb-2 space-y-1 text-gray-800" {...props} />,
+                        ol: ({...props}) => <ol className="list-decimal list-inside mb-2 space-y-1 text-gray-800" {...props} />,
+                        li: ({...props}) => <li className="mb-1 text-gray-800" {...props} />,
+                        strong: ({...props}) => <strong className="font-bold text-gray-900" {...props} />,
+                        em: ({...props}) => <em className="italic text-gray-800" {...props} />,
+                        code: ({...props}) => <code className="px-1.5 py-0.5 rounded text-sm font-mono bg-gray-200 text-gray-900" {...props} />,
+                        blockquote: ({...props}) => <blockquote className="border-l-4 pl-4 italic py-2 rounded-r text-gray-700 border-gray-400 bg-gray-50" {...props} />,
+                        table: ({...props}) => <div className="overflow-x-auto mb-4"><table className="border-collapse w-full min-w-full text-sm border-gray-300" {...props} /></div>,
+                        th: ({...props}) => <th className="border px-3 py-2 font-bold border-gray-300 bg-gray-200 text-gray-900 text-left" {...props} />,
+                        td: ({...props}) => <td className="border px-3 py-2 border-gray-300 text-gray-800" {...props} />,
+                        // Custom link component - blue color and opens in new tab
+                        a: ({href, children, ...props}) => (
+                          <a 
+                            href={href} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-700 underline transition-colors font-medium"
+                            {...props}
+                          >
+                            {children}
+                          </a>
+                        ),
+                      }}
+                    >
+                      {msg.text}
+                    </ReactMarkdown>
                   </div>
                 )}
                 {'text' in msg && msg.sender === 'bot' && (
                   <div className="flex justify-start mt-2">
                     <button
                       onClick={() => handleCopy(msg.text, idx)}
-                      className="p-1 rounded hover:bg-gray-100 focus:outline-none"
+                      className="p-1.5 rounded hover:bg-gray-100 focus:outline-none transition-colors"
                       title={copiedIdx === idx ? 'Copied!' : 'Copy'}
                       aria-label="Copy message"
                     >
@@ -894,42 +914,42 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                   </div>
                 )}
               </div>
+              )}
             </div>
           )
         ))}
         {isTyping && (
-          <div className="flex justify-start">
+          <div className="flex justify-start mb-4 sm:mb-5">
             <div 
               ref={typingRef}
-              className="max-w-[80%] break-words text-left text-gray-900" 
-              style={{ background: 'none', padding: '0.75rem 0', borderRadius: 0 }}
+              className="max-w-[75%] md:max-w-[70%] text-gray-900 px-4 py-2.5 sm:px-5 sm:py-3"
             >
-              <div className="markdown-content">
+              <div className="markdown-content text-sm sm:text-base leading-relaxed">
                 <ReactMarkdown 
                   remarkPlugins={[remarkGfm]}
                   components={{
                     // Custom styling for Markdown elements
-                    h1: ({...props}) => <h1 className="text-xl font-bold mb-2 text-gray-800" {...props} />,
-                    h2: ({...props}) => <h2 className="text-lg font-bold mb-2 text-gray-800" {...props} />,
-                    h3: ({...props}) => <h3 className="text-base font-bold mb-2 text-gray-800" {...props} />,
-                    p: ({...props}) => <p className="mb-2 leading-relaxed text-gray-700" {...props} />,
-                    ul: ({...props}) => <ul className="list-disc list-inside mb-2 space-y-1 text-gray-700" {...props} />,
-                    ol: ({...props}) => <ol className="list-decimal list-inside mb-2 space-y-1 text-gray-700" {...props} />,
-                    li: ({...props}) => <li className="mb-1 text-gray-700" {...props} />,
+                    h1: ({...props}) => <h1 className="text-xl font-bold mb-2 text-gray-900" {...props} />,
+                    h2: ({...props}) => <h2 className="text-lg font-bold mb-2 text-gray-900" {...props} />,
+                    h3: ({...props}) => <h3 className="text-base font-bold mb-2 text-gray-900" {...props} />,
+                    p: ({...props}) => <p className="mb-2 leading-relaxed text-gray-800" {...props} />,
+                    ul: ({...props}) => <ul className="list-disc list-inside mb-2 space-y-1 text-gray-800" {...props} />,
+                    ol: ({...props}) => <ol className="list-decimal list-inside mb-2 space-y-1 text-gray-800" {...props} />,
+                    li: ({...props}) => <li className="mb-1 text-gray-800" {...props} />,
                     strong: ({...props}) => <strong className="font-bold text-gray-900" {...props} />,
-                    em: ({...props}) => <em className="italic text-gray-700" {...props} />,
-                    code: ({...props}) => <code className="px-1 py-0.5 rounded text-sm font-mono bg-gray-100 text-gray-800" {...props} />,
-                    blockquote: ({...props}) => <blockquote className="border-l-4 pl-4 italic py-2 rounded-r text-gray-600 border-gray-300 bg-gray-50" style={{ borderLeftColor: 'var(--brand-primary-300)', backgroundColor: 'var(--brand-primary-50)' }} {...props} />,
-                    table: ({...props}) => <table className="border-collapse w-full mb-2 text-sm border-gray-300" {...props} />,
-                    th: ({...props}) => <th className="border px-2 py-1 font-bold border-gray-300 bg-gray-100 text-gray-800" {...props} />,
-                    td: ({...props}) => <td className="border px-2 py-1 border-gray-300 text-gray-700" {...props} />,
+                    em: ({...props}) => <em className="italic text-gray-800" {...props} />,
+                    code: ({...props}) => <code className="px-1.5 py-0.5 rounded text-sm font-mono bg-gray-200 text-gray-900" {...props} />,
+                    blockquote: ({...props}) => <blockquote className="border-l-4 pl-4 italic py-2 rounded-r text-gray-700 border-gray-400 bg-gray-50" {...props} />,
+                    table: ({...props}) => <div className="overflow-x-auto mb-4"><table className="border-collapse w-full min-w-full text-sm border-gray-300" {...props} /></div>,
+                    th: ({...props}) => <th className="border px-3 py-2 font-bold border-gray-300 bg-gray-200 text-gray-900 text-left" {...props} />,
+                    td: ({...props}) => <td className="border px-3 py-2 border-gray-300 text-gray-800" {...props} />,
                     // Custom link component - blue color and opens in new tab
                     a: ({href, children, ...props}) => (
                       <a 
                         href={href} 
                         target="_blank" 
                         rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-800 underline transition-colors"
+                        className="text-blue-600 hover:text-blue-700 underline transition-colors font-medium"
                         {...props}
                       >
                         {children}
@@ -944,8 +964,8 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           </div>
         )}
         {loading && !isTyping && (
-          <div className="flex justify-start">
-            <div className="max-w-[80%] break-words text-left text-gray-900" style={{ background: 'none', padding: '0.75rem 0', borderRadius: 0 }}>
+          <div className="flex justify-start mb-4 sm:mb-5">
+            <div className="max-w-[95%] sm:max-w-[90%] md:max-w-[85%] text-gray-900">
               <TypingDots />
             </div>
           </div>

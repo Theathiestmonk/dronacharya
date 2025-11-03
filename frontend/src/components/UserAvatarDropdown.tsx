@@ -10,12 +10,26 @@ interface UserAvatarDropdownProps {
   sidebarCollapsed?: boolean;
   theme?: 'light' | 'dark';
   onDropdownToggle?: (isOpen: boolean) => void;
+  onShowChatHistory?: () => void;
+  onCreateNewChat?: () => void;
 }
 
-const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({ onEditProfile, onLogout, onAdminAccess, sidebarCollapsed = false, theme = 'light', onDropdownToggle }) => {
+const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({ onEditProfile, onLogout, onAdminAccess, sidebarCollapsed = false, theme = 'light', onDropdownToggle, onShowChatHistory, onCreateNewChat }) => {
   const { user, profile } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  
+  // Check if we're on mobile (screen width < 640px)
+  const [isMobile, setIsMobile] = useState(false);
+  
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -89,9 +103,9 @@ const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({ onEditProfile, 
           <Image
             src={profile.profile_picture_url}
             alt={`${profile.first_name} ${profile.last_name}`}
-            width={40}
-            height={40}
-            className="w-10 h-10 sm:w-10 sm:h-10 rounded-full object-cover border-2 border-gray-200 group-hover:border-gray-300 transition-colors"
+            width={28}
+            height={28}
+            className="w-7 h-7 sm:w-10 sm:h-10 rounded-full object-cover border-2 border-gray-200 group-hover:border-gray-300 transition-colors"
             onError={(e) => {
               // Fallback to initials if image fails to load
               const target = e.target as HTMLImageElement;
@@ -99,7 +113,7 @@ const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({ onEditProfile, 
               const parent = target.parentElement;
               if (parent) {
                 parent.innerHTML = `
-                  <div class="w-10 h-10 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-white text-lg font-semibold group-hover:scale-105 transition-transform" style="background-color: ${getAvatarColor()}">
+                  <div class="w-7 h-7 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-white text-xs sm:text-lg font-semibold group-hover:scale-105 transition-transform" style="background-color: ${getAvatarColor()}">
                     ${getInitials()}
                   </div>
                 `;
@@ -108,7 +122,7 @@ const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({ onEditProfile, 
           />
         ) : (
           <div 
-            className="w-10 h-10 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-white text-lg font-semibold group-hover:scale-105 transition-transform"
+            className="w-7 h-7 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-white text-xs sm:text-lg font-semibold group-hover:scale-105 transition-transform"
             style={{ backgroundColor: getAvatarColor() }}
           >
             {getInitials()}
@@ -141,6 +155,41 @@ const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({ onEditProfile, 
         <div className={`absolute ${sidebarCollapsed ? 'left-full ml-2 top-1/2 transform -translate-y-1/2 -translate-y-8' : 'right-0 top-full mt-2'} w-56 sm:w-56 ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} rounded-lg shadow-xl ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'} py-2 z-50 animate-in fade-in-0 zoom-in-95 duration-200`}>
           {/* Menu Items */}
           <div className="py-1">
+            {/* Mobile: Chat History & New Chat (only on mobile) */}
+            {isMobile && (
+              <>
+                {onShowChatHistory && (
+                  <button
+                    onClick={() => {
+                      setIsOpen(false);
+                      onShowChatHistory();
+                    }}
+                    className={`w-full px-4 py-2 text-left text-sm flex items-center cursor-pointer ${theme === 'dark' ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                  >
+                    <svg className={`w-4 h-4 mr-3 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                    Chat History
+                  </button>
+                )}
+                {onCreateNewChat && (
+                  <button
+                    onClick={() => {
+                      setIsOpen(false);
+                      onCreateNewChat();
+                    }}
+                    className={`w-full px-4 py-2 text-left text-sm flex items-center cursor-pointer ${theme === 'dark' ? 'text-blue-300 hover:bg-gray-700' : 'text-blue-600 hover:bg-blue-50'}`}
+                  >
+                    <svg className={`w-4 h-4 mr-3 ${theme === 'dark' ? 'text-blue-400' : 'text-blue-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    New Chat
+                  </button>
+                )}
+                <div className={`h-px my-1 ${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-200'}`} />
+              </>
+            )}
+            
             <button
               onClick={() => {
                 setIsOpen(false);

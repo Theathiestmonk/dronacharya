@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/providers/AuthProvider';
+import { useSearchParams } from 'next/navigation';
 
 interface IntegrationStatus {
   classroom_enabled: boolean;
@@ -35,7 +36,8 @@ interface CalendarEvent {
 }
 
 const AdminDashboard: React.FC = () => {
-  const { } = useAuth();
+  const { profile } = useAuth();
+  const searchParams = useSearchParams();
   const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatus | null>(null);
   const [classroomData, setClassroomData] = useState<ClassroomCourse[]>([]);
   const [calendarData, setCalendarData] = useState<CalendarEvent[]>([]);
@@ -43,23 +45,82 @@ const AdminDashboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const fetchIntegrationStatus = async () => {
+    console.log('🔍 [FETCH START] fetchIntegrationStatus called');
     try {
-      const response = await fetch('/api/admin/integrations');
+      const adminEmail = profile?.email; // Use logged-in user's email or null for first admin
+      console.log(`🔍 [FETCH] Dashboard fetching integrations for email: ${adminEmail}`);
+      console.log(`🔍 [FETCH] Profile exists:`, !!profile);
+      console.log(`🔍 [FETCH] Profile email: ${profile?.email}`);
+      
+      // Add cache-busting parameter to force fresh data
+      const timestamp = new Date().getTime();
+      const emailParam = adminEmail ? `&email=${encodeURIComponent(adminEmail)}` : '';
+      const response = await fetch(`/api/admin/integrations?t=${timestamp}${emailParam}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache'
+        }
+      });
+      console.log(`🔍 Integration API response status: ${response.status}`);
+      
       if (response.ok) {
         const data = await response.json();
-        setIntegrationStatus(data);
+        console.log(`🔍 Integration data received:`, data);
+        console.log(`🔍 Data type of classroom_enabled:`, typeof data.classroom_enabled);
+        console.log(`🔍 Data type of calendar_enabled:`, typeof data.calendar_enabled);
+        console.log(`🔍 Classroom enabled value:`, data.classroom_enabled);
+        console.log(`🔍 Calendar enabled value:`, data.calendar_enabled);
+        console.log(`🔍 Integrations array length:`, data.integrations?.length || 0);
+        console.log(`🔍 Setting integration status - Classroom: ${data.classroom_enabled}, Calendar: ${data.calendar_enabled}`);
+        
+        // Ensure boolean values - but only update if we got actual data
+        if (data !== null && data !== undefined) {
+          const integrationData = {
+            classroom_enabled: Boolean(data.classroom_enabled),
+            calendar_enabled: Boolean(data.calendar_enabled),
+            integrations: data.integrations || []
+          };
+          
+          console.log(`🔍 Normalized integration data:`, integrationData);
+          console.log(`🔍 About to call setIntegrationStatus with:`, JSON.stringify(integrationData));
+          setIntegrationStatus(integrationData);
+          console.log(`🔍 setIntegrationStatus called successfully`);
+        } else {
+          console.error('🔍 API returned null or undefined data');
+        }
+      } else {
+        console.error('🔍 Failed to fetch integration status:', response.status);
+        const errorText = await response.text();
+        console.error('🔍 Error response:', errorText);
+        // Don't set state to false on error - keep it null or previous value
       }
     } catch (error) {
-      console.error('Error fetching integration status:', error);
+      console.error('🔍 [ERROR] Error fetching integration status:', error);
+      console.error('🔍 [ERROR] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      // Set error state but don't change integrationStatus to false
     }
   };
 
   const fetchClassroomData = async () => {
     try {
-      const response = await fetch('/api/admin/data/classroom');
+      const adminEmail = profile?.email;
+      const emailParam = adminEmail ? `?email=${encodeURIComponent(adminEmail)}` : '';
+      // Add cache busting timestamp
+      const timestamp = new Date().getTime();
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${backendUrl}/api/admin/data/classroom${emailParam}&t=${timestamp}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache'
+        }
+      });
       if (response.ok) {
         const data = await response.json();
-        setClassroomData(data.courses);
+        console.log(`🔍 [fetchClassroomData] Received ${data.courses?.length || 0} courses`);
+        if (data.courses && data.courses.length > 0) {
+          console.log(`🔍 [fetchClassroomData] First course last_synced: ${data.courses[0]?.last_synced}`);
+        }
+        setClassroomData(data.courses || []);
       }
     } catch (error) {
       console.error('Error fetching classroom data:', error);
@@ -68,30 +129,54 @@ const AdminDashboard: React.FC = () => {
 
   const fetchCalendarData = async () => {
     try {
-      const response = await fetch('/api/admin/data/calendar');
+      const adminEmail = profile?.email;
+      const emailParam = adminEmail ? `?email=${encodeURIComponent(adminEmail)}` : '';
+      // Add cache busting timestamp
+      const timestamp = new Date().getTime();
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${backendUrl}/api/admin/data/calendar${emailParam}&t=${timestamp}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache'
+        }
+      });
       if (response.ok) {
         const data = await response.json();
-        setCalendarData(data.events);
+        console.log(`🔍 [fetchCalendarData] Received ${data.events?.length || 0} events`);
+        if (data.events && data.events.length > 0) {
+          console.log(`🔍 [fetchCalendarData] First event last_synced: ${data.events[0]?.last_synced}`);
+        }
+        setCalendarData(data.events || []);
       }
     } catch (err) {
       console.error('Error fetching calendar data:', err);
     }
   };
 
-  const connectGoogleService = async (service: 'classroom' | 'calendar') => {
+  const connectGoogleService = async (service: 'classroom' | 'calendar' | 'both') => {
     setLoading(true);
     setError(null);
     
+    console.log(`🔍 Attempting to connect service: ${service}`);
+    
     try {
-      const response = await fetch(`/api/admin/auth-url?service=${service}`);
+      const adminEmail = profile?.email; // Use logged-in user's email or null for first admin
+      const emailParam = adminEmail ? `&email=${encodeURIComponent(adminEmail)}` : '';
+      const response = await fetch(`/api/admin/auth-url?service=${service}${emailParam}`);
+      console.log(`🔍 Response status: ${response.status}`);
+      console.log(`🔍 Response ok: ${response.ok}`);
+      
       if (response.ok) {
         const data = await response.json();
+        console.log(`🔍 Auth URL received: ${data.auth_url}`);
         window.location.href = data.auth_url;
       } else {
         const errorData = await response.json();
-        setError(errorData.detail || 'Failed to get auth URL');
+        console.error(`🔍 Error response:`, errorData);
+        setError(errorData.error || 'Failed to get auth URL');
       }
-    } catch {
+    } catch (error) {
+      console.error(`🔍 Network error:`, error);
       setError('Failed to connect to Google service');
     } finally {
       setLoading(false);
@@ -104,21 +189,31 @@ const AdminDashboard: React.FC = () => {
     
     try {
       const response = await fetch(`/api/admin/sync/${service}`, {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          adminEmail: profile?.email
+        }),
       });
       
       if (response.ok) {
         const data = await response.json();
-        alert(data.message);
-        // Refresh data
+        alert(data.message || `Successfully synced ${service} data`);
+        // Wait a moment for backend to finish processing
+        await new Promise(resolve => setTimeout(resolve, 500));
+        // Refresh data and integration status to update "Last synced" timestamp
         if (service === 'classroom') {
-          fetchClassroomData();
+          await fetchClassroomData();
         } else {
-          fetchCalendarData();
+          await fetchCalendarData();
         }
+        // Force refresh integration status to get updated timestamps
+        await fetchIntegrationStatus();
       } else {
         const errorData = await response.json();
-        setError(errorData.detail || 'Sync failed');
+        setError(errorData.error || errorData.detail || 'Sync failed');
       }
     } catch {
       setError('Failed to sync data');
@@ -128,18 +223,77 @@ const AdminDashboard: React.FC = () => {
   };
 
   useEffect(() => {
+    console.log('🔍 [MOUNT] Component mounted, calling fetchIntegrationStatus');
     fetchIntegrationStatus();
     fetchClassroomData();
     fetchCalendarData();
   }, []);
 
+  // Re-fetch integrations when profile changes
+  useEffect(() => {
+    console.log('🔍 [PROFILE EFFECT] Profile effect triggered, profile:', profile?.email);
+    if (profile) {
+      console.log('🔍 [PROFILE EFFECT] Profile loaded, fetching integration status');
+      console.log('🔍 [PROFILE EFFECT] Calling fetchIntegrationStatus...');
+      fetchIntegrationStatus();
+    } else {
+      console.log('🔍 [PROFILE EFFECT] Profile is null, skipping fetch');
+    }
+  }, [profile?.email, profile]);
+
+  // Handle URL parameters for connection status
+  useEffect(() => {
+    if (!searchParams) return;
+    
+    const connected = searchParams.get('connected');
+    if (connected === 'true') {
+      console.log('🔍 Detected connected=true in URL, refreshing integration status');
+      // Refresh integration status when returning from OAuth
+      setTimeout(() => {
+        fetchIntegrationStatus();
+      }, 1000); // Small delay to ensure callback processing is complete
+      // Clean up URL parameter
+      const url = new URL(window.location.href);
+      url.searchParams.delete('connected');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, [searchParams]);
+
+  // Debug effect to log integration status changes
+  useEffect(() => {
+    if (integrationStatus) {
+      console.log('🔍 Integration status updated:', integrationStatus);
+      console.log('🔍 Classroom enabled value:', integrationStatus.classroom_enabled);
+      console.log('🔍 Calendar enabled value:', integrationStatus.calendar_enabled);
+      console.log('🔍 Integrations array:', integrationStatus.integrations);
+    } else {
+      console.log('🔍 Integration status is null/undefined');
+    }
+  }, [integrationStatus]);
+
+  // Debug: Log current integrationStatus in render
+  console.log('🔍 [RENDER] Current integrationStatus:', integrationStatus);
+  console.log('🔍 [RENDER] Classroom enabled:', integrationStatus?.classroom_enabled);
+  console.log('🔍 [RENDER] Calendar enabled:', integrationStatus?.calendar_enabled);
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-            <p className="mt-2 text-gray-600">Manage Google Classroom and Calendar integrations</p>
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+              <p className="mt-2 text-gray-600">Manage Google Classroom and Calendar integrations</p>
+            </div>
+            <button
+              onClick={() => {
+                console.log('🔄 Manual refresh triggered');
+                fetchIntegrationStatus();
+              }}
+              className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 text-sm"
+            >
+              Refresh Status
+            </button>
           </div>
         </div>
 
@@ -154,6 +308,25 @@ const AdminDashboard: React.FC = () => {
           </div>
         )}
 
+        {/* Combined Google Integration Button */}
+        {(!integrationStatus || !integrationStatus.classroom_enabled || !integrationStatus.calendar_enabled) && (
+          <div className="mb-8 bg-gradient-to-r from-blue-50 to-green-50 border border-blue-200 rounded-lg p-6">
+            <div className="text-center">
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">Connect Google Services</h2>
+              <p className="text-gray-600 mb-4">
+                Connect both Google Classroom and Calendar with a single click
+              </p>
+              <button
+                onClick={() => connectGoogleService('both')}
+                disabled={loading}
+                className="bg-gradient-to-r from-blue-600 to-green-600 text-white px-8 py-3 rounded-lg hover:from-blue-700 hover:to-green-700 disabled:opacity-50 font-medium shadow-lg"
+              >
+                {loading ? 'Connecting...' : 'Connect Google Classroom & Calendar'}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Google Integrations */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           {/* Google Classroom */}
@@ -161,11 +334,11 @@ const AdminDashboard: React.FC = () => {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold text-gray-900">Google Classroom</h2>
               <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                integrationStatus?.classroom_enabled 
+                integrationStatus && integrationStatus.classroom_enabled === true
                   ? 'bg-green-100 text-green-800' 
                   : 'bg-gray-100 text-gray-800'
               }`}>
-                {integrationStatus?.classroom_enabled ? 'Connected' : 'Not Connected'}
+                {integrationStatus && integrationStatus.classroom_enabled === true ? 'Connected' : 'Not Connected'}
               </div>
             </div>
             
@@ -174,14 +347,10 @@ const AdminDashboard: React.FC = () => {
             </p>
             
             <div className="space-y-3">
-              {!integrationStatus?.classroom_enabled ? (
-                <button
-                  onClick={() => connectGoogleService('classroom')}
-                  disabled={loading}
-                  className="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {loading ? 'Connecting...' : 'Connect Google Classroom'}
-                </button>
+              {!(integrationStatus && integrationStatus.classroom_enabled === true) ? (
+                <div className="text-center text-gray-500">
+                  <p>Use the "Connect Google Services" button above to connect both Classroom and Calendar</p>
+                </div>
               ) : (
                 <div className="space-y-2">
                   <button
@@ -192,7 +361,16 @@ const AdminDashboard: React.FC = () => {
                     {loading ? 'Syncing...' : 'Sync Classroom Data'}
                   </button>
                   <p className="text-sm text-gray-500">
-                    Last synced: {classroomData.length > 0 ? new Date(classroomData[0]?.last_synced).toLocaleString() : 'Never'}
+                    Last synced: {classroomData.length > 0 && classroomData[0]?.last_synced 
+                      ? new Date(classroomData[0].last_synced).toLocaleString('en-GB', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit'
+                        })
+                      : 'Never'}
                   </p>
                 </div>
               )}
@@ -204,11 +382,11 @@ const AdminDashboard: React.FC = () => {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold text-gray-900">Google Calendar</h2>
               <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                integrationStatus?.calendar_enabled 
+                integrationStatus && integrationStatus.calendar_enabled === true
                   ? 'bg-green-100 text-green-800' 
                   : 'bg-gray-100 text-gray-800'
               }`}>
-                {integrationStatus?.calendar_enabled ? 'Connected' : 'Not Connected'}
+                {integrationStatus && integrationStatus.calendar_enabled === true ? 'Connected' : 'Not Connected'}
               </div>
             </div>
             
@@ -217,14 +395,10 @@ const AdminDashboard: React.FC = () => {
             </p>
             
             <div className="space-y-3">
-              {!integrationStatus?.calendar_enabled ? (
-                <button
-                  onClick={() => connectGoogleService('calendar')}
-                  disabled={loading}
-                  className="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {loading ? 'Connecting...' : 'Connect Google Calendar'}
-                </button>
+              {!(integrationStatus && integrationStatus.calendar_enabled === true) ? (
+                <div className="text-center text-gray-500">
+                  <p>Use the "Connect Google Services" button above to connect both Classroom and Calendar</p>
+                </div>
               ) : (
                 <div className="space-y-2">
                   <button
@@ -235,7 +409,28 @@ const AdminDashboard: React.FC = () => {
                     {loading ? 'Syncing...' : 'Sync Calendar Data'}
                   </button>
                   <p className="text-sm text-gray-500">
-                    Last synced: {calendarData.length > 0 ? new Date(calendarData[0]?.last_synced).toLocaleString() : 'Never'}
+                    Last synced: {
+                      (() => {
+                        // Find the most recent sync timestamp from all calendar data
+                        const syncTimestamps = calendarData
+                          .map(event => event?.last_synced)
+                          .filter(Boolean)
+                          .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+                        
+                        const mostRecent = syncTimestamps[0];
+                        
+                        return mostRecent 
+                          ? new Date(mostRecent).toLocaleString('en-GB', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              second: '2-digit'
+                            })
+                          : 'Never';
+                      })()
+                    }
                   </p>
                 </div>
               )}
@@ -315,3 +510,36 @@ const AdminDashboard: React.FC = () => {
 };
 
 export default AdminDashboard;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -7,7 +7,7 @@ load_dotenv()
 
 def get_database_url():
     """Get database URL from environment variables."""
-    # Try PostgreSQL first
+    # Try PostgreSQL first (Supabase)
     postgres_url = os.getenv("DATABASE_URL")
     if postgres_url:
         return postgres_url

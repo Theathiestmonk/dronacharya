@@ -1,22 +1,23 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'GET') {
+  if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { type } = req.query;
+  const { email, password } = req.body;
 
-  if (!type || (type !== 'classroom' && type !== 'calendar')) {
-    return res.status(400).json({ error: 'Invalid data type' });
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
   }
 
   try {
-    const response = await fetch(`${process.env.BACKEND_URL}/api/admin/data/${type}`, {
+    const response = await fetch(`${process.env.BACKEND_URL}/api/admin/login`, {
+      method: 'POST',
       headers: {
-        'Authorization': req.headers.authorization || '',
         'Content-Type': 'application/json',
       },
+      body: JSON.stringify({ email, password }),
     });
 
     if (!response.ok) {
@@ -27,14 +28,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const data = await response.json();
     return res.status(200).json(data);
   } catch (error) {
-    console.error(`Error fetching ${type} data:`, error);
+    console.error('Error during admin login:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
-
-
-
-
 
 
 

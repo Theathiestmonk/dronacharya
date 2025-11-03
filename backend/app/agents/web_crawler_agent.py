@@ -19,6 +19,16 @@ from webdriver_manager.chrome import ChromeDriverManager
 # Ensure environment variables are loaded
 load_dotenv()
 
+# Try to import Supabase for cache checking
+try:
+    from supabase_config import get_supabase_client
+    import hashlib
+    from datetime import datetime, timedelta
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
+    print("[WebCrawler] Supabase not available - will always crawl")
+
 class WebCrawlerAgent:
     def __init__(self):
         self.session = requests.Session()
@@ -152,7 +162,8 @@ class WebCrawlerAgent:
             return False
         
         # Check if the potential name is actually a person name (not common words)
-        common_words = ['little', 'bit', 'about', 'tell', 'me', 'who', 'is', 'information', 'details', 'cooking', 'recipes', 'admission', 'fees', 'school', 'program', 'course', 'prakriti', 'prakrit']
+        # Exclude educational/academic terms, scientific concepts, and common phrases
+        common_words = ['little', 'bit', 'about', 'tell', 'me', 'who', 'is', 'information', 'details', 'cooking', 'recipes', 'admission', 'fees', 'school', 'program', 'course', 'prakriti', 'prakrit', 'roots', 'philosophy', 'article', 'articles', 'blog', 'news', 'calendar', 'event', 'admission', 'fee', 'curriculum', 'learning', 'learn', 'teaching', 'approach', 'want', 'newton', 'einstein', 'darwin', 'law', 'laws', 'theory', 'theorem', 'formula', 'concept', 'concepts', 'example', 'examples', 'explain', 'understand', 'help', 'solve', 'study', 'physics', 'chemistry', 'biology', 'math', 'mathematics', 'algebra', 'calculus']
         
         # Also check for known person name patterns
         person_name_patterns = ['mishra', 'batra', 'rana', 'goel', 'krishna', 'tayal', 'john', 'doe', 'smith', 'jones']
@@ -443,6 +454,38 @@ class WebCrawlerAgent:
     
     def extract_content_from_url(self, url: str, query: str = "") -> Dict[str, str]:
         """Extract content from a specific URL"""
+        # FIRST: Check Supabase web_crawler_data table for cached URL content
+        if SUPABASE_AVAILABLE:
+            try:
+                supabase = get_supabase_client()
+                # Check if this URL was crawled today or recently (within 24 hours)
+                # SELECT ONLY ESSENTIAL COLUMNS to reduce data transfer and token usage
+                recent_crawl = supabase.table('web_crawler_data').select('title, description, main_content, headings, links').eq('url', url).eq('is_active', True).gte('crawled_at', (datetime.utcnow() - timedelta(hours=24)).isoformat()).order('crawled_at', desc=True).limit(1).execute()
+                
+                if recent_crawl.data and len(recent_crawl.data) > 0:
+                    cached_content = recent_crawl.data[0]
+                    print(f"[WebCrawler] ✅ Found cached URL content in Supabase (crawled at: {cached_content.get('crawled_at', 'N/A')})")
+                    
+                    # LIMIT main_content size to reduce tokens (max 2000 chars)
+                    main_content = cached_content.get('main_content', '')
+                    if main_content and len(main_content) > 2000:
+                        main_content = main_content[:2000] + "..."
+                        print(f"[WebCrawler] Truncated main_content from {len(cached_content.get('main_content', ''))} to 2000 chars")
+                    
+                    # Return cached content (with limited size)
+                    return {
+                        'title': cached_content.get('title', ''),
+                        'description': cached_content.get('description', ''),
+                        'main_content': main_content,
+                        'headings': cached_content.get('headings', [])[:10] if cached_content.get('headings') else [],  # Limit headings
+                        'links': cached_content.get('links', [])[:10] if cached_content.get('links') else [],  # Limit links
+                        'url': url
+                    }
+            except Exception as e:
+                print(f"[WebCrawler] Error checking cached URL: {e}")
+                # Continue to crawl if cache check fails
+        
+        # If no cache found, proceed with crawling
         try:
             print(f"[WebCrawler] Crawling URL: {url}")
             response = self.session.get(url, timeout=30)
@@ -533,6 +576,55 @@ class WebCrawlerAgent:
                         'url': link_url
                     })
             content['links'] = links[:20]  # Limit to 20 links
+            
+            # Cache the crawled content in Supabase for future use
+            if SUPABASE_AVAILABLE:
+                try:
+                    supabase = get_supabase_client()
+                    
+                    # Determine content type based on URL or query
+                    content_type = 'general'
+                    if 'team' in url.lower():
+                        content_type = 'team'
+                    elif 'calendar' in url.lower():
+                        content_type = 'calendar'
+                    elif 'blog' in url.lower() or 'news' in url.lower():
+                        content_type = 'news'
+                    elif 'roots' in url.lower() or 'philosophy' in url.lower():
+                        content_type = 'article'
+                    elif 'admission' in url.lower() or 'fee' in url.lower():
+                        content_type = 'admission'
+                    elif 'contact' in url.lower():
+                        content_type = 'contact'
+                    
+                    # Extract keywords from query
+                    query_keywords = []
+                    if query:
+                        # Simple keyword extraction (split by space, remove common words)
+                        common_words = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'about', 'is', 'are', 'was', 'were']
+                        keywords = [w.lower() for w in query.split() if w.lower() not in common_words and len(w) > 2]
+                        query_keywords = keywords[:10]  # Limit to 10 keywords
+                    
+                    # Prepare data for caching
+                    cache_data = {
+                        'url': url,
+                        'title': content.get('title', ''),
+                        'description': content.get('description', ''),
+                        'main_content': content.get('main_content', '')[:50000],  # Limit size (Supabase TEXT limit)
+                        'headings': content.get('headings', []),
+                        'links': content.get('links', [])[:50],  # Limit links
+                        'content_type': content_type,
+                        'query_keywords': query_keywords,
+                        'relevance_score': len(query_keywords),  # Simple relevance score
+                        'is_active': True
+                    }
+                    
+                    # Upsert to web_crawler_data (one entry per URL per day)
+                    supabase.table('web_crawler_data').upsert(cache_data, on_conflict='url,crawled_date').execute()
+                    print(f"[WebCrawler] ✅ Cached URL content in Supabase")
+                except Exception as e:
+                    print(f"[WebCrawler] Error caching URL content: {e}")
+                    # Non-critical, continue
             
             return content
             
@@ -1197,11 +1289,114 @@ class WebCrawlerAgent:
             return {}
     
     def search_prakriti_content(self, query: str) -> List[Dict[str, str]]:
-        """Search for PrakritSchool related content"""
+        """Search PrakritSchool content from cached Supabase data with QUERY-BASED FILTERING"""
+        print(f"[WebCrawler] Searching PrakritSchool cached content for: {query}")
+        
+        # First, try to get filtered data from Supabase cache (TOKEN OPTIMIZATION)
+        if SUPABASE_AVAILABLE:
+            try:
+                supabase = get_supabase_client()
+                query_lower = query.lower()
+                
+                # Extract query keywords for filtering
+                query_words = [w for w in query_lower.split() if len(w) > 2]
+                
+                # Determine content_type based on query
+                content_type = None
+                if self.is_team_related(query):
+                    content_type = 'team'
+                elif self.is_calendar_related(query):
+                    content_type = 'calendar'
+                elif self.is_news_related(query):
+                    content_type = 'news'
+                elif self.is_article_related(query):
+                    content_type = 'article'
+                elif self.is_academic_related(query):
+                    content_type = 'academic'
+                elif self.is_admission_related(query):
+                    content_type = 'admission'
+                elif self.is_contact_related(query):
+                    content_type = 'contact'
+                elif self.is_testimonial_related(query):
+                    content_type = 'testimonial'
+                
+                # Query Supabase with filtering (TOKEN OPTIMIZATION - only get relevant pages)
+                base_query = supabase.table('web_crawler_data').select('url, title, description, main_content, content_type, query_keywords').eq('is_active', True).gte('crawled_at', (datetime.utcnow() - timedelta(hours=24)).isoformat())
+                
+                # Filter by content_type if detected
+                if content_type:
+                    base_query = base_query.eq('content_type', content_type)
+                    print(f"[WebCrawler] Filtering by content_type: {content_type}")
+                
+                # Get all matching pages
+                result = base_query.execute()
+                
+                if result.data and len(result.data) > 0:
+                    print(f"[WebCrawler] Found {len(result.data)} cached pages in Supabase")
+                    
+                    # Score and filter by query relevance (TOKEN OPTIMIZATION)
+                    scored_pages = []
+                    for page in result.data:
+                        score = 0
+                        page_title = (page.get('title') or '').lower()
+                        page_desc = (page.get('description') or '').lower()
+                        page_content = (page.get('main_content') or '').lower()
+                        
+                        # Score by keyword matches
+                        for word in query_words:
+                            if word in page_title:
+                                score += 5  # Title match = high relevance
+                            if word in page_desc:
+                                score += 3  # Description match = medium relevance
+                            if word in page_content[:500]:  # Only check first 500 chars
+                                score += 1  # Content match = low relevance
+                        
+                        # Boost score if query_keywords match
+                        page_keywords = page.get('query_keywords', [])
+                        if page_keywords:
+                            matched_keywords = sum(1 for word in query_words if any(kw in word or word in kw for kw in page_keywords))
+                            score += matched_keywords * 2
+                        
+                        if score > 0:
+                            scored_pages.append({
+                                'url': page.get('url'),
+                                'title': page.get('title'),
+                                'description': page.get('description'),
+                                'main_content': page.get('main_content'),
+                                'relevance_score': score
+                            })
+                    
+                    # Sort by relevance and return TOP 3 ONLY (TOKEN OPTIMIZATION)
+                    scored_pages.sort(key=lambda x: x['relevance_score'], reverse=True)
+                    top_pages = scored_pages[:3]  # Only top 3 most relevant pages
+                    
+                    print(f"[WebCrawler] ✅ Returning {len(top_pages)} most relevant cached pages (filtered from {len(scored_pages)} scored pages)")
+                    
+                    # Format for return (truncate content to save tokens)
+                    formatted_results = []
+                    for page in top_pages:
+                        formatted_results.append({
+                            'url': page['url'],
+                            'title': page['title'][:100] if page['title'] else '',
+                            'description': (page['description'] or '')[:200] if page['description'] else '',
+                            'main_content': (page['main_content'] or '')[:500] if page['main_content'] else ''  # Truncate to 500 chars
+                        })
+                    
+                    return formatted_results
+                    
+            except Exception as e:
+                print(f"[WebCrawler] Error querying Supabase cache: {e}")
+                # Fall through to crawl if cache query fails
+        
+        # Fallback: Use original crawling logic if cache query fails
+        return self._search_prakriti_content_fallback(query)
+    
+    def _search_prakriti_content_fallback(self, query: str) -> List[Dict[str, str]]:
+        """Fallback method: original crawling logic when Supabase cache query fails"""
         if not self.is_prakriti_related(query):
             return []
         
-        print(f"[WebCrawler] Searching PrakritSchool content for: {query}")
+        print(f"[WebCrawler] Fallback: Searching PrakritSchool content for: {query}")
         
         # Check cache first
         cache_key = f"prakriti_search_{hash(query)}"
@@ -1376,11 +1571,12 @@ class WebCrawlerAgent:
             return []
     
     def extract_relevant_info(self, content_list: List[Dict[str, str]], query: str) -> str:
-        """Extract relevant information from crawled content based on query"""
+        """Extract relevant information from crawled content based on query - OPTIMIZED FOR TOKEN REDUCTION"""
         if not content_list:
             return ""
         
         query_lower = query.lower()
+        query_words = [w for w in query_lower.split() if len(w) > 2]  # Filter out short words
         relevant_info = []
         
         for content in content_list:
@@ -1390,61 +1586,64 @@ class WebCrawlerAgent:
             # Check title relevance
             if content.get('title'):
                 title_lower = content['title'].lower()
-                if any(word in title_lower for word in query_lower.split()):
+                if any(word in title_lower for word in query_words):
                     relevance_score += 3
             
             # Check description relevance
             if content.get('description'):
                 desc_lower = content['description'].lower()
-                if any(word in desc_lower for word in query_lower.split()):
+                if any(word in desc_lower for word in query_words):
                     relevance_score += 2
             
             # Check main content relevance
             if content.get('main_content'):
                 main_lower = content['main_content'].lower()
-                if any(word in main_lower for word in query_lower.split()):
+                if any(word in main_lower for word in query_words):
                     relevance_score += 1
             
-            # If content is relevant, extract key information
+            # If content is relevant, extract key information (MINIMAL to save tokens)
             if relevance_score > 0:
                 info_parts = []
                 
+                # Extract MINIMAL info (TOKEN OPTIMIZATION)
                 if content.get('title'):
-                    info_parts.append(f"**Title**: {content['title']}")
+                    info_parts.append(f"**{content['title'][:80]}**")  # Limit title (reduced from 100)
                 
-                if content.get('description'):
-                    info_parts.append(f"**Description**: {content['description'][:200]}...")
+                # Only include description if title is missing or very short
+                if not content.get('title') or len(content.get('title', '')) < 20:
+                    if content.get('description'):
+                        info_parts.append(f"{content['description'][:80]}")  # Reduced from 150
                 
                 if content.get('main_content'):
-                    # Extract sentences that contain query words
+                    # Extract ONLY 1 sentence that contains query words (TOKEN OPTIMIZATION - reduced from 2)
                     sentences = content['main_content'].split('.')
-                    relevant_sentences = []
                     for sentence in sentences:
                         sentence_lower = sentence.lower()
-                        if any(word in sentence_lower for word in query_lower.split()):
-                            relevant_sentences.append(sentence.strip())
-                    
-                    if relevant_sentences:
-                        info_parts.append(f"**Relevant Content**: {' '.join(relevant_sentences[:3])}")
+                        if any(word in sentence_lower for word in query_words):
+                            info_parts.append(sentence.strip()[:120])  # Limit sentence length (reduced from 200)
+                            break  # Only 1 sentence
                 
                 if info_parts:
                     relevant_info.append({
                         'url': content.get('url', ''),
                         'relevance_score': relevance_score,
-                        'info': '\n'.join(info_parts)
+                        'info': ' | '.join(info_parts)  # Use | separator instead of newlines (more compact)
                     })
         
         # Sort by relevance score
         relevant_info.sort(key=lambda x: x['relevance_score'], reverse=True)
         
-        # Format the information
+        # Format the information (LIMIT TO TOP 1 RESULT - TOKEN OPTIMIZATION)
         if relevant_info:
-            formatted_info = "## Web Search Results\n\n"
-            for i, info in enumerate(relevant_info[:3]):  # Limit to top 3 results
-                formatted_info += f"### Result {i+1}\n"
-                formatted_info += f"{info['info']}\n"
-                if info['url']:
-                    formatted_info += f"*Source: [{info['url']}]({info['url']})*\n\n"
+            top_result = relevant_info[0]  # Only top 1 result
+            formatted_info = f"{top_result['info']}"
+            if top_result['url']:
+                formatted_info += f" [{top_result['url']}]"
+            
+            # TRUNCATE entire formatted info to max 600 chars (reduced from 1200)
+            if len(formatted_info) > 600:
+                formatted_info = formatted_info[:600] + "..."
+                print(f"[WebCrawler] Truncated extract_relevant_info output to 600 chars")
             
             return formatted_info
         
@@ -1525,6 +1724,179 @@ class WebCrawlerAgent:
     def get_enhanced_response(self, query: str) -> str:
         """Get enhanced response with web crawling for PrakritSchool queries"""
         print(f"[WebCrawler] Getting enhanced response for: {query}")
+        print(f"[WebCrawler] 🔍 Cache check priority: 1) web_crawler_data table → 2) search_cache table → 3) Web crawl")
+        
+        # FIRST: Try to get filtered cached data from web_crawler_data table (FAST PATH)
+        # This is faster than checking search_cache, then crawling
+        if SUPABASE_AVAILABLE:
+            try:
+                supabase = get_supabase_client()
+                query_lower = query.lower()
+                query_words = [w for w in query_lower.split() if len(w) > 2]
+                
+                # Determine content_type
+                content_type = None
+                if self.is_team_related(query):
+                    content_type = 'team'
+                elif self.is_article_related(query):
+                    content_type = 'article'
+                elif self.is_calendar_related(query):
+                    content_type = 'calendar'
+                elif self.is_news_related(query):
+                    content_type = 'news'
+                elif self.is_academic_related(query):
+                    content_type = 'academic'
+                elif self.is_admission_related(query):
+                    content_type = 'admission'
+                elif self.is_contact_related(query):
+                    content_type = 'contact'
+                elif self.is_testimonial_related(query):
+                    content_type = 'testimonial'
+                
+                # Query cached pages directly
+                base_query = supabase.table('web_crawler_data').select('url, title, description, main_content, content_type').eq('is_active', True).gte('crawled_at', (datetime.utcnow() - timedelta(hours=24)).isoformat())
+                
+                if content_type:
+                    base_query = base_query.eq('content_type', content_type)
+                
+                result = base_query.limit(10).execute()  # Limit to 10 for scoring
+                
+                if result.data and len(result.data) > 0:
+                    print(f"[WebCrawler] ✅ Found {len(result.data)} cached pages in web_crawler_data table, scoring by relevance...")
+                    
+                    # AGGRESSIVE FILTERING: Score pages and only keep highly relevant ones
+                    scored_pages = []
+                    for page in result.data:
+                        score = 0
+                        page_title = (page.get('title') or '').lower()
+                        page_desc = (page.get('description') or '').lower()
+                        page_content = (page.get('main_content') or '')[:1000].lower()  # Check first 1000 chars
+                        
+                        # Count exact query word matches (more specific = higher score)
+                        query_word_matches = sum(1 for word in query_words if word in page_title or word in page_desc or word in page_content)
+                        
+                        # Title match = highest priority (20 points)
+                        title_matches = sum(10 for word in query_words if word in page_title)
+                        score += title_matches
+                        
+                        # Description match = medium priority (6 points)
+                        desc_matches = sum(3 for word in query_words if word in page_desc)
+                        score += desc_matches
+                        
+                        # Content match = lower priority (1 point)
+                        content_matches = sum(1 for word in query_words if word in page_content)
+                        score += content_matches
+                        
+                        # Bonus for multiple query words matching
+                        if query_word_matches >= len(query_words) * 0.7:  # 70% of query words match
+                            score += 10
+                        
+                        # Only include pages with minimum relevance threshold (at least 5 points)
+                        if score >= 5:
+                            scored_pages.append({
+                                'title': page.get('title', ''),
+                                'description': page.get('description', ''),
+                                'main_content': page.get('main_content', ''),
+                                'url': page.get('url', ''),
+                                'score': score,
+                                'query_matches': query_word_matches
+                            })
+                    
+                    if scored_pages:
+                        scored_pages.sort(key=lambda x: (x['score'], x['query_matches']), reverse=True)
+                        # ONLY return TOP 1 most relevant page (TOKEN OPTIMIZATION)
+                        top_page = scored_pages[0]
+                        
+                        # Extract ONLY sentences containing query words (AGGRESSIVE FILTERING)
+                        relevant_text_parts = []
+                        
+                        # Title (if relevant)
+                        if top_page['title'] and any(word in top_page['title'].lower() for word in query_words):
+                            relevant_text_parts.append(top_page['title'][:70])
+                        
+                        # Description (if relevant)
+                        if top_page['description'] and any(word in top_page['description'].lower() for word in query_words):
+                            relevant_text_parts.append(top_page['description'][:80])
+                        
+                        # Extract ONLY sentences with query words from main_content (max 2 sentences)
+                        if top_page['main_content']:
+                            sentences = top_page['main_content'].split('.')
+                            relevant_sentences = []
+                            for sentence in sentences:
+                                sentence_clean = sentence.strip()
+                                if sentence_clean and len(sentence_clean) > 20:  # Skip very short sentences
+                                    sentence_lower = sentence_clean.lower()
+                                    # Check if sentence contains any query word
+                                    if any(word in sentence_lower for word in query_words):
+                                        relevant_sentences.append(sentence_clean[:150])  # Max 150 chars per sentence
+                                        if len(relevant_sentences) >= 2:  # Max 2 sentences
+                                            break
+                            
+                            if relevant_sentences:
+                                relevant_text_parts.extend(relevant_sentences)
+                        
+                        # Combine and truncate to max 400 chars total (TOKEN OPTIMIZATION)
+                        if relevant_text_parts:
+                            result_text = ' | '.join(relevant_text_parts)
+                            if len(result_text) > 400:
+                                result_text = result_text[:400] + "..."
+                            
+                            if top_page['url']:
+                                result_text += f" [{top_page['url']}]"
+                            
+                            print(f"[WebCrawler] ✅ Returning TOP 1 cached page (score: {top_page['score']}, matches: {top_page['query_matches']}/{len(query_words)} words, {len(result_text)} chars)")
+                            return result_text
+                        else:
+                            print(f"[WebCrawler] ⚠️ Page found but no relevant text extracted (score: {top_page['score']})")
+                    else:
+                        print(f"[WebCrawler] ⚠️ No pages met minimum relevance threshold (5 points)")
+            except Exception as e:
+                print(f"[WebCrawler] Error in fast cache check: {e}")
+        
+        # SECOND: Check Supabase search_cache table (older method)
+        if SUPABASE_AVAILABLE:
+            try:
+                print(f"[WebCrawler] 🔍 Checking search_cache table (step 2)...")
+                supabase = get_supabase_client()
+                # Generate query hash
+                query_hash = hashlib.md5(query.lower().strip().encode()).hexdigest()
+                
+                # Check search_cache table for cached results
+                # SELECT ONLY cached_results column (not *) to reduce data transfer
+                cache_result = supabase.table('search_cache').select('cached_results').eq('query_hash', query_hash).eq('is_active', True).gte('expires_at', datetime.utcnow().isoformat()).limit(1).execute()
+                
+                if cache_result.data and len(cache_result.data) > 0:
+                    cached_entry = cache_result.data[0]
+                    print(f"[WebCrawler] ✅ Found cached data in Supabase search_cache (fast response, no crawling needed)")
+                    
+                    # Return cached results
+                    cached_results = cached_entry.get('cached_results', '')
+                    
+                    # cached_results is stored as JSONB in Supabase, but may be returned as string or dict
+                    if isinstance(cached_results, str):
+                        # If it's a string, truncate if too long to save tokens (max 1500 chars)
+                        if cached_results.strip():
+                            if len(cached_results) > 1500:
+                                cached_results = cached_results[:1500] + "..."
+                                print(f"[WebCrawler] Truncated cached_results to 1500 chars to save tokens")
+                            print(f"[WebCrawler] Returning cached data (no crawling needed)")
+                            return cached_results
+                    elif isinstance(cached_results, dict):
+                        # If it's a dict, format it and truncate
+                        formatted_info = self.format_cached_results(cached_results, query)
+                        if formatted_info:
+                            if len(formatted_info) > 1500:
+                                formatted_info = formatted_info[:1500] + "..."
+                                print(f"[WebCrawler] Truncated formatted_info to 1500 chars to save tokens")
+                            print(f"[WebCrawler] Returning cached data (no crawling needed)")
+                            return formatted_info
+            except Exception as e:
+                print(f"[WebCrawler] Error checking Supabase cache: {e}")
+                # Continue to crawling if cache check fails
+        
+        # If no cache found in search_cache either, proceed with crawling
+        print(f"[WebCrawler] ⚠️ No cached data found in either cache table, starting web crawl (this may take 2-5 seconds)...")
+        print(f"[WebCrawler] 📝 Crawled data will be cached in Supabase for faster future responses")
         
         query_lower = query.lower()
         
@@ -1589,7 +1961,53 @@ We're continuously updating our content, so please check back later or contact u
 
 *Source: [prakriti.edu.in](https://prakriti.edu.in)*"""
         
+        # Cache the results in Supabase for future use (if available)
+        if SUPABASE_AVAILABLE and enhanced_info:
+            try:
+                supabase = get_supabase_client()
+                query_hash = hashlib.md5(query.lower().strip().encode()).hexdigest()
+                
+                # Prepare cache entry
+                cache_data = {
+                    'query_hash': query_hash,
+                    'query_text': query,
+                    'cached_results': enhanced_info if isinstance(enhanced_info, str) else json.dumps(enhanced_info),
+                    'result_count': len(enhanced_info) if enhanced_info else 0,
+                    'expires_at': (datetime.utcnow() + timedelta(hours=24)).isoformat(),
+                    'is_active': True
+                }
+                
+                # Upsert to search_cache (insert or update if exists)
+                supabase.table('search_cache').upsert(cache_data, on_conflict='query_hash').execute()
+                print(f"[WebCrawler] ✅ Cached results in Supabase for future use")
+            except Exception as e:
+                print(f"[WebCrawler] Error caching in Supabase: {e}")
+                # Non-critical, continue
+        
         return enhanced_info
+    
+    def format_cached_results(self, cached_data: any, query: str) -> str:
+        """Format cached results from Supabase for chatbot use"""
+        # If it's already a string (formatted HTML/text), return as is
+        if isinstance(cached_data, str):
+            return cached_data
+        
+        # If it's a dict, try to extract formatted content
+        if isinstance(cached_data, dict):
+            # Check if it's already formatted text in cached_results field
+            if 'cached_results' in cached_data:
+                results = cached_data['cached_results']
+                if isinstance(results, str):
+                    return results
+                elif isinstance(results, dict):
+                    # Format as web search results
+                    return self.extract_relevant_info([results], query) if isinstance(results, dict) else str(results)
+            # If it's a content dict directly, format it
+            elif 'main_content' in cached_data or 'title' in cached_data:
+                return self.extract_relevant_info([cached_data], query)
+        
+        # Fallback: return as string
+        return str(cached_data) if cached_data else ""
 
 # Global instance
 web_crawler = WebCrawlerAgent()

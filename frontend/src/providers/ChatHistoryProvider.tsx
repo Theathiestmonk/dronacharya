@@ -64,8 +64,8 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [lastCreateSessionTime, setLastCreateSessionTime] = useState(0);
   const [justCreatedManualSession, setJustCreatedManualSession] = useState(false);
   
-  // Blink effect state for refresh
-  const [isBlinking, setIsBlinking] = useState(false);
+  // Blink effect state for refresh (removed - causing blinking on page refresh)
+  // const [isBlinking, setIsBlinking] = useState(false);
   
   // Use ref to get current sessions state
   const sessionsRef = useRef<ChatSession[]>([]);
@@ -646,34 +646,48 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       
       if (currentSession) {
         console.log('🔄 Ensuring current session is saved before creating new one...');
+        console.log('Current session details:', {
+          id: currentSession.id,
+          messagesCount: currentSession.messages.length,
+          isDirty: currentSession.isDirty,
+          isSavedToSupabase: currentSession.isSavedToSupabase
+        });
         
-        // For authenticated users, save to Supabase if dirty
-        if (user && currentSession.isDirty && !currentSession.isSavedToSupabase) {
-          console.log('🔄 Auto-saving previous session to Supabase...');
+        // For authenticated users, always save to Supabase if session has messages
+        // This ensures no data loss when switching to a new chat
+        if (user && currentSession.messages.length > 0) {
+          console.log('🔄 Auto-saving previous session to Supabase (has messages, ensuring data safety)...');
           await saveSessionToSupabase(currentSession);
           
-          // Mark as saved
-          setSessions(prevSessions => 
-            prevSessions.map(s => 
-              s.id === activeSessionIdRef.current 
-                ? { ...s, isSavedToSupabase: true, isDirty: false }
-                : s
-            )
+          // Mark as saved - update both state and ref for consistency
+          const updatedSessions = currentSessions.map(s => 
+            s.id === activeSessionIdRef.current 
+              ? { ...s, isSavedToSupabase: true, isDirty: false }
+              : s
           );
+          
+          setSessions(updatedSessions);
+          sessionsRef.current = updatedSessions;
+          
           console.log('✅ Previous session auto-saved to Supabase');
+        } else if (user && currentSession.messages.length === 0) {
+          console.log('ℹ️ Current session has no messages, skipping Supabase save');
         }
         
         // For all users (authenticated and guest), ensure localStorage is up to date
+        // This ensures the latest session data is saved even if Supabase save was skipped
+        // Use sessionsRef.current to get the most up-to-date sessions (may have been updated above)
+        const latestSessions = sessionsRef.current;
         if (user) {
           const userKey = `chat_history_${user.id}`;
           localStorage.setItem(userKey, JSON.stringify({
-            sessions: currentSessions,
+            sessions: latestSessions,
             activeSessionId: activeSessionIdRef.current
           }));
           console.log('💾 Updated localStorage for authenticated user');
         } else {
           // Guest user - ensure localStorage is up to date
-          saveGuestSessions(currentSessions, activeSessionIdRef.current);
+          saveGuestSessions(latestSessions, activeSessionIdRef.current);
           console.log('💾 Updated localStorage for guest user');
         }
       }
@@ -701,12 +715,14 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       const updatedSessions = currentSessions.map(session => ({ ...session, isActive: false }));
       const newSessions = [newSession, ...updatedSessions];
       
-      setSessions(newSessions);
-      updateActiveSessionId(newSession.id);
-      
-      // Immediately update the refs to prevent auto-creation conflicts
+      // Batch all state updates together to prevent blinking
+      // Update refs first, then state
       sessionsRef.current = newSessions;
       activeSessionIdRef.current = newSession.id;
+      
+      // Update state together to prevent intermediate renders
+      setSessions(newSessions);
+      updateActiveSessionId(newSession.id);
 
       // Save to localStorage immediately for fast access
       const userKey = `chat_history_${user.id}`;
@@ -735,13 +751,15 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       const updatedSessions = currentSessions.map(session => ({ ...session, isActive: false }));
       const newSessions = [newSession, ...updatedSessions];
       
+      // Batch all state updates together to prevent blinking
+      // Update refs first, then state
+      sessionsRef.current = newSessions;
+      activeSessionIdRef.current = newSession.id;
+      
+      // Update state together to prevent intermediate renders
       setSessions(newSessions);
       updateActiveSessionId(newSession.id);
       setIsGuestMode(true);
-      
-      // Immediately update the refs to prevent auto-creation conflicts
-      sessionsRef.current = newSessions;
-      activeSessionIdRef.current = newSession.id;
 
       // Save guest sessions to localStorage
       saveGuestSessions(newSessions, newSession.id);
@@ -1244,12 +1262,9 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     };
   }, [user, hasUnsavedSessions, saveAllUnsavedSessions]);
 
-  // Refresh chat components function with blink effect
+  // Refresh chat components function (blink effect removed to prevent blinking on page refresh)
   const refreshChatComponents = useCallback(async () => {
     console.log('🔄 Refreshing chat components...');
-    
-    // Trigger blink effect
-    setIsBlinking(true);
     
     try {
       // Auto-save any unsaved sessions first (non-blocking)
@@ -1265,11 +1280,6 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       console.log('✅ Chat components refreshed successfully');
     } catch (error) {
       console.error('Error refreshing chat components:', error);
-    } finally {
-      // Stop blink effect after a short delay
-      setTimeout(() => {
-        setIsBlinking(false);
-      }, 300);
     }
   }, [user, hasUnsavedSessions, saveAllUnsavedSessions, loadFromLocalStorage]);
 
@@ -1279,7 +1289,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const value: ChatHistoryContextType = {
     sessions,
     activeSessionId,
-    isLoading: isLoading || isBlinking,
+    isLoading: isLoading,
     isGuestMode,
     createNewSession,
     switchToSession,

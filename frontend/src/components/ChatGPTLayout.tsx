@@ -239,7 +239,7 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
   );
 
   return (
-    <div className="flex flex-1 bg-gray-50">
+    <div className="flex flex-1 bg-white">
       
       {/* Chat History Dropdown */}
       {showChatHistoryDropdown && (
@@ -440,7 +440,7 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
 
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col bg-white">
+      <div className="flex-1 flex flex-col bg-transparent">
         {/* Header with User Profile - Sticky */}
         <div className="sticky top-0 z-30 border-b border-gray-200 bg-white">
           <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3">
@@ -465,6 +465,8 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
                   sidebarCollapsed={false}
                   theme="light"
                   onDropdownToggle={setIsProfileDropdownOpen}
+                  onShowChatHistory={() => setShowChatHistoryDropdown(true)}
+                  onCreateNewChat={handleCreateNew}
                 />
               ) : (
                 <button
@@ -478,9 +480,9 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
           </div>
         </div>
         
-        {/* Floating Chat History Button - Only show when user is logged in */}
+        {/* Floating Chat History Button - Only show on desktop/tablet (hidden on mobile, moved to profile popup) */}
         {user && !showChatHistoryDropdown && (
-          <div className="fixed top-20 sm:top-24 left-0 z-40" data-chat-history-button>
+          <div className="hidden sm:block fixed top-20 sm:top-24 left-0 z-40" data-chat-history-button>
             <button
               onClick={() => setShowChatHistoryDropdown(true)}
               className="flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-1.5 sm:py-2 ml-2 sm:ml-4 text-xs sm:text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-lg transition-colors shadow-lg cursor-pointer"
@@ -498,10 +500,9 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
           </div>
         )}
 
-        {/* Floating Action Buttons - Only show when user is logged in and no modals are open */}
+        {/* Floating New Chat Button - Only show on desktop/tablet (hidden on mobile, moved to profile popup) */}
         {user && !isProfileDropdownOpen && !showDeleteConfirm && !showLogoutConfirm && (
-          <div className="fixed top-20 sm:top-24 right-2 sm:right-4 z-[60] flex flex-col space-y-2">
-            
+          <div className="hidden sm:block fixed top-20 sm:top-24 right-2 sm:right-4 z-[60] flex flex-col space-y-2">
             {/* New Chat Button */}
             <button
               onClick={handleCreateNew}
@@ -518,7 +519,7 @@ const ChatGPTLayout: React.FC<ChatGPTLayoutProps> = ({ children, onLoginRedirect
         )}
         
         {/* Main Content */}
-        <div className={`flex-1 transition-all duration-200 ${chatHistoryLoading ? 'opacity-40 scale-[0.98]' : 'opacity-100 scale-100'}`}>
+        <div className="flex-1">
           {children}
         </div>
       </div>

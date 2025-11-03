@@ -2,7 +2,7 @@
 import AdminDashboard from '@/components/AdminDashboard';
 import { useAuth } from '@/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, Suspense } from 'react';
 
 export default function AdminPage() {
   const { profile, loading, user, signOut } = useAuth();
@@ -125,7 +125,16 @@ export default function AdminPage() {
       </div>
       
       {/* Admin Dashboard Content */}
-      <AdminDashboard />
+      <Suspense fallback={
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading dashboard...</p>
+          </div>
+        </div>
+      }>
+        <AdminDashboard />
+      </Suspense>
     </div>
   );
 }
