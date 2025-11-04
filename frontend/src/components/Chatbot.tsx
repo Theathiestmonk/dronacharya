@@ -730,8 +730,8 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               </div>
             </div>
             
-            {/* Input Area - Always visible at bottom */}
-            <div className="flex-shrink-0 w-full mx-auto px-3 sm:px-4 md:px-6 pb-3 sm:pb-4 md:pb-6 pt-2 sm:pt-3 bg-white">
+            {/* Input Area - Always visible at bottom with safe area for mobile navigation */}
+            <div className="flex-shrink-0 w-full mx-auto px-3 sm:px-4 md:px-6 pb-20 sm:pb-4 md:pb-6 pt-2 sm:pt-3 bg-white" style={{ paddingBottom: 'max(5rem, calc(1rem + env(safe-area-inset-bottom, 0px)))' }}>
               <div className="relative w-full">
                 <div className="relative">
                   <textarea
@@ -1007,7 +1007,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="relative w-full max-w-full mt-auto px-2 sm:px-4 pb-4 sm:pb-6 mx-auto">
+          <div className="relative w-full max-w-full mt-auto px-2 sm:px-4 pb-20 sm:pb-4 md:pb-6 mx-auto" style={{ paddingBottom: 'max(5rem, calc(1rem + env(safe-area-inset-bottom, 0px)))' }}>
             <div className="relative">
               <textarea
                 ref={inputRef}

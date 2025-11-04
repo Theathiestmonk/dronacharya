@@ -499,7 +499,7 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
       </div>
       
       {/* Bottom Section - Login Button or Settings */}
-      <div className="p-4 border-t border-gray-200">
+      <div className="p-4 pb-20 sm:pb-4 border-t border-gray-200" style={{ paddingBottom: 'max(5rem, calc(1rem + env(safe-area-inset-bottom, 0px)))' }}>
         {!user ? (
           <button
             onClick={handleLoginClick}
