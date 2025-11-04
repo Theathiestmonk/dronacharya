@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { useAuth } from '@/providers/AuthProvider';
 import { useChatHistory } from '@/providers/ChatHistoryProvider';
 import { generateChatName } from '@/utils/chatNameGenerator';
+import ConfirmationModal from './ConfirmationModal';
 
 interface ChatbotSidebarProps {
   onQueryClick: (query: string) => void;
@@ -20,10 +21,17 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
     activeSessionId, 
     createNewSession, 
     switchToSession, 
+    deleteSession,
+    updateSessionTitle,
     isLoading: chatHistoryLoading
   } = useChatHistory();
   
   const [showMoreQueries, setShowMoreQueries] = useState(false);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
+  const [deleteNotification, setDeleteNotification] = useState<string | null>(null);
+  const [deleteConfirmSessionId, setDeleteConfirmSessionId] = useState<string | null>(null);
   
   // Built-in query collection
   const primaryQueries = [
@@ -72,6 +80,51 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
     if (onLoginRedirect) {
       onLoginRedirect();
     }
+  };
+
+  const handleEditStart = (sessionId: string, currentTitle: string) => {
+    setEditingSessionId(sessionId);
+    setEditTitle(currentTitle === 'New Chat' ? generateChatName(sessions.find(s => s.id === sessionId)?.messages || []) : currentTitle);
+  };
+
+  const handleEditSave = async (sessionId: string) => {
+    if (editTitle.trim()) {
+      await updateSessionTitle(sessionId, editTitle.trim());
+    }
+    setEditingSessionId(null);
+    setEditTitle('');
+  };
+
+  const handleEditCancel = () => {
+    setEditingSessionId(null);
+    setEditTitle('');
+  };
+
+  const handleDelete = async (sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeleteConfirmSessionId(sessionId);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirmSessionId) return;
+    
+    const session = sessions.find(s => s.id === deleteConfirmSessionId);
+    const sessionTitle = session?.title === 'New Chat' ? generateChatName(session.messages) : session?.title || 'Chat';
+    
+    await deleteSession(deleteConfirmSessionId);
+    setDeleteConfirmSessionId(null);
+    
+    // Show delete notification
+    setDeleteNotification(`"${sessionTitle}" deleted`);
+    
+    // Auto-hide notification after 3 seconds
+    setTimeout(() => {
+      setDeleteNotification(null);
+    }, 3000);
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteConfirmSessionId(null);
   };
   
   const formatDate = (timestamp: string | number) => {
@@ -128,7 +181,7 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
             </div>
             <button
               onClick={onClose}
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors duration-200 border border-gray-300"
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors duration-200"
               aria-label="Close sidebar"
             >
               <svg 
@@ -325,40 +378,118 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
                 {recentSessions.map((session) => {
                   // Generate display title - use generated name if title is still "New Chat"
                   const displayTitle = session.title === 'New Chat' ? generateChatName(session.messages) : session.title;
+                  const isEditing = editingSessionId === session.id;
+                  const isHovered = hoveredSessionId === session.id;
+                  
                   return (
-                    <button
+                    <div
                       key={session.id}
-                      onClick={() => handleSessionClick(session.id)}
-                      className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors duration-150 truncate ${
-                        activeSessionId === session.id
-                          ? 'font-medium'
-                          : ''
-                      }`}
-                      style={{
-                        backgroundColor: activeSessionId === session.id ? 'var(--brand-primary-50)' : 'transparent',
-                        color: activeSessionId === session.id ? 'var(--brand-primary-800)' : 'var(--brand-primary)',
-                      }}
-                      onMouseEnter={(e) => {
-                        if (activeSessionId !== session.id) {
-                          e.currentTarget.style.backgroundColor = 'var(--brand-primary-50)';
-                          e.currentTarget.style.color = 'var(--brand-primary-800)';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (activeSessionId !== session.id) {
-                          e.currentTarget.style.backgroundColor = 'transparent';
-                          e.currentTarget.style.color = 'var(--brand-primary)';
-                        }
-                      }}
-                      title={displayTitle}
+                      className="group relative"
+                      onMouseEnter={() => setHoveredSessionId(session.id)}
+                      onMouseLeave={() => setHoveredSessionId(null)}
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="truncate">{displayTitle}</span>
-                        <span className="text-xs text-gray-400 ml-2 flex-shrink-0">
-                          {formatDate(session.updated_at)}
-                        </span>
-                      </div>
-                    </button>
+                      {isEditing ? (
+                        <div className="flex items-center gap-1 px-3 py-2">
+                          <input
+                            type="text"
+                            value={editTitle}
+                            onChange={(e) => setEditTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                handleEditSave(session.id);
+                              } else if (e.key === 'Escape') {
+                                handleEditCancel();
+                              }
+                            }}
+                            className="flex-1 px-2 py-1 text-sm rounded border border-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            autoFocus
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditSave(session.id);
+                            }}
+                            className="p-1.5 rounded hover:bg-gray-100 transition-colors"
+                            title="Save"
+                          >
+                            <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditCancel();
+                            }}
+                            className="p-1.5 rounded hover:bg-gray-100 transition-colors"
+                            title="Cancel"
+                          >
+                            <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => handleSessionClick(session.id)}
+                          className={`flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors duration-150 cursor-pointer ${
+                            activeSessionId === session.id
+                              ? 'font-medium'
+                              : ''
+                          }`}
+                          style={{
+                            backgroundColor: activeSessionId === session.id ? 'var(--brand-primary-50)' : 'transparent',
+                            color: activeSessionId === session.id ? 'var(--brand-primary-800)' : 'var(--brand-primary)',
+                          }}
+                          onMouseEnter={(e) => {
+                            if (activeSessionId !== session.id) {
+                              e.currentTarget.style.backgroundColor = 'var(--brand-primary-50)';
+                              e.currentTarget.style.color = 'var(--brand-primary-800)';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (activeSessionId !== session.id) {
+                              e.currentTarget.style.backgroundColor = 'transparent';
+                              e.currentTarget.style.color = 'var(--brand-primary)';
+                            }
+                          }}
+                          title={displayTitle}
+                        >
+                          <span className="flex-1 truncate">{displayTitle}</span>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <span className="text-xs text-gray-400">
+                              {formatDate(session.updated_at)}
+                            </span>
+                            {isHovered && (
+                              <>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleEditStart(session.id, displayTitle);
+                                  }}
+                                  className="p-1 rounded hover:bg-gray-200 transition-colors"
+                                  title="Rename"
+                                >
+                                  <svg className="w-3.5 h-3.5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={(e) => handleDelete(session.id, e)}
+                                  className="p-1 rounded hover:bg-red-100 transition-colors"
+                                  title="Delete"
+                                >
+                                  <svg className="w-3.5 h-3.5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -372,12 +503,19 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
         {!user ? (
           <button
             onClick={handleLoginClick}
-            className="w-full flex items-center gap-3 px-4 py-2.5 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors duration-150"
+            className="w-full flex items-center justify-center px-4 py-2.5 rounded-md transition-colors duration-150 font-medium text-sm"
+            style={{
+              backgroundColor: 'var(--brand-primary)',
+              color: 'white',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'var(--brand-primary-700)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'var(--brand-primary)';
+            }}
           >
-            <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center flex-shrink-0">
-              <span className="text-white font-semibold text-sm">N</span>
-            </div>
-            <span className="font-medium">Login</span>
+            Login
           </button>
         ) : (
           user && showSettings && onSettingsClick && (
@@ -386,7 +524,7 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
                 e.stopPropagation();
                 onSettingsClick();
               }}
-              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg hover:bg-gray-100 transition-colors duration-150 border border-gray-300 lg:hidden"
+              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg hover:bg-gray-100 transition-colors duration-150 lg:hidden"
               aria-label="Settings"
               data-settings-button
             >
@@ -416,7 +554,46 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
           )
         )}
       </div>
+      
+      {/* Delete Notification */}
+      {deleteNotification && (
+        <div className="absolute bottom-20 left-4 right-4 bg-gray-800 text-white px-4 py-3 rounded-md shadow-lg flex items-center justify-between z-50 transform transition-all duration-300 ease-in-out">
+          <div className="flex items-center gap-2">
+            <svg className="w-5 h-5 text-white flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <span className="text-sm">{deleteNotification}</span>
+          </div>
+          <button
+            onClick={() => setDeleteNotification(null)}
+            className="ml-2 p-1 hover:bg-gray-700 rounded transition-colors flex-shrink-0"
+            aria-label="Close notification"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
     </div>
+    
+    {/* Delete Confirmation Modal */}
+    {deleteConfirmSessionId && (() => {
+      const session = sessions.find(s => s.id === deleteConfirmSessionId);
+      const sessionTitle = session?.title === 'New Chat' ? generateChatName(session?.messages || []) : session?.title || 'Chat';
+      return (
+        <ConfirmationModal
+          isOpen={!!deleteConfirmSessionId}
+          onClose={handleDeleteCancel}
+          onConfirm={handleDeleteConfirm}
+          title="Delete Chat"
+          message={`Are you sure you want to delete "${sessionTitle}"? This action cannot be undone.`}
+          confirmText="Delete"
+          cancelText="Cancel"
+          type="danger"
+        />
+      );
+    })()}
     </>
   );
 };

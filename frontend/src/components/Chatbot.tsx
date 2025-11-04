@@ -703,34 +703,40 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   const containerClassName = chatHistoryLoading ? 'opacity-40 scale-[0.98]' : 'opacity-100 scale-100';
   
   return (
-    <div className={`flex flex-col h-full w-full max-w-full bg-transparent mx-auto transition-all duration-200 ${containerClassName}`}>
+    <div className={`flex flex-col h-full w-full bg-transparent mx-auto transition-all duration-200 ${containerClassName}`}>
       {messages.length === 0 ? (
         <>
-          {/* Welcome Screen - Centered Layout */}
-          <div className="flex-1 flex flex-col justify-center items-center">
-            {/* Image above heading */}
-            <div className="flex justify-center mb-3 sm:mb-4 md:mb-6">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img 
-                src="/prakriti_logo.webp" 
-                alt="Prakriti Visual" 
-                className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 lg:w-32 lg:h-32 object-contain" 
-              />
-            </div>
-            {/* Heading */}
-            <div className="mb-6 sm:mb-8 md:mb-12 text-center px-2">
-              <h2 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl xl:text-5xl font-normal mb-2 leading-tight text-gray-500">
-                {welcomeMessage ? renderWelcomeMessage(welcomeMessage) : "Loading..."}
-              </h2>
+          {/* Welcome Screen - Mobile Optimized Layout */}
+          <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden">
+            {/* Spacer at top - reduced for mobile */}
+            <div className="flex-shrink-0 pt-10 sm:pt-14 md:pt-20"></div>
+            
+            {/* Centered Content: Logo and Message - Scrollable if needed */}
+            <div className="flex-1 flex flex-col items-center justify-center px-3 sm:px-4 md:px-6 min-h-0 overflow-y-auto">
+              {/* Logo - Smaller on mobile */}
+              <div className="flex justify-center mb-3 sm:mb-4 md:mb-6 flex-shrink-0">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img 
+                  src="/prakriti_logo.webp" 
+                  alt="Prakriti Visual" 
+                  className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 object-contain" 
+                />
+              </div>
+              {/* Welcome Message - Smaller on mobile */}
+              <div className="text-center px-2 sm:px-4 mb-3 sm:mb-4 md:mb-6 flex-shrink-0">
+                <h2 className="text-lg sm:text-xl md:text-2xl lg:text-3xl xl:text-4xl font-normal leading-tight text-gray-600">
+                  {welcomeMessage ? renderWelcomeMessage(welcomeMessage) : "Loading..."}
+                </h2>
+              </div>
             </div>
             
-            {/* Input Area - Centered */}
-            <div className="w-full max-w-lg">
-              <div className="relative w-full px-1 sm:px-0 pb-4 sm:pb-6">
+            {/* Input Area - Always visible at bottom */}
+            <div className="flex-shrink-0 w-full mx-auto px-3 sm:px-4 md:px-6 pb-3 sm:pb-4 md:pb-6 pt-2 sm:pt-3 bg-white">
+              <div className="relative w-full">
                 <div className="relative">
                   <textarea
                     ref={inputRef}
-                    className="w-full border rounded-[20px] px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 pr-16 sm:pr-20 md:pr-24 bg-transparent focus:outline-none resize-none font-normal text-sm sm:text-base border-gray-300 text-gray-900 placeholder-gray-400 overflow-hidden"
+                    className="w-full border rounded-[20px] px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 pr-16 sm:pr-20 md:pr-24 bg-white focus:outline-none resize-none font-normal text-sm sm:text-base border-gray-300 text-gray-900 placeholder-gray-400 overflow-hidden"
                     style={{ minHeight: '50px', maxHeight: '200px' }}
                     value={input}
                     onChange={(e) => {
@@ -808,7 +814,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               </div>
             </div>
           )}
-          <div className="flex-1 overflow-y-auto pt-4 sm:pt-6 mb-3 sm:mb-4 space-y-2 px-2 sm:px-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400" style={{ minHeight: 0 }}>
+          <div className="flex-1 overflow-y-auto pt-4 sm:pt-6 mb-3 sm:mb-4 space-y-2 px-1 sm:px-2 md:px-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400" style={{ minHeight: 0 }}>
         
         {messages.map((msg, idx) => (
           'type' in msg && msg.type === 'calendar' ? (
@@ -881,7 +887,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             >
               {'text' in msg && msg.sender === 'user' ? (
               <div
-              className="max-w-[85%] sm:max-w-[80%] break-words bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 sm:px-5 sm:py-3 shadow-sm"
+              className="max-w-[95%] sm:max-w-[85%] md:max-w-[80%] break-words bg-blue-600 text-white rounded-2xl rounded-tr-sm px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 shadow-sm"
               >
                 {'text' in msg && (
                   <div className="markdown-content text-sm sm:text-base leading-relaxed">
@@ -890,7 +896,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                 )}
               </div>
               ) : (
-              <div className="max-w-[90%] sm:max-w-[85%] break-words text-gray-900">
+              <div className="max-w-[95%] sm:max-w-[85%] md:max-w-[80%] break-words text-gray-900">
                 {'text' in msg && (
                   <div className="markdown-content text-sm sm:text-base leading-relaxed text-gray-900">
                     <ReactMarkdown 

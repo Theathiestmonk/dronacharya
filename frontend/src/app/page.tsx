@@ -352,7 +352,7 @@ const AppContent: React.FC<{
   }
 
   return (
-    <div className="min-h-screen h-screen flex bg-white overflow-hidden relative">
+    <div className={`min-h-screen h-screen ${isDesktop ? 'flex' : 'block'} ${isDesktop ? 'bg-white' : 'chat-grid-bg'} overflow-hidden relative`}>
       {/* Hamburger Menu Button - Only visible on mobile/tablet when sidebar is closed */}
       {!isSidebarOpen && (
         <button
@@ -486,8 +486,8 @@ const AppContent: React.FC<{
       />
       
       {/* Main Content Area with Grid Background */}
-      <main className="flex-1 flex items-center justify-center overflow-hidden chat-grid-bg relative">
-        <div className="w-[82.5%] max-w-[85%] h-full flex flex-col justify-center mx-auto">
+      <main className={`flex-1 flex overflow-hidden ${isDesktop ? 'chat-grid-bg' : ''} relative w-full h-full`}>
+        <div className={`w-full h-full flex flex-col mx-auto ${isDesktop ? 'px-2 sm:px-4 md:px-6 lg:w-[82.5%] max-w-[85%] justify-center' : 'px-3 sm:px-4'}`}>
           <Chatbot 
             key={`${chatKey}-${queryKey}`} 
             ref={chatbotRef} 
