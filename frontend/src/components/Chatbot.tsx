@@ -31,9 +31,11 @@ const CopyIcon = ({ copied }: { copied: boolean }) => (
 
 interface ChatbotProps {
   clearChat?: () => void;
+  externalQuery?: string;
+  onQueryProcessed?: () => void;
 }
 
-const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ clearChat }, ref) => {
+const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ clearChat, externalQuery, onQueryProcessed }, ref) => {
   const { user, profile } = useAuth();
   const { 
     getActiveSession, 
@@ -51,7 +53,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   const [listening, setListening] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
-  const [hasFirstResponse, setHasFirstResponse] = useState(false);
+  const [, setHasFirstResponse] = useState(false);
   const [micPlaceholder, setMicPlaceholder] = useState<string>('Ask me anything...');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -100,6 +102,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       setWelcomeMessage(welcomeMessages[0]);
     }
   }, [getRandomWelcomeMessage, welcomeMessages, welcomeMessage]);
+
 
   // Function to render welcome message with highlighted focus word
   const renderWelcomeMessage = (message: { text: string; focusWord: string }) => {
@@ -277,6 +280,21 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     }, 100);
   };
 
+  // Handle external query from sidebar - using ref to avoid dependency issues
+  const previousQueryRef = useRef<string>('');
+  
+  useEffect(() => {
+    if (externalQuery && externalQuery !== previousQueryRef.current && !loading && !requestInProgress && !isGenerating) {
+      previousQueryRef.current = externalQuery;
+      handleSuggestionClick(externalQuery);
+      if (onQueryProcessed) {
+        setTimeout(() => {
+          onQueryProcessed();
+        }, 200);
+      }
+    }
+  }, [externalQuery, loading, requestInProgress, isGenerating]);
+
   // Send message to backend /chatbot endpoint
   const sendMessage = async () => {
     console.log('=== SEND MESSAGE FUNCTION START ===');
@@ -330,6 +348,12 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     setConversationHistory(newHistory);
     
     setInput('');
+    // Reset textarea height after clearing input
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.style.height = '50px';
+      }
+    }, 0);
     setLoading(true);
     setRequestInProgress(true);
     setIsGenerating(true);
@@ -494,6 +518,30 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     }
   };
 
+  // Auto-resize textarea based on content
+  const adjustTextareaHeight = useCallback(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+      const scrollHeight = inputRef.current.scrollHeight;
+      const minHeight = 50;
+      const maxHeight = 200; // Increased from 120px for better expansion
+      const newHeight = Math.min(Math.max(scrollHeight, minHeight), maxHeight);
+      inputRef.current.style.height = `${newHeight}px`;
+      
+      // Enable scrolling if content exceeds maxHeight
+      if (scrollHeight > maxHeight) {
+        inputRef.current.style.overflowY = 'auto';
+      } else {
+        inputRef.current.style.overflowY = 'hidden';
+      }
+    }
+  }, []);
+
+  // Adjust textarea height when input changes
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [input, adjustTextareaHeight]);
+
   // Handle Enter + Shift for newline, Enter for send
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -514,6 +562,8 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         console.log('Not calling sendMessage - loading or request in progress');
       }
     }
+    // Adjust height on Enter key as well (for Shift+Enter)
+    setTimeout(() => adjustTextareaHeight(), 0);
   };
 
   // Auto-scroll to bottom when messages change or when typing
@@ -643,15 +693,17 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     if (clearChat) {
       clearChat();
     }
-  }, [clearChat, getRandomWelcomeMessage, clearActiveSession, abortController, setCopiedIdx]);
+  }, [clearChat, getRandomWelcomeMessage, clearActiveSession, abortController]);
 
   // Expose clearChat function to parent
   React.useImperativeHandle(ref, () => ({
     clearChat: handleClearChat
   }), [handleClearChat]);
 
+  const containerClassName = chatHistoryLoading ? 'opacity-40 scale-[0.98]' : 'opacity-100 scale-100';
+  
   return (
-    <div className={`flex flex-col h-[calc(100vh-140px)] sm:h-[calc(100vh-160px)] md:h-[calc(100vh-180px)] w-full max-w-xl mx-auto bg-transparent p-2 sm:p-0 transition-all duration-200 ${chatHistoryLoading ? 'opacity-40 scale-[0.98]' : 'opacity-100 scale-100'}`}>
+    <div className={`flex flex-col h-full w-full max-w-full bg-transparent mx-auto transition-all duration-200 ${containerClassName}`}>
       {messages.length === 0 ? (
         <>
           {/* Welcome Screen - Centered Layout */}
@@ -674,49 +726,60 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             
             {/* Input Area - Centered */}
             <div className="w-full max-w-lg">
-              <div className="relative flex items-end w-full px-1 sm:px-0">
-                <textarea
-                  ref={inputRef}
-                  className="w-full border rounded-[20px] px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 pr-16 sm:pr-20 md:pr-24 bg-transparent focus:outline-none resize-none font-normal text-sm sm:text-base border-gray-300 text-gray-900 placeholder-gray-400"
-                  style={{ height: 'auto', minHeight: '50px', maxHeight: '120px' }}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={(isGenerating || isTyping) ? "Generating response... Press Enter to stop" : micPlaceholder}
-                  disabled={loading}
-                  aria-label="Chat input"
-                  rows={1}
-                />
-                {/* Microphone button inside textarea */}
-                <button
-                  className={`absolute right-10 sm:right-12 md:right-14 bottom-1.5 sm:bottom-2 p-1.5 sm:p-2 rounded-full transition-all duration-200 ${listening ? 'animate-pulse' : ''} hover:bg-gray-200 hover:scale-105`}
-                  style={{ 
-                    backgroundColor: listening ? 'var(--brand-primary-50)' : 'transparent',
-                    borderColor: listening ? 'var(--brand-primary)' : 'transparent',
-                    zIndex: 2,
-                    border: 'none'
-                  }}
-                  onClick={handleMic}
-                  disabled={loading || listening}
-                  aria-label="Start voice input"
-                  tabIndex={0}
-                >
-                  {/* Heroicons solid mic icon */}
-                  <svg viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 ${listening ? 'var(--brand-primary)' : '#6b7280'}`}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
-                </button>
-                {/* Send/Stop button as icon inside textarea */}
-                <button
-                  className={`absolute right-1.5 sm:right-2 bottom-1.5 sm:bottom-2 p-1.5 sm:p-2 rounded-full transition-all duration-200 disabled:opacity-50 ${
-                    (isGenerating || isTyping)
-                      ? 'bg-gray-600 hover:bg-gray-700 shadow-lg animate-pulse' 
-                      : 'hover:bg-gray-200'
-                  }`}
-                  onClick={(isGenerating || isTyping) ? stopGeneration : sendMessage}
-                  disabled={!(isGenerating || isTyping) && (loading || requestInProgress || !input.trim())}
-                  aria-label={(isGenerating || isTyping) ? "Stop generation" : "Send message"}
-                  tabIndex={0}
-                  style={{ zIndex: 2, border: 'none' }}
-                >
+              <div className="relative w-full px-1 sm:px-0 pb-4 sm:pb-6">
+                <div className="relative">
+                  <textarea
+                    ref={inputRef}
+                    className="w-full border rounded-[20px] px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 pr-16 sm:pr-20 md:pr-24 bg-transparent focus:outline-none resize-none font-normal text-sm sm:text-base border-gray-300 text-gray-900 placeholder-gray-400 overflow-hidden"
+                    style={{ minHeight: '50px', maxHeight: '200px' }}
+                    value={input}
+                    onChange={(e) => {
+                      setInput(e.target.value);
+                      setTimeout(() => adjustTextareaHeight(), 0);
+                    }}
+                    onKeyDown={handleKeyDown}
+                    placeholder={(isGenerating || isTyping) ? "Generating response... Press Enter to stop" : micPlaceholder}
+                    disabled={loading}
+                    aria-label="Chat input"
+                    rows={1}
+                  />
+                  {/* Microphone button inside textarea */}
+                  <button
+                    className={`absolute right-12 sm:right-14 md:right-16 p-1.5 sm:p-2 rounded-full transition-all duration-200 ${listening ? 'animate-pulse' : ''} hover:bg-gray-200 hover:scale-105 flex items-center justify-center`}
+                    style={{ 
+                      backgroundColor: listening ? 'var(--brand-primary-50)' : 'transparent',
+                      borderColor: listening ? 'var(--brand-primary)' : 'transparent',
+                      zIndex: 10,
+                      border: 'none',
+                      top: '50%',
+                      transform: 'translateY(-50%)'
+                    }}
+                    onClick={handleMic}
+                    disabled={loading || listening}
+                    aria-label="Start voice input"
+                    tabIndex={0}
+                  >
+                    {/* Heroicons solid mic icon */}
+                    <svg viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 ${listening ? 'var(--brand-primary)' : '#6b7280'}`}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
+                  </button>
+                  {/* Send/Stop button as icon inside textarea */}
+                  <button
+                    className={`absolute right-2 sm:right-3 p-1.5 sm:p-2 rounded-full transition-all duration-200 disabled:opacity-50 flex items-center justify-center ${
+                      (isGenerating || isTyping)
+                        ? 'bg-gray-600 hover:bg-gray-700 shadow-lg animate-pulse' 
+                        : 'hover:bg-gray-200'
+                    }`}
+                    onClick={(isGenerating || isTyping) ? stopGeneration : sendMessage}
+                    disabled={!(isGenerating || isTyping) && (loading || requestInProgress || !input.trim())}
+                    aria-label={(isGenerating || isTyping) ? "Stop generation" : "Send message"}
+                    tabIndex={0}
+                    style={{ 
+                      zIndex: 10, 
+                      border: 'none',
+                      top: '50%',
+                      transform: 'translateY(-50%)'
+                    }}
+                  >
                   {(isGenerating || isTyping) ? (
                     /* Stop icon - more prominent */
                     <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 text-white">
@@ -729,43 +792,8 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                     </svg>
                   )}
                 </button>
-              </div>
-              
-              {/* Chat Shortcuts - Centered - Only show before first response */}
-              {!hasFirstResponse && (
-                <div className="mt-3 sm:mt-4 px-1 sm:px-0">
-                  <div className="flex flex-wrap gap-1.5 sm:gap-2 justify-center">
-                  {[
-                    "Help with homework",
-                    "Explain a concept",
-                    "Study tips",
-                    "School schedule",
-                    "Assignment help",
-                    "Math problems",
-                    "Science questions",
-                    "History facts",
-                    "Prakriti School info",
-                    "Progressive education",
-                    "Learning for happiness",
-                    "IGCSE curriculum"
-                  ].map((shortcut, index) => (
-                    <button
-                      key={index}
-                      onClick={() => handleSuggestionClick(shortcut)}
-                      className="px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm bg-gray-100 text-gray-700 rounded-full transition-colors duration-200 border border-gray-200 hover:shadow-md hover:scale-105"
-                      style={{
-                        backgroundColor: 'var(--brand-primary-50)',
-                        color: 'var(--brand-primary)',
-                        borderColor: 'var(--brand-primary-200)'
-                      }}
-                      disabled={loading || requestInProgress || isGenerating}
-                    >
-                      {shortcut}
-                    </button>
-                  ))}
-                  </div>
                 </div>
-              )}
+              </div>
             </div>
           </div>
         </>
@@ -780,12 +808,12 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               </div>
             </div>
           )}
-          <div className="flex-1 overflow-y-auto mb-3 sm:mb-4 space-y-2 pr-1 sm:pr-2 md:pr-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400" style={{ minHeight: 0 }}>
+          <div className="flex-1 overflow-y-auto pt-4 sm:pt-6 mb-3 sm:mb-4 space-y-2 px-2 sm:px-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400" style={{ minHeight: 0 }}>
         
         {messages.map((msg, idx) => (
           'type' in msg && msg.type === 'calendar' ? (
             <div key={idx} className="flex justify-start">
-              <div className="max-w-[95%] sm:max-w-[80%] w-full bg-white rounded-lg p-2 mt-2 flex justify-center" style={{ borderColor: 'var(--brand-primary-200)' }}>
+              <div className="max-w-[90%] sm:max-w-[85%] w-full bg-white rounded-lg p-2 mt-2 flex justify-center" style={{ borderColor: 'var(--brand-primary-200)' }}>
                 <iframe
                   src={msg.url}
                   className="w-full max-w-sm sm:max-w-none"
@@ -797,7 +825,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             </div>
           ) : 'type' in msg && msg.type === 'map' ? (
             <div key={idx} className="flex justify-start">
-              <div className="max-w-[95%] sm:max-w-[80%] w-full bg-white rounded-lg p-2 mt-2 flex justify-center" style={{ borderColor: 'var(--brand-primary-200)' }}>
+              <div className="max-w-[90%] sm:max-w-[85%] w-full bg-white rounded-lg p-2 mt-2 flex justify-center" style={{ borderColor: 'var(--brand-primary-200)' }}>
                 <iframe
                   src={msg.url}
                   className="w-full max-w-sm sm:max-w-none"
@@ -809,7 +837,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             </div>
           ) : 'type' in msg && msg.type === 'videos' ? (
             <div key={idx} className="flex justify-start">
-              <div className="max-w-[95%] sm:max-w-[90%] w-full space-y-3 sm:space-y-4">
+              <div className="max-w-[90%] sm:max-w-[88%] w-full space-y-3 sm:space-y-4">
                 {msg.videos.map((video, videoIdx) => (
                   <div key={videoIdx} className="bg-white border border-gray-200 rounded-lg p-3 sm:p-4 shadow-sm">
                     <div className="flex flex-col gap-3 sm:gap-4">
@@ -853,7 +881,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             >
               {'text' in msg && msg.sender === 'user' ? (
               <div
-              className="max-w-[85%] sm:max-w-[75%] md:max-w-[70%] break-words bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 sm:px-5 sm:py-3 shadow-sm"
+              className="max-w-[85%] sm:max-w-[80%] break-words bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 sm:px-5 sm:py-3 shadow-sm"
               >
                 {'text' in msg && (
                   <div className="markdown-content text-sm sm:text-base leading-relaxed">
@@ -862,7 +890,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                 )}
               </div>
               ) : (
-              <div className="max-w-[95%] sm:max-w-[90%] md:max-w-[85%] break-words text-gray-900">
+              <div className="max-w-[90%] sm:max-w-[85%] break-words text-gray-900">
                 {'text' in msg && (
                   <div className="markdown-content text-sm sm:text-base leading-relaxed text-gray-900">
                     <ReactMarkdown 
@@ -922,7 +950,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           <div className="flex justify-start mb-4 sm:mb-5">
             <div 
               ref={typingRef}
-              className="max-w-[75%] md:max-w-[70%] text-gray-900 px-4 py-2.5 sm:px-5 sm:py-3"
+              className="max-w-[85%] sm:max-w-[80%] text-gray-900 px-4 py-2.5 sm:px-5 sm:py-3"
             >
               <div className="markdown-content text-sm sm:text-base leading-relaxed">
                 <ReactMarkdown 
@@ -965,7 +993,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         )}
         {loading && !isTyping && (
           <div className="flex justify-start mb-4 sm:mb-5">
-            <div className="max-w-[95%] sm:max-w-[90%] md:max-w-[85%] text-gray-900">
+            <div className="max-w-[90%] sm:max-w-[85%] text-gray-900">
               <TypingDots />
             </div>
           </div>
@@ -973,49 +1001,60 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="relative flex items-end w-full mt-auto px-1 sm:px-0">
-            <textarea
-              ref={inputRef}
-              className="w-full border rounded-[20px] px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 pr-16 sm:pr-20 md:pr-24 bg-transparent focus:outline-none resize-none font-normal text-sm sm:text-base border-gray-300 text-gray-900 placeholder-gray-400"
-              style={{ height: 'auto', minHeight: '50px', maxHeight: '120px' }}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={(isGenerating || isTyping) ? "Generating response... Press Enter to stop" : micPlaceholder}
-              disabled={loading}
-              aria-label="Chat input"
-              rows={1}
-                />
-                {/* Microphone button inside textarea */}
-            <button
-              className={`absolute right-10 sm:right-12 md:right-14 bottom-1.5 sm:bottom-2 p-1.5 sm:p-2 rounded-full transition-all duration-200 ${listening ? 'animate-pulse' : ''} hover:bg-gray-200 hover:scale-105`}
-              style={{ 
-                backgroundColor: listening ? 'var(--brand-primary-50)' : 'transparent',
-                borderColor: listening ? 'var(--brand-primary)' : 'transparent',
-                zIndex: 2,
-                border: 'none'
-              }}
-              onClick={handleMic}
-              disabled={loading || listening}
-              aria-label="Start voice input"
-              tabIndex={0}
-            >
-              {/* Heroicons solid mic icon */}
-              <svg viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 ${listening ? 'var(--brand-primary)' : '#6b7280'}`}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
-            </button>
-            {/* Send/Stop button as icon inside textarea */}
-            <button
-              className={`absolute right-1.5 sm:right-2 bottom-1.5 sm:bottom-2 p-1.5 sm:p-2 rounded-full transition-all duration-200 disabled:opacity-50 ${
-                (isGenerating || isTyping)
-                  ? 'bg-gray-600 hover:bg-gray-700 shadow-lg animate-pulse' 
-                  : 'hover:bg-gray-200'
-              }`}
-              onClick={(isGenerating || isTyping) ? stopGeneration : sendMessage}
-              disabled={!(isGenerating || isTyping) && (loading || requestInProgress || !input.trim())}
-              aria-label={(isGenerating || isTyping) ? "Stop generation" : "Send message"}
-              tabIndex={0}
-              style={{ zIndex: 2, border: 'none' }}
-            >
+          <div className="relative w-full max-w-full mt-auto px-2 sm:px-4 pb-4 sm:pb-6 mx-auto">
+            <div className="relative">
+              <textarea
+                ref={inputRef}
+                className="w-full border rounded-[20px] px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 pr-16 sm:pr-20 md:pr-24 bg-transparent focus:outline-none resize-none font-normal text-sm sm:text-base border-gray-300 text-gray-900 placeholder-gray-400 overflow-hidden"
+                style={{ minHeight: '50px', maxHeight: '200px' }}
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  setTimeout(() => adjustTextareaHeight(), 0);
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder={(isGenerating || isTyping) ? "Generating response... Press Enter to stop" : micPlaceholder}
+                disabled={loading}
+                aria-label="Chat input"
+                rows={1}
+              />
+              {/* Microphone button inside textarea */}
+              <button
+                className={`absolute right-12 sm:right-14 md:right-16 p-1.5 sm:p-2 rounded-full transition-all duration-200 ${listening ? 'animate-pulse' : ''} hover:bg-gray-200 hover:scale-105 flex items-center justify-center`}
+                style={{ 
+                  backgroundColor: listening ? 'var(--brand-primary-50)' : 'transparent',
+                  borderColor: listening ? 'var(--brand-primary)' : 'transparent',
+                  zIndex: 10,
+                  border: 'none',
+                  top: '50%',
+                  transform: 'translateY(-50%)'
+                }}
+                onClick={handleMic}
+                disabled={loading || listening}
+                aria-label="Start voice input"
+                tabIndex={0}
+              >
+                {/* Heroicons solid mic icon */}
+                <svg viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 ${listening ? 'var(--brand-primary)' : '#6b7280'}`}><path fillRule="evenodd" d="M10 18a7 7 0 0 0 7-7h-1a6 6 0 0 1-12 0H3a7 7 0 0 0 7 7zm3-7a3 3 0 1 1-6 0V7a3 3 0 1 1 6 0v4z" clipRule="evenodd"/></svg>
+              </button>
+              {/* Send/Stop button as icon inside textarea */}
+              <button
+                className={`absolute right-2 sm:right-3 p-1.5 sm:p-2 rounded-full transition-all duration-200 disabled:opacity-50 flex items-center justify-center ${
+                  (isGenerating || isTyping)
+                    ? 'bg-gray-600 hover:bg-gray-700 shadow-lg animate-pulse' 
+                    : 'hover:bg-gray-200'
+                }`}
+                onClick={(isGenerating || isTyping) ? stopGeneration : sendMessage}
+                disabled={!(isGenerating || isTyping) && (loading || requestInProgress || !input.trim())}
+                aria-label={(isGenerating || isTyping) ? "Stop generation" : "Send message"}
+                tabIndex={0}
+                style={{ 
+                  zIndex: 10, 
+                  border: 'none',
+                  top: '50%',
+                  transform: 'translateY(-50%)'
+                }}
+              >
               {(isGenerating || isTyping) ? (
                 /* Stop icon - more prominent */
                 <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 text-white">
@@ -1028,43 +1067,8 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                 </svg>
               )}
             </button>
-          </div>
-          
-          {/* Chat Shortcuts - Only show before first response */}
-          {!hasFirstResponse && (
-            <div className="mt-2 sm:mt-3 px-1 sm:px-0">
-              <div className="flex flex-wrap gap-1.5 sm:gap-2 justify-center">
-              {[
-                "Help with homework",
-                "Explain a concept",
-                "Study tips",
-                "School schedule",
-                "Assignment help",
-                "Math problems",
-                "Science questions",
-                "History facts",
-                "Prakriti School info",
-                "Progressive education",
-                "Learning for happiness",
-                "IGCSE curriculum"
-              ].map((shortcut, index) => (
-                <button
-                  key={index}
-                  onClick={() => handleSuggestionClick(shortcut)}
-                  className="px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm bg-gray-100 text-gray-700 rounded-full transition-colors duration-200 border border-gray-200 hover:shadow-md hover:scale-105"
-                  style={{
-                    backgroundColor: 'var(--brand-primary-50)',
-                    color: 'var(--brand-primary)',
-                    borderColor: 'var(--brand-primary-200)'
-                  }}
-                  disabled={loading || requestInProgress || isGenerating}
-                >
-                  {shortcut}
-                </button>
-              ))}
-              </div>
             </div>
-          )}
+          </div>
         </>
       )}
     </div>

@@ -77,10 +77,23 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Helvetica, Arial, sans-serif;
-  /* Graph-like background - brand color grid lines, 5% opacity */
+}
+
+/* Grid background pattern for chat area - light gray grid on white */
+.chat-grid-bg {
+  background-color: #ffffff;
   background-image:
-    linear-gradient(to right, rgba(35, 71, 159, 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(35, 71, 159, 0.05) 1px, transparent 1px);
+    linear-gradient(to right, rgba(156, 163, 175, 0.15) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(156, 163, 175, 0.15) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* Grid background pattern for sidebar - lighter opacity grid on white */
+.sidebar-grid-bg {
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(to right, rgba(156, 163, 175, 0.09) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(156, 163, 175, 0.09) 1px, transparent 1px);
   background-size: 16px 16px;
 }
 
@@ -247,6 +260,35 @@ body {
 
 .scrollbar-thumb-gray-300::-webkit-scrollbar-thumb:hover {
   background: #9ca3af;
+}
+
+/* Sidebar scrollbar - thin, subtle, brand-themed */
+.sidebar-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(35, 71, 159, 0.3) transparent; /* brand-primary with opacity */
+}
+
+.sidebar-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 3px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(35, 71, 159, 0.3); /* brand-primary with opacity */
+  border-radius: 3px;
+  transition: background 0.2s ease;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(35, 71, 159, 0.5); /* brand-primary with higher opacity */
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .scrollbar-track-gray-100::-webkit-scrollbar-track {

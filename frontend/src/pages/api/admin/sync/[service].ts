@@ -8,13 +8,14 @@ function parseGoogleTimestamp(timestamp: string | undefined): string | null {
   if (!timestamp) return null;
   try {
     return new Date(timestamp).toISOString();
-  } catch (e) {
+  } catch {
     return null;
   }
 }
 
 // Helper function to extract name from Google profile
-function extractNameFromProfile(profile: any): string {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function extractNameFromProfile(profile: { name?: { fullName?: string; givenName?: string }; emailAddress?: string }): string {
   if (!profile) return '';
   return profile.name?.fullName || profile.name?.givenName || profile.emailAddress || '';
 }
@@ -26,7 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const { service } = req.query;
 
-  if (!service || (service !== 'classroom' && service !== 'calendar')) {
+  if (!service || (service !== 'classroom' && service !== 'calendar' && service !== 'website')) {
     return res.status(400).json({ error: 'Invalid service type' });
   }
 
@@ -46,7 +47,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // Get user profile
-    const { data: userProfile, error: profileError } = await supabase
+    const { data: userProfile } = await supabase
       .from('user_profiles')
       .select('*')
       .eq('email', adminEmail)
@@ -71,7 +72,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     // Get integration - use admin_id (user_profiles.id) not user_id (auth.users.id)
-    const { data: integrations, error: intError } = await supabase
+    const { data: integrations } = await supabase
       .from('google_integrations')
       .select('*')
       .eq('admin_id', adminId) // admin_id references user_profiles.id
@@ -86,7 +87,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const integration = integrations[0];
-    let accessToken = integration.access_token;
+    const accessToken = integration.access_token;
 
     const syncStats = {
       courses: { created: 0, updated: 0 },
@@ -489,7 +490,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({
         success: true,
         message: `Synced Google Classroom data successfully`,
-        stats: syncStats,
+        stats: {
+          courses: syncStats.courses,
+          teachers: syncStats.teachers,
+          students: syncStats.students,
+          announcements: syncStats.announcements,
+          coursework: syncStats.coursework,
+          submissions: syncStats.submissions
+        },
         summary: {
           courses: syncStats.courses.created + syncStats.courses.updated,
           teachers: syncStats.teachers.created + syncStats.teachers.updated,
@@ -551,7 +559,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const timeMin = new Date().toISOString();
       const timeMax = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
 
-      const calendarsToSync = calendars.filter((cal: any) => cal.selected !== false || cal.primary);
+      const calendarsToSync = calendars.filter((cal: { selected?: boolean; primary?: boolean }) => cal.selected !== false || cal.primary);
       if (calendarsToSync.length === 0 && calendars.length > 0) {
         calendarsToSync.push(calendars[0]); // At least sync primary
       }
@@ -591,7 +599,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             creator: event.creator || null,
             organizer: event.organizer || null,
             html_link: event.htmlLink || null,
-            hangout_link: event.hangoutLink || (event.conferenceData?.entryPoints?.find((ep: any) => ep.entryPointType === 'video')?.uri || null),
+            hangout_link: event.hangoutLink || (event.conferenceData?.entryPoints?.find((ep: { entryPointType?: string; uri?: string }) => ep.entryPointType === 'video')?.uri || null),
             conference_data: event.conferenceData || null,
             visibility: event.visibility || null,
             transparency: event.transparency || null,
@@ -627,7 +635,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({
         success: true,
         message: `Synced Google Calendar data successfully`,
-        stats: syncStats,
+        stats: {
+          calendars: syncStats.calendars,
+          events: syncStats.events
+        },
         summary: {
           calendars: syncStats.calendars.created + syncStats.calendars.updated,
           events: syncStats.events.created + syncStats.events.updated
@@ -635,14 +646,67 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-  } catch (error: any) {
+    // Website sync - clear cache and trigger fresh crawl
+    if (service === 'website') {
+      console.log(`🔍 Starting website data sync (clearing cache and re-crawling)...`);
+      
+      try {
+        // Call backend API to refresh web crawler cache
+        const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+        const syncResponse = await fetch(`${backendUrl}/api/admin/sync/website`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            adminEmail: adminEmail
+          }),
+        });
+
+        if (!syncResponse.ok) {
+          const errorData = await syncResponse.text();
+          return res.status(syncResponse.status).json({ 
+            error: `Failed to sync website data: ${errorData}` 
+          });
+        }
+
+        const syncData = await syncResponse.json();
+        
+        return res.status(200).json({
+          success: true,
+          message: syncData.message || 'Website data synced successfully',
+          stats: syncData.stats || {},
+          summary: syncData.summary || {}
+        });
+      } catch (error: unknown) {
+        console.error('❌ Error in website sync:', error);
+        const errorDetails = error instanceof Error ? (error as Error).message : String(error);
+        return res.status(500).json({
+          error: 'Failed to sync website data',
+          details: errorDetails
+        });
+      }
+    }
+
+  } catch (error: unknown) {
     console.error(`❌ Error syncing ${service}:`, error);
+    const errorMessage = error instanceof Error ? (error as Error).message : 'Unknown error';
     return res.status(500).json({ 
       error: 'Internal server error',
-      details: error.message 
+      details: errorMessage 
     });
   }
 }
+
+
+
+
+
+
+
+
+
+
 
 
 

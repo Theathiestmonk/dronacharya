@@ -1,12 +1,14 @@
 "use client";
 import AdminDashboard from '@/components/AdminDashboard';
+import ConfirmationModal from '@/components/ConfirmationModal';
 import { useAuth } from '@/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
-import { useEffect, Suspense } from 'react';
+import { useEffect, Suspense, useState } from 'react';
 
 export default function AdminPage() {
   const { profile, loading, user, signOut } = useAuth();
   const router = useRouter();
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   useEffect(() => {
     // If user is not authenticated, redirect to login
@@ -103,16 +105,7 @@ export default function AdminPage() {
               Manage Admins
             </button>
             <button
-              onClick={async () => {
-                console.log('Logout clicked - signing out user');
-                try {
-                  await signOut();
-                  console.log('User signed out, navigating to main page');
-                  router.push('/');
-                } catch (error) {
-                  console.error('Logout error:', error);
-                }
-              }}
+              onClick={() => setShowLogoutConfirm(true)}
               className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 text-sm transition-colors"
             >
               Logout
@@ -135,6 +128,27 @@ export default function AdminPage() {
       }>
         <AdminDashboard />
       </Suspense>
+
+      {/* Logout Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showLogoutConfirm}
+        onClose={() => setShowLogoutConfirm(false)}
+        onConfirm={async () => {
+          try {
+            await signOut();
+            setShowLogoutConfirm(false);
+            router.push('/');
+          } catch (error) {
+            console.error('Logout error:', error);
+            setShowLogoutConfirm(false);
+          }
+        }}
+        title="Sign Out"
+        message="Are you sure you want to sign out?"
+        confirmText="Sign Out"
+        cancelText="Cancel"
+        type="warning"
+      />
     </div>
   );
 }

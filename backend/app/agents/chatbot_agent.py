@@ -744,17 +744,18 @@ def generate_chatbot_response(request):
         print("[Chatbot] Detected video intent, processing with LangGraph...")
         try:
             video_result = process_video_query(user_query)
-            if video_result and "videos" in video_result and video_result["videos"]:
+            if video_result and isinstance(video_result, dict) and "videos" in video_result and video_result.get("videos"):
                 # Return mixed response with text and videos
-                response_text = video_result["response"]
-                videos = video_result["videos"]
-                return [response_text, {"type": "videos", "videos": videos}]
-            else:
-                # Fall through to regular LLM response
-                pass
+                response_text = video_result.get("response", "")
+                videos = video_result.get("videos", [])
+                if videos:
+                    return [response_text, {"type": "videos", "videos": videos}]
+            # Fall through to regular LLM response if no videos found
         except Exception as e:
             print(f"[Chatbot] Error processing video query: {e}")
-            # Fall through to regular LLM response
+            import traceback
+            traceback.print_exc()
+            # Continue with regular LLM processing instead of failing
 
     # Step 1.5: Web Crawling Enhancement for PrakritSchool queries
     # Detect query intent for smart data loading
@@ -767,12 +768,51 @@ def generate_chatbot_response(request):
     
     # Check if query mentions a specific person name (capitalized words or known names)
     import re
+    # Try both original query (for capitalized names) and lowercase (for case-insensitive detection)
     person_name_pattern = r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}\b'
     potential_names = re.findall(person_name_pattern, user_query)
+    # If no capitalized names found, try case-insensitive pattern on lowercase query
+    if not potential_names:
+        # First, try to extract name after common question patterns (e.g., "who is X", "tell me about X")
+        question_patterns = [
+            r'(?:who\s+is|who\'?s|what\s+is|what\'?s|tell\s+me\s+about|information\s+about|details?\s+about|introduction\s+to|profile\s+of|biography\s+of|about)\s+(?:the\s+)?([a-z]+\s+[a-z]+(?:\s+[a-z]+)?)',
+            r'(?:who\s+is|who\'?s|what\s+is|what\'?s|tell\s+me\s+about|information\s+about|details?\s+about|introduction\s+to|profile\s+of|biography\s+of|about)\s+([a-z]+\s+[a-z]+(?:\s+[a-z]+)?)',
+        ]
+        
+        extracted_name = None
+        for pattern in question_patterns:
+            match = re.search(pattern, query_lower)
+            if match:
+                extracted_name = match.group(1).strip()
+                # Remove trailing punctuation and question marks
+                extracted_name = re.sub(r'[?.,!]+$', '', extracted_name).strip()
+                if len(extracted_name) > 5:
+                    potential_names = [extracted_name.title()]
+                    break
+        
+        # Fallback: Pattern for lowercase names (2-3 words, each starting with a letter)
+        if not potential_names:
+            person_name_pattern_lower = r'\b[a-z]+\s+[a-z]+(?:\s+[a-z]+)?\b'
+            # Extract potential names (exclude common words like "the", "is", "who", etc.)
+            excluded_words = {'the', 'is', 'who', 'what', 'when', 'where', 'why', 'how', 'about', 'tell', 'me', 
+                             'information', 'detail', 'details', 'introduction', 'profile', 'biography', 'little', 'bit'}
+            all_words = re.findall(person_name_pattern_lower, query_lower)
+            # Filter out phrases that contain excluded words or are too short/common
+            potential_names_lower = [name for name in all_words if not any(word in excluded_words for word in name.split()) and len(name) > 5]
+            if potential_names_lower:
+                # Convert to title case for consistency
+                potential_names = [name.title() for name in potential_names_lower[:3]]  # Limit to first 3 matches
+    
     has_person_name = len(potential_names) > 0 and not any(name.lower() in ['Prakriti', 'School', 'Google', 'Classroom', 'Calendar'] for name in potential_names)
     
-    # If person detail query with a name, prioritize web crawler for team page
-    should_use_web_crawling_first = is_person_detail_query and has_person_name
+    # Check if person query might be about a teacher (so we can verify with Classroom data)
+    # If query mentions teacher-related terms, we should load teacher data to verify web crawler claims
+    teacher_context_in_query = any(kw in query_lower for kw in ['teacher', 'teachers', 'homeroom', 'instructor', 'faculty', 'staff'])
+    
+    # If person detail query, use web crawler (even if name detection is imperfect)
+    # Web crawler can search by the query itself, and we'll verify against Classroom data
+    # BUT prioritize web crawler if we found a name (more specific search)
+    should_use_web_crawling_first = is_person_detail_query  # Run web crawler for person queries regardless of name detection
     
     # Detect specific classroom data intent for optimized loading
     is_announcement_query = any(kw in query_lower for kw in ['announcement', 'announce', 'notice', 'update', 'news'])
@@ -783,6 +823,8 @@ def generate_chatbot_response(request):
     is_calendar_query = any(kw in query_lower for kw in ['event', 'events', 'calendar', 'schedule', 'meeting', 'holiday'])
     
     print(f"[Chatbot] Query Intent Detection:")
+    print(f"  - is_person_detail_query: {is_person_detail_query}")
+    print(f"  - has_person_name: {has_person_name} (names found: {potential_names})")
     print(f"  - Person Detail Query: {should_use_web_crawling_first}")
     print(f"  - Announcement: {is_announcement_query}")
     print(f"  - Student: {is_student_query}")
@@ -793,6 +835,17 @@ def generate_chatbot_response(request):
     
     # For person detail queries, use web crawler first (team page)
     web_enhanced_info = ""
+    should_use_web_crawling = False  # Initialize to avoid UnboundLocalError
+    
+    # Define web enhancement keywords outside if/else to avoid UnboundLocalError
+    web_enhancement_keywords = [
+        'latest', 'recent', 'news', 'update', 'current', 'new', 'recently',
+        'prakriti school', 'prakrit school', 'progressive education',
+        'alternative school', 'igcse', 'a level', 'bridge programme',
+        'admission', 'fees', 'curriculum', 'activities', 'facilities',
+        'article', 'articles', 'substack', 'philosophy', 'learning approach'
+    ]
+    
     if should_use_web_crawling_first:
         try:
             print("[Chatbot] Person detail query detected - using web crawler for team page...")
@@ -807,13 +860,7 @@ def generate_chatbot_response(request):
     else:
         # For other queries, check if web crawling is beneficial
         # ONLY trigger for Prakriti-specific website content queries, NOT general academic questions
-        web_enhancement_keywords = [
-        'latest', 'recent', 'news', 'update', 'current', 'new', 'recently',
-        'prakriti school', 'prakrit school', 'progressive education',
-        'alternative school', 'igcse', 'a level', 'bridge programme',
-        'admission', 'fees', 'curriculum', 'activities', 'facilities',
-            'article', 'articles', 'substack', 'philosophy', 'learning approach'
-        ]
+        # (web_enhancement_keywords already defined above)
         
         # Exclude academic/educational queries that don't need web crawling
         academic_keywords = ['newton', 'einstein', 'darwin', 'law of', 'laws', 'theorem', 'formula', 'solve', 'explain', 'understand', 'learn', 'study', 'help me with', 'teach me', 'how to', 'what is', 'concept', 'example']
@@ -879,7 +926,8 @@ def generate_chatbot_response(request):
             
             # Determine what to load based on query intent (optimize for speed and cost)
             # Only load what's needed: if asking about teachers, only load teachers; if students, only students; etc.
-            should_load_teachers = is_teacher_query or not (is_student_query or is_announcement_query or is_coursework_query)
+            # CRITICAL: For person detail queries, always load teachers to verify web crawler claims (web might say someone is a teacher)
+            should_load_teachers = is_teacher_query or should_use_web_crawling_first or not (is_student_query or is_announcement_query or is_coursework_query)
             should_load_students = is_student_query or not (is_teacher_query or is_announcement_query or is_coursework_query)
             should_load_announcements = is_announcement_query or not (is_student_query or is_teacher_query or is_coursework_query)
             should_load_coursework = is_coursework_query or not (is_student_query or is_announcement_query or is_teacher_query)
@@ -1088,8 +1136,13 @@ def generate_chatbot_response(request):
             traceback.print_exc()
             admin_data = {"classroom_data": [], "calendar_data": []}
     elif should_use_web_crawling_first:
-        print(f"[Chatbot] Skipping classroom data - using web crawler for person detail query")
-        admin_data = {"classroom_data": [], "calendar_data": []}
+        # For person detail queries, we still load teacher data above to verify web crawler claims
+        # (web crawler might claim someone is a teacher, we need to verify against Google Classroom data)
+        # So this branch is only reached if ADMIN_FEATURES_AVAILABLE was False
+        print(f"[Chatbot] Person detail query - web crawler used, but teacher data was loaded if available to verify claims")
+        # admin_data should already be populated above if ADMIN_FEATURES_AVAILABLE was True
+        if not admin_data.get('classroom_data'):
+            admin_data = {"classroom_data": [], "calendar_data": []}
     else:
         print(f"[Chatbot] ⚠️ Admin features not available - cannot fetch reference data")
 
@@ -1390,6 +1443,10 @@ def generate_chatbot_response(request):
                 user_content += f"Web:\n{truncated_web_info}\n"
                 if len(web_enhanced_info) > max_web_chars:
                     print(f"[Chatbot] Truncated web_enhanced_info from {len(web_enhanced_info)} to {max_web_chars} chars to save tokens")
+                
+                # CRITICAL: If web info claims someone is a teacher AND we have Classroom data, verify against it
+                if admin_data.get('classroom_data') and should_use_web_crawling_first:
+                    user_content += "\n⚠️ VERIFICATION: Use Web data to provide general information about the person (role, background, etc.). However, if Web info claims they are a teacher, VERIFY against Classroom Data below. Only confirm they are CURRENTLY a teacher for the user's grade/course if their name appears in the Classroom teacher list. If Web says they're a teacher but they're NOT in Classroom Data, provide the general info from Web but clarify their current teaching status based on Classroom Data.\n"
             
             # Add admin data if available - MINIMAL HEADER to save tokens
             if admin_data.get('classroom_data') or (admin_data.get('calendar_data') and is_calendar_query):
@@ -1634,6 +1691,16 @@ def generate_chatbot_response(request):
             if is_announcement_query or is_coursework_query:
                 user_content += "\n⚠️ FORMATTING: Process data intelligently. Fix time ranges, grammar, use Markdown. Make readable.\n\n"
             
+            # CRITICAL: For person queries, verify against actual teacher/student lists but still provide web data
+            if should_use_web_crawling_first or (is_person_detail_query and admin_data.get('classroom_data')):
+                user_content += "\n⚠️ PERSON INFORMATION - STRICT RULES:\n"
+                user_content += "1. Provide general information about the person from Web data (background, role at school, etc.).\n"
+                user_content += "2. For CURRENT teacher/student status: ONLY confirm if their name EXACTLY appears in the Classroom Data teacher/student lists.\n"
+                user_content += "3. DO NOT make assumptions like 'based on the current classroom data, X is associated with course Y' unless X is explicitly listed in the teacher list for that course.\n"
+                user_content += "4. DO NOT infer teacher status from course names, course associations, or any indirect references.\n"
+                user_content += "5. If Web data provides general information but the person is NOT in the current Classroom teacher list, provide the general info from Web and add: 'However, they are not currently listed as a teacher for your grade/course in the Classroom data.'\n"
+                user_content += "6. NEVER say 'based on the current classroom data, X is associated with...' unless X's name appears in the teacher list.\n\n"
+            
             # Add special instructions for translation/reference queries
             if is_translation_query:
                 user_content += "\n⚠️ TRANSLATION/REFERENCE QUERY:\n"
@@ -1656,8 +1723,11 @@ def generate_chatbot_response(request):
                 compact_content = f"Question: {user_query}\n\n"
                 if admin_data.get('classroom_data'):
                     # Only include essential data
+                    # First, collect all announcements across all courses to check if any exist
+                    all_announcements_found = False
+                    courses_with_announcements = []
+                    
                     for course in admin_data['classroom_data']:
-                        compact_content += f"\nCourse: {course.get('name', '')}\n"
                         if is_announcement_query:
                             announcements = course.get('announcements', [])
                             if target_date_ranges:
@@ -1678,24 +1748,28 @@ def generate_chatbot_response(request):
                                         except:
                                             pass
                                 announcements = filtered_ann
-                                if target_dates:
-                                    dates_str = ", ".join([d.strftime('%d/%m/%Y') for d, _, _ in target_dates])
-                                    date_label = "today" if is_today_query else ("yesterday" if is_yesterday_query else dates_str)
-                                else:
-                                    date_label = "the requested dates"
-                                if not announcements:
-                                    compact_content += f"No announcements for {date_label}.\n"
                             else:
                                 announcements = sorted(announcements, key=lambda x: x.get('updateTime', ''), reverse=True)[:5]
+                            
                             if announcements:
-                                compact_content += "Announcements:\n"
-                                for ann in announcements:
-                                    url = ann.get('url') or ann.get('alternateLink', '')
-                                    compact_content += f"- {ann.get('text', '')[:150]} (Updated: {ann.get('updateTime', '')[:10]})"
-                                    if url:
-                                        compact_content += f" [URL: {url}]\n"
-                                    else:
-                                        compact_content += "\n"
+                                all_announcements_found = True
+                                courses_with_announcements.append({
+                                    'name': course.get('name', ''),
+                                    'announcements': announcements
+                                })
+                    
+                    # Now build compact_content - only include courses with announcements
+                    # If no announcements found, don't add "No announcements" here - let LLM decide
+                    for course_data in courses_with_announcements:
+                        compact_content += f"\nCourse: {course_data['name']}\n"
+                        compact_content += "Announcements:\n"
+                        for ann in course_data['announcements']:
+                            url = ann.get('url') or ann.get('alternateLink', '')
+                            compact_content += f"- {ann.get('text', '')[:150]} (Updated: {ann.get('updateTime', '')[:10]})"
+                            if url:
+                                compact_content += f" [URL: {url}]\n"
+                            else:
+                                compact_content += "\n"
                 compact_content += "\nUse the data above to answer the question."
                 messages.append({"role": "user", "content": compact_content})
             else:

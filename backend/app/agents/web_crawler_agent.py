@@ -237,10 +237,35 @@ class WebCrawlerAgent:
     
     def search_specific_person(self, person_name: str, content_list: List[Dict[str, str]]) -> Dict[str, str]:
         """Search for specific person details in crawled content"""
-        if not person_name or not content_list:
+        if not person_name:
             return {}
         
         person_name_lower = person_name.lower()
+        
+        # FIRST: Check team_member_data table (fastest, most accurate for popup data)
+        if SUPABASE_AVAILABLE:
+            try:
+                supabase = get_supabase_client()
+                # Search for person in team_member_data (case-insensitive)
+                team_result = supabase.table('team_member_data').select('*').eq('is_active', True).ilike('name', f'%{person_name}%').limit(1).execute()
+                
+                if team_result.data and len(team_result.data) > 0:
+                    member = team_result.data[0]
+                    print(f"[WebCrawler] ✅ Found {person_name} in team_member_data table")
+                    return {
+                        'found': True,
+                        'name': member.get('name', person_name),
+                        'title': member.get('title', ''),
+                        'description': member.get('description', ''),
+                        'content': member.get('details', '') or member.get('full_content', ''),
+                        'url': member.get('source_url', 'https://prakriti.edu.in/team/')
+                    }
+            except Exception as e:
+                print(f"[WebCrawler] Error checking team_member_data: {e}")
+        
+        # FALLBACK: Search in content_list if team_member_data doesn't have it
+        if not content_list:
+            return {}
         
         # First, try to find the person in regular content
         for content in content_list:
@@ -1095,8 +1120,13 @@ class WebCrawlerAgent:
         
         return " " + " ".join(team_info) if team_info else ""
     
-    def extract_team_members_with_selenium(self, url: str) -> Dict[str, str]:
-        """Extract team member information using Selenium to handle popups/modals"""
+    def extract_team_members_with_selenium(self, url: str, process_all: bool = False) -> Dict[str, str]:
+        """Extract team member information using Selenium to handle popups/modals
+        
+        Args:
+            url: Team page URL to crawl
+            process_all: If True, process all team members. If False, limit to 3 for speed (default).
+        """
         try:
             print(f"[WebCrawler] Using Selenium to extract team members from: {url}")
             
@@ -1162,8 +1192,10 @@ class WebCrawlerAgent:
                 
                 # Try to click each element and extract popup content
                 # Process elements one by one to avoid stale element issues
-                # Limit to first 3 elements for maximum speed
-                for i in range(min(3, len(clickable_elements))):  # Process only first 3 elements for speed
+                # Limit elements based on process_all flag (admin sync processes all, regular queries limit to 3)
+                max_elements = len(clickable_elements) if process_all else min(3, len(clickable_elements))
+                print(f"[WebCrawler] Processing {max_elements} team member elements (process_all={process_all})")
+                for i in range(max_elements):
                     try:
                         # Re-find elements to avoid stale references
                         current_elements = []
@@ -1252,12 +1284,35 @@ class WebCrawlerAgent:
                                     name = name_match.group(1)
                             
                             if name:
+                                # Extract title (usually contains "Facilitator", "Teacher", "Director", etc.)
+                                title = ""
+                                for line in details:
+                                    line_lower = line.lower()
+                                    if any(title_word in line_lower for title_word in ['facilitator', 'teacher', 'director', 'coordinator', 'principal', 'mentor', 'manager', 'education']):
+                                        title = line.strip()
+                                        break
+                                
+                                # Extract description (first substantial line after name/title)
+                                description = ""
+                                for line in details:
+                                    if line.strip() and len(line.strip()) > 10:
+                                        # Skip if this line is the title
+                                        if title and title.lower() in line.lower():
+                                            continue
+                                        description = line.strip()
+                                        break
+                                
+                                # Combine remaining details
+                                remaining_details = ' '.join([d for d in details if d.strip() and d != title and d != description][:10])
+                                
                                 team_members[name] = {
                                     'name': name,
-                                    'details': ' '.join(details[:10]),  # Include more details
+                                    'title': title,
+                                    'description': description,
+                                    'details': remaining_details,
                                     'full_content': popup_content
                                 }
-                                print(f"[WebCrawler] Successfully extracted info for: {name}")
+                                print(f"[WebCrawler] Successfully extracted info for: {name} ({title if title else 'No title'})")
                             else:
                                 print(f"[WebCrawler] Could not extract name from popup content")
                         

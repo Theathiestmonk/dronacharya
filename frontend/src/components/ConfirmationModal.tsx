@@ -1,5 +1,5 @@
 "use client";
-import React from 'react';
+import React, { useEffect } from 'react';
 
 interface ConfirmationModalProps {
   isOpen: boolean;
@@ -24,6 +24,12 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
   type,
   isLoading = false
 }) => {
+
+  useEffect(() => {
+    if (isOpen) {
+      console.log('✅ ConfirmationModal is rendering - isOpen:', isOpen);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -75,16 +81,17 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
   const typeStyles = getTypeStyles();
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div className="fixed inset-0 z-[100] overflow-y-auto" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
       {/* Backdrop */}
       <div 
         className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
         onClick={onClose}
+        style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100 }}
       />
       
       {/* Modal */}
-      <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative w-full max-w-md transform overflow-hidden rounded-2xl shadow-xl transition-all bg-white/70 backdrop-blur-sm">
+      <div className="flex min-h-full items-center justify-center p-4" style={{ position: 'relative', zIndex: 101 }}>
+        <div className="relative w-full max-w-md transform overflow-hidden rounded-2xl shadow-xl transition-all bg-white/70 backdrop-blur-sm" style={{ zIndex: 101 }}>
           {/* Content */}
           <div className="p-6">
             {/* Icon and Title */}

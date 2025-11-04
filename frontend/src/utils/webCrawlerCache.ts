@@ -206,7 +206,7 @@ function cleanExpiredCache(): void {
               cleanedCount++;
             }
           }
-        } catch (error) {
+        } catch {
           // Invalid cache entry, remove it
           localStorage.removeItem(key);
           cleanedCount++;

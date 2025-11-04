@@ -242,13 +242,30 @@ def process_video_query(query: str) -> Dict[str, Any]:
     """
     Process a video query and return matched videos and response
     """
-    graph = create_video_intent_graph()
-    
-    initial_state = VideoSearchState(query=query)
-    result = graph.invoke(initial_state)
-    
-    return {
-        "intents": [intent.dict() for intent in result.intents],
-        "videos": [video.dict() for video in result.matched_videos],
-        "response": result.final_response
-    }
+    try:
+        graph = create_video_intent_graph()
+        
+        initial_state = VideoSearchState(query=query)
+        result = graph.invoke(initial_state)
+        
+        # Safely extract data from result
+        if hasattr(result, 'intents') and hasattr(result, 'matched_videos') and hasattr(result, 'final_response'):
+            return {
+                "intents": [intent.dict() if hasattr(intent, 'dict') else intent for intent in result.intents],
+                "videos": [video.dict() if hasattr(video, 'dict') else video for video in result.matched_videos],
+                "response": result.final_response or ""
+            }
+        else:
+            # Result might be a dict instead of VideoSearchState
+            if isinstance(result, dict):
+                return {
+                    "intents": result.get("intents", []),
+                    "videos": result.get("matched_videos", []),
+                    "response": result.get("final_response", "")
+                }
+            return {"intents": [], "videos": [], "response": ""}
+    except Exception as e:
+        print(f"[VideoIntent] Error in process_video_query: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"intents": [], "videos": [], "response": ""}

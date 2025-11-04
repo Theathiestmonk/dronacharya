@@ -198,3 +198,7 @@ If you want to reduce costs further:
 
 *Last updated: Based on GPT-4 pricing and 200+ user, 50+ queries/user/day scenario*
 
+
+
+
+

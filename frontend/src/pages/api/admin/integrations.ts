@@ -31,7 +31,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.log(`🔍 Fetching integrations for CURRENT USER: ${adminEmail}...`);
     
     // Get CURRENT USER's profile - NO FALLBACK to first admin
-    const { data: userProfile, error: profileError } = await supabase
+    const { data: userProfile } = await supabase
       .from('user_profiles')
       .select('*')
       .eq('email', adminEmail)

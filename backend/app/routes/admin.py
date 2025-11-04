@@ -493,6 +493,113 @@ async def get_classroom_data(email: Optional[str] = None):
         print(f"Error getting classroom data: {e}")
         return {"courses": []}
 
+@router.post("/sync/website")
+async def sync_website_data(email: Optional[str] = None):
+    """Sync website data by clearing cache and triggering fresh crawl"""
+    try:
+        from app.agents.web_crawler_agent import web_crawler, get_supabase_client
+        from datetime import datetime, timedelta
+        
+        print(f"[Admin] Website sync requested by: {email or 'unknown'}")
+        
+        supabase = get_supabase_client()
+        
+        if not supabase:
+            return {
+                "success": False,
+                "message": "Supabase not available",
+                "stats": {}
+            }
+        
+        # Clear old cache entries (older than 1 day) to force fresh crawl
+        cutoff_date = (datetime.utcnow() - timedelta(hours=1)).isoformat()
+        
+        # Mark old cache entries as inactive
+        try:
+            supabase.table('web_crawler_data').update({'is_active': False}).lt('crawled_at', cutoff_date).execute()
+            supabase.table('search_cache').update({'is_active': False}).lt('expires_at', datetime.utcnow().isoformat()).execute()
+            supabase.table('team_member_data').update({'is_active': False}).lt('crawled_at', cutoff_date).execute()
+            print(f"[Admin] ✅ Cleared old cache entries")
+        except Exception as e:
+            print(f"[Admin] Warning: Error clearing cache: {e}")
+        
+        # Trigger fresh crawl of team page with Selenium to extract popup data
+        team_url = "https://prakriti.edu.in/team/"
+        
+        try:
+            # Directly trigger team member extraction with Selenium (this handles popups)
+            print(f"[Admin] Extracting ALL team members with Selenium from: {team_url}")
+            # Use process_all=True to extract all team members, not just first 3
+            team_members_dict = web_crawler.extract_team_members_with_selenium(team_url, process_all=True)
+            
+            # Store team members in team_member_data table
+            team_member_count = 0
+            if team_members_dict:
+                for name, data in team_members_dict.items():
+                    try:
+                        team_member_entry = {
+                            'name': name,
+                            'title': data.get('title', ''),
+                            'description': data.get('description', ''),
+                            'details': data.get('details', ''),
+                            'full_content': data.get('full_content', ''),
+                            'image_url': data.get('image_url', ''),
+                            'source_url': team_url,
+                            'crawled_date': datetime.utcnow().date().isoformat(),
+                            'is_active': True
+                        }
+                        
+                        # Upsert (insert or update) team member data
+                        supabase.table('team_member_data').upsert(
+                            team_member_entry,
+                            on_conflict='name,crawled_date'
+                        ).execute()
+                        team_member_count += 1
+                        print(f"[Admin] ✅ Cached team member: {name}")
+                    except Exception as e:
+                        print(f"[Admin] Warning: Error caching {name}: {e}")
+                        continue
+            
+            # Also trigger a general crawl to update web_crawler_data table
+            print(f"[Admin] Triggering general website crawl...")
+            test_query = "team members"
+            enhanced_response = web_crawler.get_enhanced_response(test_query)
+            
+            # Count final team members
+            team_members_result = supabase.table('team_member_data').select('name').eq('is_active', True).gte('crawled_at', cutoff_date).execute()
+            final_count = len(team_members_result.data) if team_members_result.data else team_member_count
+            
+            return {
+                "success": True,
+                "message": f"Website data synced successfully. {final_count} team members updated.",
+                "stats": {
+                    "team_members": final_count,
+                    "cache_cleared": True
+                },
+                "summary": {
+                    "team_members": final_count
+                }
+            }
+        except Exception as e:
+            print(f"[Admin] Error during crawl: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "success": False,
+                "message": f"Error during crawl: {str(e)}",
+                "stats": {}
+            }
+            
+    except Exception as e:
+        print(f"[Admin] Error syncing website data: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "message": f"Sync error: {str(e)}",
+            "stats": {}
+        }
+
 @router.get("/data/calendar")
 async def get_calendar_data(email: Optional[str] = None):
     """Get synced calendar data for chatbot"""

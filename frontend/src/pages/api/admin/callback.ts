@@ -94,7 +94,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       let errorData;
       try {
         errorData = JSON.parse(errorText);
-      } catch (e) {
+      } catch {
         errorData = { error: errorText };
       }
       
@@ -145,7 +145,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.log(`🔍 [CALLBACK] DEBUG: Requested email "${adminEmail}" exists in admin list: ${requestedAdminExists}`);
     
     // Query for exact email match (Supabase queries are case-sensitive, so try exact match first)
-    let { data: userProfile, error: profileError } = await supabase
+    let { data: userProfile } = await supabase
       .from('user_profiles')
       .select('*')
       .eq('email', adminEmail)
@@ -176,7 +176,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     
     if (!userProfile) {
       console.log(`🔍 [CALLBACK] ❌ User profile not found for: ${adminEmail}`);
-      console.log(`🔍 [CALLBACK] Error details:`, profileError);
       
       return res.status(404).json({ 
         error: `User profile not found for ${adminEmail}. Please ensure you have completed account registration.` 
@@ -465,11 +464,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       success: true, 
       message: `Integration completed successfully for ${userProfile.email}` 
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('🔍 Error in callback:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
+
+
+
+
 
 
 

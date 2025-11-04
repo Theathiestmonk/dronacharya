@@ -183,7 +183,7 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const syncData = async (service: 'classroom' | 'calendar') => {
+  const syncData = async (service: 'classroom' | 'calendar' | 'website') => {
     setLoading(true);
     setError(null);
     
@@ -206,9 +206,10 @@ const AdminDashboard: React.FC = () => {
         // Refresh data and integration status to update "Last synced" timestamp
         if (service === 'classroom') {
           await fetchClassroomData();
-        } else {
+        } else if (service === 'calendar') {
           await fetchCalendarData();
         }
+        // Note: website sync doesn't have data to refresh, but we can refresh integration status
         // Force refresh integration status to get updated timestamps
         await fetchIntegrationStatus();
       } else {
@@ -349,7 +350,7 @@ const AdminDashboard: React.FC = () => {
             <div className="space-y-3">
               {!(integrationStatus && integrationStatus.classroom_enabled === true) ? (
                 <div className="text-center text-gray-500">
-                  <p>Use the "Connect Google Services" button above to connect both Classroom and Calendar</p>
+                  <p>Use the &quot;Connect Google Services&quot; button above to connect both Classroom and Calendar</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -397,7 +398,7 @@ const AdminDashboard: React.FC = () => {
             <div className="space-y-3">
               {!(integrationStatus && integrationStatus.calendar_enabled === true) ? (
                 <div className="text-center text-gray-500">
-                  <p>Use the "Connect Google Services" button above to connect both Classroom and Calendar</p>
+                  <p>Use the &quot;Connect Google Services&quot; button above to connect both Classroom and Calendar</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -434,6 +435,35 @@ const AdminDashboard: React.FC = () => {
                   </p>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Website Data Sync */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-gray-900">Website Data</h2>
+              <div className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                Available
+              </div>
+            </div>
+            
+            <p className="text-gray-600 mb-4">
+              Sync website data from prakriti.edu.in to update team member information and other website content for the chatbot.
+            </p>
+            
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <button
+                  onClick={() => syncData('website')}
+                  disabled={loading}
+                  className="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {loading ? 'Syncing...' : 'Sync Website Data'}
+                </button>
+                <p className="text-sm text-gray-500">
+                  This will clear old cache and re-crawl the website to update team member profiles and other content.
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -510,6 +540,17 @@ const AdminDashboard: React.FC = () => {
 };
 
 export default AdminDashboard;
+
+
+
+
+
+
+
+
+
+
+
 
 
 

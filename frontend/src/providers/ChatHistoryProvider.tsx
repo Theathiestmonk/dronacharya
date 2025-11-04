@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { useAuth } from './AuthProvider';
 import { useSupabase } from './SupabaseProvider';
+import { generateChatName } from '../utils/chatNameGenerator';
 
 export interface ChatMessage {
   sender: 'user' | 'bot';
@@ -1027,14 +1028,25 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     
     const updatedSessions = currentSessions.map(session => {
       if (session.id === currentActiveSessionId) {
+        const newMessages = [...session.messages, message];
         const updatedSession = {
           ...session,
-          messages: [...session.messages, message],
+          messages: newMessages,
           updated_at: new Date().toISOString()
         };
         
+        // Auto-generate title if it's still "New Chat" and this is the first user message
+        if (updatedSession.title === 'New Chat' && message.sender === 'user') {
+          const generatedTitle = generateChatName(newMessages);
+          if (generatedTitle && generatedTitle !== 'New Chat') {
+            updatedSession.title = generatedTitle;
+            console.log('🎨 Auto-generated chat title:', generatedTitle);
+          }
+        }
+        
         console.log('Updated session:', {
           id: updatedSession.id,
+          title: updatedSession.title,
           messagesCount: updatedSession.messages.length,
           messagesContent: updatedSession.messages.map(m => ({ sender: m.sender, text: m.text.substring(0, 30) + '...' }))
         });
