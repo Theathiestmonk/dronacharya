@@ -595,8 +595,16 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     }
   }, [messages]);
 
+  // Track last loaded session ID to prevent unnecessary reloads
+  const lastLoadedSessionIdRef = useRef<string | null>(null);
+  
   // Load messages from active session (optimized to prevent blinking)
   useEffect(() => {
+    // Skip if still loading to prevent blinking
+    if (chatHistoryLoading) {
+      return;
+    }
+    
     console.log('🔄 useEffect triggered - loading messages from active session');
     const activeSession = getActiveSession();
     console.log('📋 Active session:', activeSession ? {
@@ -604,6 +612,12 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       messagesCount: activeSession.messages.length,
       messages: activeSession.messages.map(m => ({ sender: m.sender, text: m.text.substring(0, 50) + '...' }))
     } : 'null');
+    
+    // Skip if we've already loaded this session to prevent unnecessary re-renders
+    if (activeSession && activeSession.id === lastLoadedSessionIdRef.current) {
+      console.log('⏭️ Skipping reload - session already loaded:', activeSession.id);
+      return;
+    }
     
     // Use requestAnimationFrame to batch state updates and prevent blinking
     requestAnimationFrame(() => {
@@ -616,6 +630,9 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           ...(msg.videos && { videos: msg.videos }),
         }));
         console.log('📝 Setting messages from session:', sessionMessages.length, 'messages');
+        
+        // Update ref to track loaded session
+        lastLoadedSessionIdRef.current = activeSession.id;
         
         // Batch all state updates together to prevent intermediate renders
         setMessages(sessionMessages);
@@ -632,13 +649,15 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         setConversationHistory(history);
       } else {
         console.log('❌ No active session - clearing messages');
+        // Update ref to track cleared state
+        lastLoadedSessionIdRef.current = null;
         // Batch clearing operations
         setMessages([]);
         setConversationHistory([]);
         setHasFirstResponse(false);
       }
     });
-  }, [activeSessionId, getActiveSession]); // Include getActiveSession in dependencies
+  }, [activeSessionId, getActiveSession, chatHistoryLoading]); // Include chatHistoryLoading to skip during loading
 
   // Listen for custom refresh event
   useEffect(() => {
@@ -700,7 +719,29 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     clearChat: handleClearChat
   }), [handleClearChat]);
 
-  const containerClassName = chatHistoryLoading ? 'opacity-40 scale-[0.98]' : 'opacity-100 scale-100';
+  // Prevent blinking by only showing loading state on the very first app load, not on user changes
+  const [hasShownInitialLoad, setHasShownInitialLoad] = useState(false);
+  const previousUserRef = useRef<string | null>(null);
+  
+  useEffect(() => {
+    const currentUserId = user?.id || null;
+    const previousUserId = previousUserRef.current;
+    
+    // If user changed (login/logout), reset session tracking but don't reset loading state
+    if (currentUserId !== previousUserId) {
+      previousUserRef.current = currentUserId;
+      // Reset last loaded session ID when user changes
+      lastLoadedSessionIdRef.current = null;
+    }
+    
+    // Mark that we've completed initial load once
+    if (!chatHistoryLoading && !hasShownInitialLoad) {
+      setHasShownInitialLoad(true);
+    }
+  }, [chatHistoryLoading, hasShownInitialLoad, user?.id]);
+  
+  // Only show loading opacity on the very first app load, never again (even on login/logout)
+  const containerClassName = (chatHistoryLoading && !hasShownInitialLoad) ? 'opacity-40 scale-[0.98]' : 'opacity-100 scale-100';
   
   return (
     <div className={`flex flex-col h-full w-full bg-transparent mx-auto transition-all duration-200 ${containerClassName}`}>
