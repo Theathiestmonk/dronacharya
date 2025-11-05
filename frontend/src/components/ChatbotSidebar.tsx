@@ -432,35 +432,35 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
                         </div>
                       ) : (
                         <div
-                          onClick={() => handleSessionClick(session.id)}
+                      onClick={() => handleSessionClick(session.id)}
                           className={`flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors duration-150 cursor-pointer ${
-                            activeSessionId === session.id
-                              ? 'font-medium'
-                              : ''
-                          }`}
-                          style={{
-                            backgroundColor: activeSessionId === session.id ? 'var(--brand-primary-50)' : 'transparent',
-                            color: activeSessionId === session.id ? 'var(--brand-primary-800)' : 'var(--brand-primary)',
-                          }}
-                          onMouseEnter={(e) => {
-                            if (activeSessionId !== session.id) {
-                              e.currentTarget.style.backgroundColor = 'var(--brand-primary-50)';
-                              e.currentTarget.style.color = 'var(--brand-primary-800)';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (activeSessionId !== session.id) {
-                              e.currentTarget.style.backgroundColor = 'transparent';
-                              e.currentTarget.style.color = 'var(--brand-primary)';
-                            }
-                          }}
-                          title={displayTitle}
-                        >
+                        activeSessionId === session.id
+                          ? 'font-medium'
+                          : ''
+                      }`}
+                      style={{
+                        backgroundColor: activeSessionId === session.id ? 'var(--brand-primary-50)' : 'transparent',
+                        color: activeSessionId === session.id ? 'var(--brand-primary-800)' : 'var(--brand-primary)',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (activeSessionId !== session.id) {
+                          e.currentTarget.style.backgroundColor = 'var(--brand-primary-50)';
+                          e.currentTarget.style.color = 'var(--brand-primary-800)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (activeSessionId !== session.id) {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                          e.currentTarget.style.color = 'var(--brand-primary)';
+                        }
+                      }}
+                      title={displayTitle}
+                    >
                           <span className="flex-1 truncate">{displayTitle}</span>
                           <div className="flex items-center gap-1 flex-shrink-0">
                             <span className="text-xs text-gray-400">
-                              {formatDate(session.updated_at)}
-                            </span>
+                          {formatDate(session.updated_at)}
+                        </span>
                             {isHovered && (
                               <>
                                 <button
@@ -489,7 +489,7 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
                           </div>
                         </div>
                       )}
-                    </div>
+                      </div>
                   );
                 })}
               </div>

@@ -51,6 +51,180 @@ def retrieve_from_json(query: str, threshold: int = 50) -> str | None:
         print(f"[Chatbot] Error reading KB: {e}")
     return None
 
+def get_student_coursework_data(student_user_id: str, student_email: str = None, limit_coursework: int = None) -> dict:
+    """
+    Get coursework data directly from google_classroom_coursework table for a student.
+    This is used when students ask about assignments - we check coursework table directly
+    instead of going through courses (since courses may be synced by admin).
+    
+    Strategy: Query coursework directly and join with courses to get course names.
+    We get all coursework that exists (synced by students or admin) and filter by
+    checking if submissions exist for this student.
+    """
+    try:
+        from supabase_config import get_supabase_client
+        supabase = get_supabase_client()
+        
+        print(f"[Chatbot] Getting student coursework for user_id: {student_user_id}, email: {student_email}")
+        
+        # Get student's Google email if not provided
+        if not student_email:
+            profile_result = supabase.table('user_profiles').select('email').eq('user_id', student_user_id).single().execute()
+            if profile_result.data:
+                student_email = profile_result.data.get('email')
+        
+        # Get student's submissions first to identify which coursework belongs to them
+        # user_id in submissions table is the Google user ID (email)
+        submissions_result = None
+        coursework_ids_from_submissions = set()
+        
+        if student_email:
+            # Get submissions for this student - this identifies their coursework
+            submissions_result = supabase.table('google_classroom_submissions').select(
+                'coursework_id, course_id, state, assigned_grade, draft_grade'
+            ).eq('user_id', student_email).execute()
+            
+            if submissions_result.data:
+                print(f"[Chatbot] Found {len(submissions_result.data)} submissions for student")
+                # Extract unique coursework IDs from submissions
+                for sub in submissions_result.data:
+                    cw_id = sub.get('coursework_id')  # UUID in our DB
+                    if cw_id:
+                        coursework_ids_from_submissions.add(cw_id)
+        
+        # If no submissions found, try alternative: get coursework from courses synced by this student
+        # (when student syncs, coursework is linked to courses)
+        if not coursework_ids_from_submissions:
+            print(f"[Chatbot] No submissions found, trying to get coursework from student-synced courses...")
+            # Get courses synced by this student (user_id in google_classroom_courses)
+            student_courses_result = supabase.table('google_classroom_courses').select(
+                'id'
+            ).eq('user_id', student_user_id).execute()
+            
+            if student_courses_result.data:
+                student_course_ids = [c.get('id') for c in student_courses_result.data]
+                # Get coursework for these courses
+                coursework_from_student = supabase.table('google_classroom_coursework').select(
+                    'id'
+                ).in_('course_id', student_course_ids).execute()
+                
+                if coursework_from_student.data:
+                    coursework_ids_from_submissions = set([cw.get('id') for cw in coursework_from_student.data])
+                    print(f"[Chatbot] Found {len(coursework_ids_from_submissions)} coursework from student-synced courses")
+        
+        if not coursework_ids_from_submissions:
+            print(f"[Chatbot] No coursework found for this student")
+            return {"classroom_data": []}
+        
+        # Get coursework details for student's coursework only
+        coursework_result = supabase.table('google_classroom_coursework').select(
+            'id, course_id, coursework_id, title, description, due_date, due_time, state, alternate_link, max_points, work_type'
+        ).in_('id', list(coursework_ids_from_submissions)).order('due_date', desc=False).limit(limit_coursework or 100).execute()
+        
+        if not coursework_result.data:
+            print(f"[Chatbot] No coursework details found")
+            return {"classroom_data": []}
+        
+        print(f"[Chatbot] Found {len(coursework_result.data)} coursework items for this student")
+        
+        # Get course IDs to fetch course names
+        course_ids = list(set([cw.get('course_id') for cw in coursework_result.data if cw.get('course_id')]))
+        courses_map = {}
+        if course_ids:
+            courses_result = supabase.table('google_classroom_courses').select(
+                'id, course_id, name, section, alternate_link'
+            ).in_('id', course_ids).execute()
+            
+            if courses_result.data:
+                for course in courses_result.data:
+                    courses_map[course.get('id')] = course
+        
+        # Build submissions map for submission status
+        submissions_map = {}
+        if submissions_result and submissions_result.data:
+            for sub in submissions_result.data:
+                cw_id = sub.get('coursework_id')
+                if cw_id:
+                    submissions_map[cw_id] = {
+                        'state': sub.get('state'),
+                        'assigned_grade': sub.get('assigned_grade'),
+                        'draft_grade': sub.get('draft_grade')
+                    }
+        
+        # Format coursework with course info
+        coursework_list = []
+        for cw in coursework_result.data:
+            course_id = cw.get('course_id')
+            course = courses_map.get(course_id) if course_id else None
+            
+            course_name = course.get('name', 'Unknown Course') if course else 'Unknown Course'
+            course_link = course.get('alternate_link') if course else None
+            
+            # Get submission info if available
+            sub_info = submissions_map.get(cw.get('id'))
+            
+            coursework_list.append({
+                'course_name': course_name,
+                'course_link': course_link,
+                'title': cw.get('title', ''),
+                'description': cw.get('description', ''),
+                'due_date': cw.get('due_date', ''),
+                'due_time': cw.get('due_time', ''),
+                'state': cw.get('state', ''),
+                'alternate_link': cw.get('alternate_link', ''),
+                'max_points': cw.get('max_points', ''),
+                'work_type': cw.get('work_type', ''),
+                'submission_state': sub_info.get('state') if sub_info else None,
+                'assigned_grade': sub_info.get('assigned_grade') if sub_info else None,
+                'draft_grade': sub_info.get('draft_grade') if sub_info else None
+            })
+        
+        # Group by course
+        courses_dict = {}
+        for cw in coursework_list:
+            course_name = cw.get('course_name', 'Unknown Course')
+            if course_name not in courses_dict:
+                courses_dict[course_name] = {
+                    'name': course_name,
+                    'course_link': cw.get('course_link'),
+                    'coursework': []
+                }
+            courses_dict[course_name]['coursework'].append({
+                'title': cw.get('title', ''),
+                'alternate_link': cw.get('alternate_link', ''),  # Put link right after title for visibility
+                'description': cw.get('description', ''),
+                'due_date': cw.get('due_date', ''),
+                'due_time': cw.get('due_time', ''),
+                'state': cw.get('state', ''),
+                'max_points': cw.get('max_points', ''),
+                'work_type': cw.get('work_type', ''),
+                'submission_state': cw.get('submission_state'),
+                'assigned_grade': cw.get('assigned_grade'),
+                'draft_grade': cw.get('draft_grade')
+            })
+        
+        formatted_data = list(courses_dict.values())
+        
+        # Debug: Check if alternate_link is present in coursework
+        for course_data in formatted_data:
+            coursework_items = course_data.get('coursework', [])
+            for cw in coursework_items:
+                alt_link = cw.get('alternate_link', '')
+                if not alt_link:
+                    print(f"[Chatbot] ⚠️ WARNING: Assignment '{cw.get('title', 'Unknown')}' has no alternate_link!")
+                else:
+                    print(f"[Chatbot] ✅ Assignment '{cw.get('title', 'Unknown')}' has alternate_link: {alt_link[:50]}...")
+        
+        print(f"[Chatbot] Found {len(formatted_data)} courses with {len(coursework_list)} coursework items for student")
+        
+        return {"classroom_data": formatted_data}
+        
+    except Exception as e:
+        print(f"[Chatbot] Error getting student coursework: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"classroom_data": []}
+
 def get_admin_data(user_email: str = None,
                    load_teachers: bool = True,
                    load_students: bool = True, 
@@ -1061,18 +1235,26 @@ def generate_chatbot_response(request):
                         except:
                             pass
             
-            # First try current user if they have admin privileges
-            admin_data = get_admin_data(user_email,
-                                       load_teachers=should_load_teachers,
-                                       load_students=should_load_students,
-                                       load_announcements=should_load_announcements,
-                                       load_coursework=should_load_coursework,
-                                       load_calendar=should_load_calendar,
-                                       announcement_date_ranges=target_date_ranges_for_sql if target_date_ranges_for_sql else None,
-                                       limit_announcements=limit_announcements,
-                                       limit_students=limit_students,
-                                       limit_teachers=limit_teachers,
-                                       limit_coursework=limit_coursework)
+            # Check if user is a student asking about coursework - use direct coursework query
+            user_role = user_profile.get('role', '') if user_profile else None
+            user_id = user_profile.get('user_id', '') if user_profile else None
+            
+            if user_role == 'student' and is_coursework_query and user_id:
+                print(f"[Chatbot] Student coursework query detected - querying coursework table directly")
+                admin_data = get_student_coursework_data(user_id, student_email=user_email, limit_coursework=limit_coursework or 20)
+            else:
+                # First try current user if they have admin privileges
+                admin_data = get_admin_data(user_email,
+                                           load_teachers=should_load_teachers,
+                                           load_students=should_load_students,
+                                           load_announcements=should_load_announcements,
+                                           load_coursework=should_load_coursework,
+                                           load_calendar=should_load_calendar,
+                                           announcement_date_ranges=target_date_ranges_for_sql if target_date_ranges_for_sql else None,
+                                           limit_announcements=limit_announcements,
+                                           limit_students=limit_students,
+                                           limit_teachers=limit_teachers,
+                                           limit_coursework=limit_coursework)
             
             # If no data found from current user, try to get from any admin who has synced data
             if not admin_data.get('classroom_data') and not admin_data.get('calendar_data'):
@@ -1456,9 +1638,12 @@ def generate_chatbot_response(request):
                     # ULTRA-AGGRESSIVE FILTERING: Only send exactly what's needed for this query type
                     filtered_courses = []
                     
-                    # Filter courses by student's grade if user is a student
+                    # Filter courses by student's grade if user is a student (but skip for coursework queries)
+                    # For coursework queries, students should see all their coursework regardless of grade
                     user_grade_num = None
-                    if user_profile:
+                    skip_grade_filter = is_coursework_query  # Skip grade filter for coursework queries
+                    
+                    if user_profile and not skip_grade_filter:
                         user_role = user_profile.get('role', '') or ''
                         user_role_lower = user_role.lower()
                         print(f"[Chatbot] User role: {user_role_lower}, Grade filter check...")
@@ -1479,10 +1664,12 @@ def generate_chatbot_response(request):
                                 print(f"[Chatbot] ⚠️ No grade found in user profile")
                         else:
                             print(f"[Chatbot] User is not a student (role: {user_role_lower}), skipping grade filter")
+                    elif skip_grade_filter:
+                        print(f"[Chatbot] Skipping grade filter for coursework query - students should see all their coursework")
                     
                     for course in admin_data['classroom_data']:
-                        # If user is a student, filter courses by grade
-                        if user_grade_num:
+                        # If user is a student, filter courses by grade (but skip for coursework queries)
+                        if user_grade_num and not skip_grade_filter:
                             course_name = course.get('name', '')
                             # Check if course name contains the grade (e.g., "G8", "Grade 8", "(8)")
                             # Match patterns like: G8, G 8, Grade 8, (G8), (8), Grade-8, etc.
@@ -1627,14 +1814,126 @@ def generate_chatbot_response(request):
                         if has_requested_data:
                             filtered_courses.append(filtered_course)
                     
+                    # For coursework queries, add explicit assignment-to-link mapping FIRST (before JSON)
+                    if is_coursework_query and filtered_courses:
+                        user_content += "\n"
+                        user_content += "=" * 80 + "\n"
+                        user_content += "📋 CRITICAL: ASSIGNMENT-TO-LINK MAPPING - USE THESE EXACT LINKS!\n"
+                        user_content += "=" * 80 + "\n"
+                        user_content += "🚨 EACH ASSIGNMENT HAS A DIFFERENT LINK - DO NOT REUSE THE SAME LINK! 🚨\n\n"
+                        user_content += "When you write about an assignment in your response, you MUST:\n"
+                        user_content += "1. Find the assignment title in the list below\n"
+                        user_content += "2. Copy the EXACT link shown next to that title\n"
+                        user_content += "3. Use that link ONLY for that specific assignment\n"
+                        user_content += "4. For the next assignment, find its title and use its DIFFERENT link\n\n"
+                        user_content += "ASSIGNMENT MAPPING:\n"
+                        user_content += "-" * 80 + "\n"
+                        assignment_map = {}  # Store for validation
+                        assignment_count = 0
+                        for course in filtered_courses:
+                            coursework_list = course.get('coursework', [])
+                            if coursework_list:
+                                user_content += f"\nCourse: {course.get('name', 'Unknown')}\n"
+                                for cw in coursework_list:
+                                    assignment_count += 1
+                                    title = cw.get('title', 'Unknown').strip()
+                                    alt_link = cw.get('alternate_link', '').strip()
+                                    if alt_link:
+                                        # Store for later reference
+                                        assignment_map[title] = alt_link
+                                        user_content += f"\n[{assignment_count}] ASSIGNMENT TITLE: \"{title}\"\n"
+                                        user_content += f"    → ASSIGNMENT LINK: {alt_link}\n"
+                                        user_content += f"    → WHEN YOU WRITE ABOUT \"{title}\", USE THIS EXACT LINK: {alt_link}\n"
+                                    else:
+                                        user_content += f"\n[{assignment_count}] ASSIGNMENT TITLE: \"{title}\"\n"
+                                        user_content += f"    → ⚠️ WARNING: No link available\n"
+                        user_content += "\n" + "-" * 80 + "\n"
+                        user_content += "=" * 80 + "\n"
+                        user_content += "⚠️ CRITICAL REMINDER:\n"
+                        user_content += "- Assignment #1 uses Link #1 (shown above)\n"
+                        user_content += "- Assignment #2 uses Link #2 (DIFFERENT from Link #1)\n"
+                        user_content += "- Assignment #3 uses Link #3 (DIFFERENT from Link #1 and #2)\n"
+                        user_content += "- And so on... EACH assignment gets its OWN unique link!\n"
+                        user_content += "=" * 80 + "\n\n"
+                    
                     # Use compact JSON format to save tokens (minimal whitespace)
-                    user_content += "Data:\n"
+                    user_content += "Data (for additional details):\n"
                     user_content += f"{json.dumps(filtered_courses, separators=(',', ':'))}\n"  # Compact format, no indentation
                     
-                    # Add concise instructions for coursework queries (TOKEN OPTIMIZATION)
+                    # Add detailed instructions for coursework queries
                     if is_coursework_query:
                         if filtered_courses:
-                            user_content += "\n⚠️ COURSEWORK: If coursework empty, PROVIDE course_link. Format: ### [Course Name]\n[View Assignments](course_link)\nSteps: 1) Click 2) Classwork tab 3) View\nDO NOT say 'no access'!\n\n"
+                            user_content += "\n⚠️⚠️⚠️ COURSEWORK FORMATTING - CRITICAL INSTRUCTIONS: ⚠️⚠️⚠️\n"
+                            user_content += "**ABSOLUTELY CRITICAL - READ CAREFULLY:**\n\n"
+                            user_content += "**🚨 CRITICAL RULE: EACH ASSIGNMENT HAS A DIFFERENT 'alternate_link' - DO NOT USE THE SAME URL FOR ALL ASSIGNMENTS! 🚨**\n\n"
+                            user_content += "**EACH ASSIGNMENT IN THE 'coursework' ARRAY HAS ITS OWN UNIQUE 'alternate_link' FIELD!**\n"
+                            user_content += "**YOU MUST MATCH EACH ASSIGNMENT TITLE WITH ITS CORRESPONDING 'alternate_link' FROM THE DATA JSON ABOVE!**\n"
+                            user_content += "**DO NOT USE THE SAME URL FOR MULTIPLE ASSIGNMENTS - EACH ONE HAS A DIFFERENT LINK!**\n\n"
+                            user_content += "**HOW TO EXTRACT THE LINK - MATCH BY TITLE:**\n"
+                            user_content += "1. When you are about to write an assignment (e.g., 'CE-4 : Maths-1'), FIRST find that assignment in the 'Data:' section\n"
+                            user_content += "2. Look for the assignment object where 'title' matches the assignment you're writing about\n"
+                            user_content += "3. Once you find that specific assignment object, extract its EXACT 'alternate_link' value\n"
+                            user_content += "4. Use that EXACT URL for THAT assignment only\n"
+                            user_content += "5. When you move to the NEXT assignment, repeat steps 1-4 - find THAT assignment's alternate_link (which will be different!)\n"
+                            user_content += "6. NEVER reuse a link from one assignment for another assignment!\n\n"
+                            user_content += "**EXAMPLE DATA STRUCTURE (for reference only - use actual data from above):**\n"
+                            user_content += "The data above shows assignments like:\n"
+                            user_content += "{\"name\":\"Course\",\"coursework\":[{\"title\":\"Assignment 1\",\"alternate_link\":\"https://classroom.google.com/c/ABC123/a/XYZ789/details\"}]}\n\n"
+                            user_content += "**FOR EACH ASSIGNMENT IN THE RESPONSE:**\n"
+                            user_content += "1. **MANDATORY:** Look at the actual 'alternate_link' field in the assignment object from the Data section above\n"
+                            user_content += "2. **MANDATORY:** Copy that EXACT URL value - do not modify it, do not create a new URL\n"
+                            user_content += "3. **FORBIDDEN:** DO NOT use 'course_link' from the course object\n"
+                            user_content += "4. **FORBIDDEN:** DO NOT create URLs with placeholder text like 'ASSIGNMENT_ID' or 'COURSE_ID'\n"
+                            user_content += "5. **FORBIDDEN:** DO NOT use example URLs from these instructions\n\n"
+                            user_content += "**CORRECT PROCESS:**\n"
+                            user_content += "- If assignment data shows: `{\"title\":\"Math\",\"alternate_link\":\"https://classroom.google.com/c/MjM1NjczMDU0NTI4/a/MjkzNDg1MDg4NjE5/details\"}`\n"
+                            user_content += "- Then use: `[View Assignment](https://classroom.google.com/c/MjM1NjczMDU0NTI4/a/MjkzNDg1MDg4NjE5/details)`\n"
+                            user_content += "- Use the EXACT URL from the data, nothing else!\n\n"
+                            user_content += "4. **Format each assignment with full details:**\n"
+                            user_content += "   - Title (bold)\n"
+                            user_content += "   - Description (if available)\n"
+                            user_content += "   - Due Date and Time (format dates nicely)\n"
+                            user_content += "   - Max Points (if available)\n"
+                            user_content += "   - Work Type (ASSIGNMENT, MATERIAL, etc.)\n"
+                            user_content += "   - Submission Status (if submission_state is available: NEW, TURNED_IN, RETURNED, etc.)\n"
+                            user_content += "   - Grade (if assigned_grade or draft_grade is available)\n"
+                            user_content += "   - **Direct Assignment Link** using the assignment's `alternate_link` field\n\n"
+                            user_content += "6. **Format Template:**\n"
+                            user_content += "   ### [Course Name]\n\n"
+                            user_content += "   #### 📋 [Assignment Title]\n"
+                            user_content += "   **Description:** [description]\n"
+                            user_content += "   **Due Date:** [due_date] at [due_time]\n"
+                            user_content += "   **Points:** [max_points]\n"
+                            user_content += "   **Type:** [work_type]\n"
+                            user_content += "   **Status:** [submission_state] | **Grade:** [assigned_grade or draft_grade]\n"
+                            user_content += "   **[View Assignment](COPY_THE_EXACT_alternate_link_VALUE_FROM_THIS_SPECIFIC_ASSIGNMENT_OBJECT)**\n"
+                            user_content += "   ⚠️ CRITICAL: For the assignment title above, find that EXACT assignment in the Data section and use ITS 'alternate_link'.\n"
+                            user_content += "   ⚠️ DO NOT reuse the same link for different assignments - each assignment has its own unique alternate_link!\n\n"
+                            user_content += "7. **If coursework is empty for a course:** Only then use course_link with instructions\n"
+                            user_content += "8. **Group assignments by course** and show all available details\n"
+                            user_content += "9. **For 'latest assignment' queries:** Show the most recent assignment first (sorted by due_date)\n\n"
+                            user_content += "**CRITICAL - MATCHING EACH ASSIGNMENT WITH ITS LINK:**\n"
+                            user_content += "**EACH ASSIGNMENT HAS A DIFFERENT 'alternate_link' - YOU MUST MATCH THEM CORRECTLY!**\n\n"
+                            user_content += "**STEP-BY-STEP PROCESS FOR EACH ASSIGNMENT:**\n"
+                            user_content += "1. Look at the 'ASSIGNMENT-TO-LINK MAPPING' section at the TOP of this prompt (before the Data section)\n"
+                            user_content += "2. When you write an assignment title (e.g., 'CE-4 : Maths-1'), find that EXACT title in the mapping\n"
+                            user_content += "3. Copy the EXACT link shown next to that title (it will say 'USE THIS LINK: ...')\n"
+                            user_content += "4. Use that EXACT link for THAT assignment only\n"
+                            user_content += "5. When you write the next assignment (e.g., 'Final Assignment: ES'), find THAT title in the mapping\n"
+                            user_content += "6. Copy the EXACT link shown next to THAT title (it will be DIFFERENT from the previous one!)\n"
+                            user_content += "7. Use that EXACT link for THAT assignment only\n"
+                            user_content += "8. NEVER reuse a link - each assignment has its own unique link in the mapping!\n\n"
+                            user_content += "**EXAMPLE OF CORRECT BEHAVIOR:**\n"
+                            user_content += "If the mapping shows:\n"
+                            user_content += "  1. Title: 'Assignment A' → Link: https://classroom.google.com/c/123/a/AAA/details\n"
+                            user_content += "  2. Title: 'Assignment B' → Link: https://classroom.google.com/c/123/a/BBB/details\n"
+                            user_content += "  3. Title: 'Assignment C' → Link: https://classroom.google.com/c/123/a/CCC/details\n\n"
+                            user_content += "Then in your response:\n"
+                            user_content += "- When you write 'Assignment A', use: https://classroom.google.com/c/123/a/AAA/details\n"
+                            user_content += "- When you write 'Assignment B', use: https://classroom.google.com/c/123/a/BBB/details\n"
+                            user_content += "- When you write 'Assignment C', use: https://classroom.google.com/c/123/a/CCC/details\n\n"
+                            user_content += "**WRONG:** Using https://classroom.google.com/c/123/a/AAA/details for all assignments\n"
+                            user_content += "**RIGHT:** Each assignment gets its own matching link from the mapping above\n\n"
                         else:
                             user_content += "\n⚠️ NO COURSES FOUND: Say user has no courses matching their grade, suggest contacting teacher.\n\n"
                     
@@ -1687,8 +1986,18 @@ def generate_chatbot_response(request):
                     } for e in calendar_events]
                     user_content += f"Calendar Events:\n{json.dumps(compact_events, separators=(',', ':'))}\n\n"
             
-            # Add concise data processing instructions (TOKEN OPTIMIZATION - only for queries that need it)
-            if is_announcement_query or is_coursework_query:
+            # Add detailed data processing instructions for coursework
+            if is_coursework_query:
+                user_content += "\n⚠️ FORMATTING REQUIREMENTS FOR COURSEWORK:\n"
+                user_content += "1. **Always format dates** in readable format (e.g., 'January 15, 2024' or '15 Jan 2024')\n"
+                user_content += "2. **Always format times** in readable format (e.g., '3:30 PM')\n"
+                user_content += "3. **Use proper Markdown** for headings, bold text, and links\n"
+                user_content += "4. **Include all available information** - don't skip fields\n"
+                user_content += "5. **Make it visually appealing** with proper spacing and structure\n"
+                user_content += "6. **CRITICAL: For each assignment, use the assignment's 'alternate_link' field** - NOT the course_link!\n"
+                user_content += "   - Assignment links look like: https://classroom.google.com/c/COURSE_ID/a/ASSIGNMENT_ID/details\n"
+                user_content += "   - Course links look like: https://classroom.google.com/c/COURSE_ID (DO NOT USE THIS FOR ASSIGNMENTS!)\n\n"
+            elif is_announcement_query:
                 user_content += "\n⚠️ FORMATTING: Process data intelligently. Fix time ranges, grammar, use Markdown. Make readable.\n\n"
             
             # CRITICAL: For person queries, verify against actual teacher/student lists but still provide web data

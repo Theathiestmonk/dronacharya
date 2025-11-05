@@ -42,6 +42,7 @@ const AppContent: React.FC<{
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 20, left: 280 });
   const profileDropdownRef = useRef<HTMLDivElement>(null);
+  const [hasCheckedOAuthOnboarding, setHasCheckedOAuthOnboarding] = useState(false);
 
   // Detect screen size and manage sidebar state
   useEffect(() => {
@@ -83,6 +84,59 @@ const AppContent: React.FC<{
   useEffect(() => {
     console.log('Loading states:', { loading, chatHistoryLoading, isFullyInitialized });
   }, [loading, chatHistoryLoading, isFullyInitialized]);
+
+  // Check for OAuth callback and ensure onboarding is checked after profile loads
+  useEffect(() => {
+    // Reset check flag when user changes
+    if (user) {
+      const currentUserId = user.id;
+      const previousCheck = sessionStorage.getItem('oauth_check_user');
+      if (previousCheck !== currentUserId) {
+        setHasCheckedOAuthOnboarding(false);
+        sessionStorage.setItem('oauth_check_user', currentUserId);
+      }
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    // Check if we just came from OAuth callback (URL hash contains access_token)
+    const isOAuthCallback = typeof window !== 'undefined' && window.location.hash.includes('access_token');
+    
+    if (isOAuthCallback && user && !hasCheckedOAuthOnboarding) {
+      console.log('🔍 OAuth callback detected, waiting for profile to load...');
+      // Wait for profile to load before checking onboarding
+      const checkProfile = setInterval(() => {
+        if (profile !== undefined) { // Profile has been loaded (could be null or object)
+          console.log('✅ Profile loaded after OAuth, checking onboarding status:', {
+            hasProfile: !!profile,
+            onboardingCompleted: profile?.onboarding_completed,
+            needsOnboarding
+          });
+          setHasCheckedOAuthOnboarding(true);
+          clearInterval(checkProfile);
+          
+          // If onboarding is needed, ensure it's shown
+          if (needsOnboarding) {
+            console.log('📋 User needs onboarding after OAuth login - will show onboarding form');
+          } else {
+            console.log('✅ User onboarding already completed - allowing chatbot access');
+          }
+        }
+      }, 100);
+
+      // Timeout after 5 seconds
+      const timeoutId = setTimeout(() => {
+        clearInterval(checkProfile);
+        setHasCheckedOAuthOnboarding(true);
+        console.log('⏱️ OAuth profile check timeout - proceeding with current state');
+      }, 5000);
+
+      return () => {
+        clearInterval(checkProfile);
+        clearTimeout(timeoutId);
+      };
+    }
+  }, [user, profile, needsOnboarding, hasCheckedOAuthOnboarding]);
 
   // Calculate dropdown position when it opens
   useEffect(() => {
@@ -341,7 +395,14 @@ const AppContent: React.FC<{
   }
 
   // Show onboarding form if user is logged in but needs onboarding
-  if (user && needsOnboarding) {
+  // This check happens after OAuth callback as well, ensuring onboarding is always shown when needed
+  if (user && needsOnboarding && !loading) {
+    console.log('📋 Showing onboarding form - user needs onboarding:', {
+      userId: user.id,
+      hasProfile: !!profile,
+      onboardingCompleted: profile?.onboarding_completed,
+      needsOnboarding
+    });
     return (
       <OnboardingForm
         user={user}
@@ -534,7 +595,7 @@ const HomePage: React.FC = () => {
       
       // Check if there are OAuth tokens in the URL hash
       if (window.location.hash.includes('access_token')) {
-        console.log('OAuth tokens detected in main page, processing...');
+        console.log('🔐 OAuth tokens detected in main page, processing...');
         console.log('URL hash:', window.location.hash);
         
         // Parse the URL hash to extract tokens
@@ -557,9 +618,12 @@ const HomePage: React.FC = () => {
                 status: error.status
               });
             } else if (session) {
-              console.log('Session created successfully:', session.user.email);
+              console.log('✅ Session created successfully:', session.user.email);
+              console.log('🔄 OAuth login complete - profile will be loaded and onboarding checked');
               // Clear the URL hash to remove tokens
               window.history.replaceState({}, document.title, window.location.pathname);
+              // The auth state change listener will fetch the profile automatically
+              // and the onboarding check will happen in the render logic
             } else {
               console.log('No session returned from setSession');
             }

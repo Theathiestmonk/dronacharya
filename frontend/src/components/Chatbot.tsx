@@ -605,6 +605,21 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       return;
     }
     
+    // Skip if activeSessionId is null and we've already cleared (prevent unnecessary runs)
+    if (!activeSessionId && lastLoadedSessionIdRef.current === null) {
+      return;
+    }
+    
+    // If user is logged out, clear messages immediately
+    if (!user && messages.length > 0) {
+      console.log('🚪 User is logged out - clearing messages');
+      setMessages([]);
+      setConversationHistory([]);
+      setHasFirstResponse(false);
+      lastLoadedSessionIdRef.current = null;
+      return;
+    }
+    
     console.log('🔄 useEffect triggered - loading messages from active session');
     const activeSession = getActiveSession();
     console.log('📋 Active session:', activeSession ? {
@@ -616,6 +631,16 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     // Skip if we've already loaded this session to prevent unnecessary re-renders
     if (activeSession && activeSession.id === lastLoadedSessionIdRef.current) {
       console.log('⏭️ Skipping reload - session already loaded:', activeSession.id);
+      return;
+    }
+    
+    // If no active session and we haven't cleared yet, clear once
+    if (!activeSession && lastLoadedSessionIdRef.current !== null) {
+      console.log('❌ No active session - clearing messages');
+      lastLoadedSessionIdRef.current = null;
+      setMessages([]);
+      setConversationHistory([]);
+      setHasFirstResponse(false);
       return;
     }
     
@@ -631,7 +656,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         }));
         console.log('📝 Setting messages from session:', sessionMessages.length, 'messages');
         
-        // Update ref to track loaded session
+        // Update ref to track loaded session BEFORE state updates
         lastLoadedSessionIdRef.current = activeSession.id;
         
         // Batch all state updates together to prevent intermediate renders
@@ -647,17 +672,9 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           content: msg.text,
         }));
         setConversationHistory(history);
-      } else {
-        console.log('❌ No active session - clearing messages');
-        // Update ref to track cleared state
-        lastLoadedSessionIdRef.current = null;
-        // Batch clearing operations
-        setMessages([]);
-        setConversationHistory([]);
-        setHasFirstResponse(false);
       }
     });
-  }, [activeSessionId, getActiveSession, chatHistoryLoading]); // Include chatHistoryLoading to skip during loading
+  }, [activeSessionId, getActiveSession, chatHistoryLoading, user]); // Include user to clear messages on logout
 
   // Listen for custom refresh event
   useEffect(() => {
@@ -723,12 +740,50 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   const [hasShownInitialLoad, setHasShownInitialLoad] = useState(false);
   const previousUserRef = useRef<string | null>(null);
   
+  // Clear messages when user logs out or changes
   useEffect(() => {
     const currentUserId = user?.id || null;
     const previousUserId = previousUserRef.current;
     
-    // If user changed (login/logout), reset session tracking but don't reset loading state
+    // If user changed (login/logout), clear messages and reset everything
     if (currentUserId !== previousUserId) {
+      // If user logged out (had a user, now no user), clear everything immediately
+      if (previousUserId && !currentUserId) {
+        console.log('🚪 User logged out - clearing chat messages');
+        // Stop any ongoing generation
+        if (abortController) {
+          abortController.abort();
+        }
+        // Clear all messages and state
+        setMessages([]);
+        setInput('');
+        setLoading(false);
+        setRequestInProgress(false);
+        setIsGenerating(false);
+        setAbortController(null);
+        setListening(false);
+        setDisplayedBotText('');
+        setIsTyping(false);
+        setCopiedIdx(null);
+        setHasFirstResponse(false);
+        setConversationHistory([]);
+        // Generate a new random welcome message
+        setWelcomeMessage(getRandomWelcomeMessage());
+      }
+      
+      // If user logged in (new user or different user), clear messages to prevent showing old chat
+      // Note: User's saved sessions from Supabase will be loaded automatically by ChatHistoryProvider
+      if (currentUserId && currentUserId !== previousUserId) {
+        console.log('🚪 User logged in - clearing UI state (will load saved sessions from Supabase)');
+        setMessages([]);
+        setConversationHistory([]);
+        setInput('');
+        setDisplayedBotText('');
+        setIsTyping(false);
+        // Generate a new random welcome message
+        setWelcomeMessage(getRandomWelcomeMessage());
+      }
+      
       previousUserRef.current = currentUserId;
       // Reset last loaded session ID when user changes
       lastLoadedSessionIdRef.current = null;
@@ -738,7 +793,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     if (!chatHistoryLoading && !hasShownInitialLoad) {
       setHasShownInitialLoad(true);
     }
-  }, [chatHistoryLoading, hasShownInitialLoad, user?.id]);
+  }, [chatHistoryLoading, hasShownInitialLoad, user?.id, abortController]);
   
   // Only show loading opacity on the very first app load, never again (even on login/logout)
   const containerClassName = (chatHistoryLoading && !hasShownInitialLoad) ? 'opacity-40 scale-[0.98]' : 'opacity-100 scale-100';

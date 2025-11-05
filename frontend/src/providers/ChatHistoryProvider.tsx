@@ -65,6 +65,9 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [lastCreateSessionTime, setLastCreateSessionTime] = useState(0);
   const [justCreatedManualSession, setJustCreatedManualSession] = useState(false);
   
+  // Track if we've already loaded sessions for the current user to prevent reload on tab focus
+  const hasLoadedForUserRef = useRef<string | null>(null);
+  
   // Blink effect state for refresh (removed - causing blinking on page refresh)
   // const [isBlinking, setIsBlinking] = useState(false);
   
@@ -74,18 +77,24 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
   
   // Helper function to update both state and ref
   const updateActiveSessionId = useCallback((sessionId: string | null) => {
+    // Prevent unnecessary updates if session ID hasn't changed
+    if (activeSessionIdRef.current === sessionId) {
+      console.log('⏭️ Skipping updateActiveSessionId - session ID unchanged:', sessionId);
+      return;
+    }
+    
     console.log('🔄 updateActiveSessionId called:', {
       newSessionId: sessionId,
       currentRefValue: activeSessionIdRef.current,
-      currentStateValue: activeSessionId
+      previousStateValue: activeSessionId
     });
-    setActiveSessionId(sessionId);
-    activeSessionIdRef.current = sessionId;
+    activeSessionIdRef.current = sessionId; // Update ref first
+    setActiveSessionId(sessionId); // Then update state
     console.log('✅ updateActiveSessionId completed:', {
       refValue: activeSessionIdRef.current,
-      stateValue: sessionId
+      newStateValue: sessionId
     });
-  }, [activeSessionId]); // Remove activeSessionId from dependencies to prevent loop
+  }, []); // Empty dependency array - function doesn't depend on any state
   
   useEffect(() => {
     console.log('🔄 useEffect triggered - sessions changed:', {
@@ -97,6 +106,16 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     sessionsRef.current = sessions;
     // Don't automatically update activeSessionIdRef - we'll manage it manually
   }, [sessions]);
+
+  // Initial safety timeout to ensure loading completes even if initialization hangs
+  useEffect(() => {
+    const initialTimeout = setTimeout(() => {
+      console.log('⚠️ Initial loading timeout: forcing isLoading to false');
+      setIsLoading(false);
+    }, 2000); // 2 second timeout for initial load
+
+    return () => clearTimeout(initialTimeout);
+  }, []); // Only run once on mount
   
   // Migrate old session IDs to UUID format
   const migrateSessionId = useCallback((id: string): string => {
@@ -332,54 +351,63 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
         // First try to load from localStorage for faster initial load
         const userKey = `chat_history_${user.id}`;
         const localData = localStorage.getItem(userKey);
+        const hasLocalStorageData = localData && localData.trim() !== '';
         
-        if (localData) {
-          const parsedData = JSON.parse(localData);
-          console.log('LocalStorage sessions loaded:', parsedData.sessions?.length || 0);
-          
-          if (parsedData.sessions && parsedData.sessions.length > 0) {
-            // Use localStorage data immediately for faster loading
-            setSessions(parsedData.sessions);
+        if (hasLocalStorageData) {
+          try {
+            const parsedData = JSON.parse(localData);
+            console.log('LocalStorage sessions loaded:', parsedData.sessions?.length || 0);
             
-            // Set active session from localStorage
-            let activeSessionId = parsedData.activeSessionId;
-            
-            if (urlSessionId) {
-              const urlSession = parsedData.sessions.find((s: ChatSession) => s.id === urlSessionId);
-              if (urlSession) {
-                activeSessionId = urlSessionId;
-                console.log('Using session from URL:', urlSessionId);
+            if (parsedData.sessions && parsedData.sessions.length > 0) {
+              // Use localStorage data immediately for faster loading
+              setSessions(parsedData.sessions);
+              
+              // Set active session from localStorage
+              let activeSessionId = parsedData.activeSessionId;
+              
+              if (urlSessionId) {
+                const urlSession = parsedData.sessions.find((s: ChatSession) => s.id === urlSessionId);
+                if (urlSession) {
+                  activeSessionId = urlSessionId;
+                  console.log('Using session from URL:', urlSessionId);
+                }
               }
+              
+              updateActiveSessionId(activeSessionId);
+              console.log('Active session set from localStorage:', activeSessionId);
+              
+              // Mark as loaded but continue to sync with Supabase in background
+              setIsLoading(false);
             }
-            
-            updateActiveSessionId(activeSessionId);
-            console.log('Active session set from localStorage:', activeSessionId);
-            
-            // Mark as loaded but continue to sync with Supabase in background
-            setIsLoading(false);
+          } catch (error) {
+            console.error('Error parsing localStorage data:', error);
+            // If localStorage is corrupted, treat it as empty and load from Supabase
+            localStorage.removeItem(userKey);
           }
+        } else {
+          console.log('📦 No localStorage data found - will load from Supabase');
         }
 
-        // Then sync with Supabase in background
+        // Then sync with Supabase (or load if localStorage was empty/cleared)
         const supabaseSessions = await loadSessionsFromSupabase();
         console.log('Supabase sessions loaded:', supabaseSessions.length);
         setHasCheckedDatabase(true); // Mark that we've checked the database
         
         if (supabaseSessions.length > 0) {
-          // Use Supabase data
+          // Use Supabase data (especially important when localStorage was cleared)
           setSessions(supabaseSessions);
 
-          // Priority order for active session:
+          // Priority order for active session when loading from Supabase:
           // 1. Session ID from URL (if it exists in loaded sessions)
-          // 2. Session marked as active in database
-          // 3. Most recently updated session
+          // 2. Session marked as active in database (isActive = true)
+          // 3. Most recently updated session (by updated_at DESC - already sorted)
           let activeSessionId = null;
 
           if (urlSessionId) {
             const urlSession = supabaseSessions.find((s: ChatSession) => s.id === urlSessionId);
             if (urlSession) {
               activeSessionId = urlSessionId;
-              console.log('Using session from URL:', urlSessionId);
+              console.log('✅ Using session from URL:', urlSessionId);
             } else {
               // CRITICAL: Don't override manually created sessions
               if (justCreatedManualSession || isCreatingSession) {
@@ -399,10 +427,11 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
               return;
             }
             
-            const activeSession = supabaseSessions.find((s: ChatSession) => s.isActive);
+            // Check for session marked as active in database
+            const activeSession = supabaseSessions.find((s: ChatSession) => s.isActive === true);
             if (activeSession) {
               activeSessionId = activeSession.id;
-              console.log('Using session marked as active:', activeSessionId);
+              console.log('✅ Using session marked as active in database:', activeSessionId);
             }
           }
 
@@ -413,13 +442,34 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
               return;
             }
             
+            // Use most recently updated session (sessions are already sorted by updated_at DESC)
+            // This is especially important when localStorage is cleared
             activeSessionId = supabaseSessions[0]?.id || null;
-            console.log('Using most recent session:', activeSessionId);
+            if (activeSessionId) {
+              const mostRecentSession = supabaseSessions[0];
+              console.log('✅ Using most recently updated session:', {
+                id: activeSessionId,
+                title: mostRecentSession.title,
+                updated_at: mostRecentSession.updated_at
+              });
+            }
           }
 
           updateActiveSessionId(activeSessionId);
-          console.log('Final active session set to:', activeSessionId);
-          console.log('Session details:', supabaseSessions.find(s => s.id === activeSessionId));
+          console.log('✅ Final active session set to:', activeSessionId);
+          
+          // Update localStorage with Supabase data for faster future loads
+          // This is especially important when cache was cleared - restore localStorage
+          if (activeSessionId) {
+            localStorage.setItem(userKey, JSON.stringify({
+              sessions: supabaseSessions,
+              activeSessionId: activeSessionId
+            }));
+            console.log('💾 Saved Supabase sessions to localStorage for faster future loads');
+          }
+          
+          // Mark as loaded (important when localStorage was empty/cleared)
+          setIsLoading(false);
         } else {
           // User has NO existing chats in database
           console.log('❌ User has NO existing chats in database');
@@ -461,6 +511,8 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
             }
           } else {
             console.log('No sessions found in localStorage, will create new session');
+            // Ensure loading is set to false even if no sessions found
+            setIsLoading(false);
           }
         }
       } catch (error) {
@@ -1202,12 +1254,36 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Load sessions when user changes
   useEffect(() => {
+    const currentUserId = user?.id || null;
+    const previousUserId = hasLoadedForUserRef.current;
+    
+    // Only reload if user actually changed, not just because callback was recreated
+    if (currentUserId === previousUserId) {
+      console.log('⏭️ Skipping loadFromLocalStorage - user unchanged:', currentUserId);
+      return;
+    }
+    
+    console.log('🔄 User changed - loading sessions:', { previous: previousUserId, current: currentUserId });
+    
+    // Update ref to track current user BEFORE calling loadFromLocalStorage
+    // This prevents the effect from running again if loadFromLocalStorage triggers any state changes
+    hasLoadedForUserRef.current = currentUserId;
+    
     setHasCheckedDatabase(false); // Reset database check flag when user changes
     setIsCreatingSession(false); // Reset session creation flag when user changes
     setLastCreateSessionTime(0); // Reset debounce timer when user changes
     setJustCreatedManualSession(false); // Reset manual session flag when user changes
-    loadFromLocalStorage();
-  }, [loadFromLocalStorage]);
+    
+    // Safety timeout to ensure loading completes even if something goes wrong
+    const safetyTimeout = setTimeout(() => {
+      console.log('⚠️ Safety timeout: forcing isLoading to false');
+      setIsLoading(false);
+    }, 3000); // 3 second safety timeout
+    
+    loadFromLocalStorage().finally(() => {
+      clearTimeout(safetyTimeout);
+    });
+  }, [user?.id, loadFromLocalStorage]); // Only depend on user.id, not the entire callback
 
   // Clear guest history when user logs in
   useEffect(() => {
@@ -1217,21 +1293,37 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, [user, isGuestMode, clearGuestHistory]);
 
-  // Clear session from URL when user logs out
-  // Clear session when user logs out (but not for guest users)
+  // Clear cache and UI state when user logs out (but keep Supabase data)
   useEffect(() => {
-    // Only clear session if user was previously logged in and now logged out
+    const previousUserId = hasLoadedForUserRef.current;
+    
+    // Only clear if user was previously logged in and now logged out
     // Don't clear for guest users who were never logged in
-    if (!user && activeSessionId && !isGuestMode) {
-      console.log('🔄 User logged out - clearing session');
+    if (!user && previousUserId && !isGuestMode) {
+      console.log('🚪 User logged out - clearing cache and UI state (keeping Supabase data)');
+      
+      // Clear localStorage cache for this user
+      const userKey = `chat_history_${previousUserId}`;
+      localStorage.removeItem(userKey);
+      console.log('🗑️ Cleared localStorage cache for user:', previousUserId);
+      
+      // Clear URL session parameter
       const url = new URL(window.location.href);
       url.searchParams.delete('session');
       window.history.pushState({}, '', url.toString());
+      
+      // Clear UI state (sessions in memory, active session)
+      // NOTE: This does NOT delete sessions from Supabase - they remain in database
       updateActiveSessionId(null);
       setSessions([]);
       setIsGuestMode(false);
+      
+      // Reset user tracking ref
+      hasLoadedForUserRef.current = null;
+      
+      console.log('✅ Cache cleared. User data remains in Supabase and will be restored on next login.');
     }
-  }, [user, activeSessionId, isGuestMode, updateActiveSessionId]);
+  }, [user, isGuestMode, updateActiveSessionId]);
 
   // Auto-save sessions before page unload (no popup)
   useEffect(() => {

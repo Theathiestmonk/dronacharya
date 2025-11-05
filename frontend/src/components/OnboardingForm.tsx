@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/providers/AuthProvider';
 
 interface OnboardingFormProps {
@@ -24,6 +24,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const { completeOnboarding } = useAuth();
 
   const [formData, setFormData] = useState<FormData>({
@@ -68,6 +69,94 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
     preferred_contact_method: '',
     communication_preferences: '',
   });
+
+  // Load existing profile data if profile exists (e.g., auto-created by database trigger)
+  useEffect(() => {
+    const loadExistingProfile = async () => {
+      if (!user?.id) return;
+      
+      try {
+        // Try to fetch existing profile
+        const response = await fetch(`/api/user-profile?user_id=${user.id}`);
+        
+        if (response.ok) {
+          const existingProfile = await response.json();
+          
+          // Only load if onboarding is not completed (user needs to complete onboarding)
+          if (existingProfile && !existingProfile.onboarding_completed) {
+            console.log('Loading existing profile data for onboarding:', existingProfile);
+            
+            // Set role from existing profile (user can still change it)
+            if (existingProfile.role && ['student', 'teacher', 'parent'].includes(existingProfile.role)) {
+              setRole(existingProfile.role as UserRole);
+            }
+            
+            // Load existing form data
+            setFormData(prev => ({
+              ...prev,
+              role: existingProfile.role || 'student',
+              first_name: existingProfile.first_name || '',
+              last_name: existingProfile.last_name || '',
+              gender: existingProfile.gender || '',
+              phone: existingProfile.phone || '',
+              date_of_birth: existingProfile.date_of_birth || '',
+              address: existingProfile.address || '',
+              city: existingProfile.city || '',
+              state: existingProfile.state || '',
+              postal_code: existingProfile.postal_code || '',
+              preferred_language: existingProfile.preferred_language || 'en',
+              // Student fields
+              grade: existingProfile.grade || '',
+              student_id: existingProfile.student_id || '',
+              subjects: existingProfile.subjects || [],
+              learning_goals: existingProfile.learning_goals || '',
+              interests: existingProfile.interests || [],
+              learning_style: existingProfile.learning_style || '',
+              special_needs: existingProfile.special_needs || '',
+              emergency_contact_name: existingProfile.emergency_contact_name || '',
+              emergency_contact_phone: existingProfile.emergency_contact_phone || '',
+              // Teacher fields
+              employee_id: existingProfile.employee_id || '',
+              department: existingProfile.department || '',
+              subjects_taught: existingProfile.subjects_taught || [],
+              years_of_experience: existingProfile.years_of_experience || 0,
+              qualifications: existingProfile.qualifications || '',
+              office_location: existingProfile.office_location || '',
+              office_hours: existingProfile.office_hours || '',
+              specializations: existingProfile.specializations || [],
+              // Parent fields
+              relationship_to_student: existingProfile.relationship_to_student || '',
+              occupation: existingProfile.occupation || '',
+              workplace: existingProfile.workplace || '',
+              preferred_contact_method: existingProfile.preferred_contact_method || '',
+              communication_preferences: existingProfile.communication_preferences || '',
+            }));
+            
+            // Set array raw values for display
+            if (existingProfile.subjects && Array.isArray(existingProfile.subjects)) {
+              setFormData(prev => ({ ...prev, subjects_raw: existingProfile.subjects.join(', ') }));
+            }
+            if (existingProfile.interests && Array.isArray(existingProfile.interests)) {
+              setFormData(prev => ({ ...prev, interests_raw: existingProfile.interests.join(', ') }));
+            }
+            if (existingProfile.subjects_taught && Array.isArray(existingProfile.subjects_taught)) {
+              setFormData(prev => ({ ...prev, subjects_taught_raw: existingProfile.subjects_taught.join(', ') }));
+            }
+            if (existingProfile.specializations && Array.isArray(existingProfile.specializations)) {
+              setFormData(prev => ({ ...prev, specializations_raw: existingProfile.specializations.join(', ') }));
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error loading existing profile:', error);
+        // Continue with default form if loading fails
+      } finally {
+        setIsLoadingProfile(false);
+      }
+    };
+    
+    loadExistingProfile();
+  }, [user?.id]);
 
   const validateField = (field: string, value: unknown): string | null => {
     if (!value || (typeof value === 'string' && value.trim() === '')) {
@@ -158,6 +247,18 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
     }
     return null;
   };
+
+  // Show loading state while profile is being loaded
+  if (isLoadingProfile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center chat-grid-bg">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading your profile...</p>
+        </div>
+      </div>
+    );
+  }
 
   const handleRoleChange = (newRole: UserRole) => {
     setRole(newRole);
@@ -340,120 +441,197 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
     }
   };
 
-  const renderRoleSelection = () => (
-    <div className="space-y-8">
-      <div className="text-center">
-        <h2 className="text-3xl font-bold text-gray-900 mb-3">Welcome to Prakriti School!</h2>
-        <p className="text-lg text-gray-600">Please select your role to get started</p>
-      </div>
+  const renderRoleSelection = () => {
+    return (
+      <div className="space-y-4 sm:space-y-6 md:space-y-8">
+        <div className="text-center">
+          <h2 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900 mb-2 sm:mb-3">Welcome to Prakriti School!</h2>
+          <p className="text-sm sm:text-base md:text-lg text-gray-600">Please select your role to get started</p>
+        </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6" style={{ perspective: '1000px', transformStyle: 'preserve-3d' }}>
         {[
           { 
             role: 'student', 
             title: 'Student', 
             description: 'I am a student at Prakriti School', 
-            icon: '🎓',
             gradient: 'from-blue-500 to-purple-600',
             bgGradient: 'from-blue-50 to-purple-50',
-            borderColor: 'border-blue-200',
-            hoverShadow: 'hover:shadow-blue-200'
+            borderColor: 'border-blue-500',
+            hoverBorderColor: 'hover:border-blue-400',
+            hoverShadow: 'hover:shadow-blue-200',
+            hoverBg: 'hover:bg-gradient-to-br hover:from-blue-50 hover:to-purple-50',
+            textColor: 'text-blue-700',
+            textHoverColor: 'group-hover:text-blue-600',
+            descColor: 'text-blue-600',
+            descHoverColor: 'group-hover:text-blue-500'
           },
           { 
             role: 'teacher', 
             title: 'Teacher', 
             description: 'I am a teacher at Prakriti School', 
-            icon: '👩‍🏫',
             gradient: 'from-green-500 to-teal-600',
             bgGradient: 'from-green-50 to-teal-50',
-            borderColor: 'border-green-200',
-            hoverShadow: 'hover:shadow-green-200'
+            borderColor: 'border-green-500',
+            hoverBorderColor: 'hover:border-green-400',
+            hoverShadow: 'hover:shadow-green-200',
+            hoverBg: 'hover:bg-gradient-to-br hover:from-green-50 hover:to-teal-50',
+            textColor: 'text-green-700',
+            textHoverColor: 'group-hover:text-green-600',
+            descColor: 'text-green-600',
+            descHoverColor: 'group-hover:text-green-500'
           },
           { 
             role: 'parent', 
             title: 'Parent', 
             description: 'I am a parent of a Prakriti student', 
-            icon: '👨‍👩‍👧‍👦',
             gradient: 'from-orange-500 to-pink-600',
             bgGradient: 'from-orange-50 to-pink-50',
-            borderColor: 'border-orange-200',
-            hoverShadow: 'hover:shadow-orange-200'
+            borderColor: 'border-orange-500',
+            hoverBorderColor: 'hover:border-orange-400',
+            hoverShadow: 'hover:shadow-orange-200',
+            hoverBg: 'hover:bg-gradient-to-br hover:from-orange-50 hover:to-pink-50',
+            textColor: 'text-orange-700',
+            textHoverColor: 'group-hover:text-orange-600',
+            descColor: 'text-orange-600',
+            descHoverColor: 'group-hover:text-orange-500'
           }
-        ].map(({ role, title, description, icon, bgGradient, hoverShadow }) => (
-          <button
-            key={role}
-            type="button"
-            onClick={() => handleRoleChange(role as UserRole)}
-            className={`group relative p-8 border-2 rounded-2xl text-left transition-all duration-300 transform hover:scale-105 hover:-translate-y-2 ${
-              formData.role === role
-                ? `border-blue-500 bg-gradient-to-br ${bgGradient} shadow-xl shadow-blue-200`
-                : `border-gray-200 bg-white hover:border-gray-300 ${hoverShadow} hover:shadow-xl`
-            }`}
-          >
-            {/* Selection indicator */}
-            {formData.role === role && (
-              <div className="absolute -top-2 -right-2 w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg">
-                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
+        ].map(({ role, title, description }) => {
+          // Use same blue color theme for all selected roles and hover effects
+          const isSelected = formData.role === role;
+          
+          // Use same hover color for all roles - using brand primary color
+          const hoverClasses = 'hover:bg-gradient-to-br hover:from-blue-50 hover:to-purple-50';
+          
+          return (
+            <button
+              key={role}
+              type="button"
+              onClick={() => handleRoleChange(role as UserRole)}
+              className={`group relative p-4 sm:p-6 md:p-8 border-2 rounded-xl sm:rounded-2xl text-left transition-all duration-300 ${
+                isSelected
+                  ? 'bg-gradient-to-br from-blue-50 to-purple-50'
+                  : `border-gray-200 bg-white ${hoverClasses}`
+              }`}
+              style={{
+                transformStyle: 'preserve-3d',
+                ...(isSelected ? {
+                  borderColor: 'var(--brand-primary)',
+                  boxShadow: '0 4px 12px rgba(35, 71, 159, 0.2), 0 2px 4px rgba(35, 71, 159, 0.15), 0 0 0 1px var(--brand-primary), inset 0 1px 0 rgba(255, 255, 255, 0.9)',
+                  transform: 'translateZ(20px) rotateX(2deg) rotateY(-1deg) scale(1.02)',
+                  transition: 'transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease'
+                } : {
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04)',
+                  transform: 'translateZ(0)',
+                  transition: 'transform 0.3s ease, box-shadow 0.3s ease'
+                })
+              }}
+              onMouseEnter={(e) => {
+                if (!isSelected) {
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(35, 71, 159, 0.15), 0 2px 4px rgba(35, 71, 159, 0.1), 0 0 0 1px var(--brand-primary-200)';
+                  e.currentTarget.style.borderColor = 'var(--brand-primary-200)';
+                  e.currentTarget.style.transform = 'translateZ(15px) rotateX(1deg) scale(1.05) translateY(-8px)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isSelected) {
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04)';
+                  e.currentTarget.style.borderColor = '';
+                  e.currentTarget.style.transform = 'translateZ(0)';
+                }
+              }}
+            >
+              {/* Selection indicator - same color for all roles when selected */}
+              {isSelected && (
+                <div className="absolute -top-1 -right-1 sm:-top-2 sm:-right-2 w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shadow-lg" style={{ backgroundColor: 'var(--brand-primary)' }}>
+                  <svg className="w-3 h-3 sm:w-4 sm:h-4 md:w-5 md:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              )}
+              
+              {/* Title - Centered */}
+              <div className="text-center mb-2 sm:mb-3 md:mb-4">
+                <h3 
+                  className={`text-base sm:text-lg md:text-xl lg:text-2xl font-bold transition-colors duration-300 ${
+                    isSelected ? 'text-blue-700' : 'text-gray-900'
+                  }`}
+                  style={!isSelected ? {
+                    color: 'var(--foreground)'
+                  } : {}}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.color = 'var(--brand-primary)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.color = '';
+                    }
+                  }}
+                >
+                  {title}
+                </h3>
               </div>
-            )}
-            
-            {/* Icon and Title - Centered */}
-            <div className="text-center mb-4">
-              <div className={`text-3xl mb-3 transition-transform duration-300 ${
-                formData.role === role ? 'scale-110' : 'group-hover:scale-110'
-              }`} style={{
-                filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.2))',
-                textShadow: '0 2px 4px rgba(0,0,0,0.3)'
-              }}>
-                {icon}
+              
+              {/* Description */}
+              <div className="text-center">
+                <p 
+                  className={`text-xs sm:text-sm md:text-base leading-relaxed transition-colors duration-300 ${
+                    isSelected ? 'text-blue-600' : 'text-gray-600'
+                  }`}
+                  style={!isSelected ? {
+                    color: 'rgb(75, 85, 99)'
+                  } : {}}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.color = 'var(--brand-primary-600)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.color = '';
+                    }
+                  }}
+                >
+                  {description}
+                </p>
               </div>
-              <h3 className={`text-xl font-bold transition-colors duration-300 ${
-                formData.role === role ? 'text-blue-700' : 'text-gray-900 group-hover:text-gray-700'
-              }`}>
-                {title}
-              </h3>
-            </div>
-            
-            {/* Description */}
-            <div className="text-center">
-              <p className={`text-sm leading-relaxed transition-colors duration-300 ${
-                formData.role === role ? 'text-blue-600' : 'text-gray-600 group-hover:text-gray-500'
-              }`}>
-                {description}
-              </p>
-            </div>
-            
-            {/* Hover effect overlay */}
-            <div className={`absolute inset-0 rounded-2xl transition-opacity duration-300 ${
-              formData.role === role 
-                ? 'opacity-0' 
-                : 'opacity-0 group-hover:opacity-5 bg-gradient-to-r from-gray-400 to-gray-600'
-            }`}></div>
-          </button>
-        ))}
-      </div>
-      
-      {/* Additional visual enhancement */}
-      <div className="text-center mt-6">
-        <div className="text-sm text-gray-500">
-          Choose your role to continue
+              
+              {/* Hover effect overlay */}
+              <div 
+                className={`absolute inset-0 rounded-2xl transition-opacity duration-300 ${
+                  isSelected ? 'opacity-0' : 'opacity-0 group-hover:opacity-5'
+                }`}
+                style={!isSelected ? {
+                  backgroundColor: 'var(--brand-primary)'
+                } : {}}
+              ></div>
+            </button>
+          );
+        })}
+        </div>
+        
+        {/* Additional visual enhancement */}
+        <div className="text-center mt-4 sm:mt-5 md:mt-6">
+          <div className="text-xs sm:text-sm md:text-base text-gray-500">
+            Choose your role to continue
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderBasicInfo = () => (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-5 md:space-y-6">
       <div className="text-center">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Basic Information</h2>
-        <p className="text-gray-600">Tell us about yourself</p>
+        <h2 className="text-lg sm:text-xl md:text-2xl lg:text-3xl font-bold text-gray-900 mb-1 sm:mb-2">Basic Information</h2>
+        <p className="text-xs sm:text-sm md:text-base text-gray-600">Tell us about yourself</p>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">First Name *</label>
           <input
             type="text"
             required
@@ -471,7 +649,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Last Name *</label>
           <input
             type="text"
             required
@@ -491,7 +669,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         {/* Gender field - only for Teacher and Parent roles */}
         {formData.role !== 'student' && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Gender *</label>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Gender *</label>
             <select
               required
               value={getStringValue(formData.gender)}
@@ -512,7 +690,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         )}
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
           <input
             type="tel"
             required
@@ -527,7 +705,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Date of Birth *</label>
           <input
             type="date"
             required
@@ -543,7 +721,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
       </div>
       
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Address *</label>
+        <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Address *</label>
         <textarea
           required
           value={getStringValue(formData.address)}
@@ -559,7 +737,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">City *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">City *</label>
           <input
             type="text"
             required
@@ -574,7 +752,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">State *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">State *</label>
           <input
             type="text"
             required
@@ -589,7 +767,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Postal Code *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Postal Code *</label>
           <input
             type="text"
             required
@@ -609,13 +787,13 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
   const renderStudentFields = () => (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Student Information</h2>
-        <p className="text-gray-600">Help us personalize your learning experience</p>
+        <h2 className="text-lg sm:text-xl md:text-2xl lg:text-3xl font-bold text-gray-900 mb-1 sm:mb-2">Student Information</h2>
+        <p className="text-xs sm:text-sm md:text-base text-gray-600">Help us personalize your learning experience</p>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Grade *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Grade *</label>
           <select
             required
             value={getStringValue(formData.grade)}
@@ -639,7 +817,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Student ID</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Student ID</label>
           <input
             type="text"
             value={getStringValue(formData.student_id)}
@@ -653,7 +831,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Subjects (comma-separated)</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Subjects (comma-separated)</label>
           <input
             type="text"
             value={getArrayDisplayValue('subjects')}
@@ -669,7 +847,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Learning Style *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Learning Style *</label>
           <select
             required
             value={getStringValue(formData.learning_style)}
@@ -694,7 +872,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
       </div>
       
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Learning Goals</label>
+        <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Learning Goals</label>
         <textarea
           value={getStringValue(formData.learning_goals)}
           onChange={(e) => handleInputChange('learning_goals', e.target.value)}
@@ -709,7 +887,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
       </div>
       
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Interests (comma-separated)</label>
+        <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Interests (comma-separated)</label>
         <input
           type="text"
           value={getArrayDisplayValue('interests')}
@@ -725,7 +903,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
       </div>
       
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Special Needs or Accommodations</label>
+        <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Special Needs or Accommodations</label>
         <textarea
           value={getStringValue(formData.special_needs)}
           onChange={(e) => handleInputChange('special_needs', e.target.value)}
@@ -741,7 +919,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Emergency Contact Name *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Emergency Contact Name *</label>
           <input
             type="text"
             required
@@ -759,7 +937,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Emergency Contact Phone *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Emergency Contact Phone *</label>
           <input
             type="tel"
             required
@@ -782,13 +960,13 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
   const renderTeacherFields = () => (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Teacher Information</h2>
-        <p className="text-gray-600">Help us understand your teaching background</p>
+        <h2 className="text-lg sm:text-xl md:text-2xl lg:text-3xl font-bold text-gray-900 mb-1 sm:mb-2">Teacher Information</h2>
+        <p className="text-xs sm:text-sm md:text-base text-gray-600">Help us understand your teaching background</p>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Faculty ID *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Faculty ID *</label>
           <input
             type="text"
             required
@@ -806,7 +984,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Department *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Department *</label>
           <input
             type="text"
             required
@@ -824,7 +1002,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Subjects Taught (comma-separated) *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Subjects Taught (comma-separated) *</label>
           <input
             type="text"
             required
@@ -844,7 +1022,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Years of Experience *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Years of Experience *</label>
           <input
             type="number"
             required
@@ -863,7 +1041,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Office Location</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Office Location</label>
           <input
             type="text"
             value={getStringValue(formData.office_location)}
@@ -877,7 +1055,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Office Hours</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Office Hours</label>
           <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
             {/* Start Time */}
             <div className="flex-1 min-w-0">
@@ -1036,7 +1214,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Emergency Contact Name *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Emergency Contact Name *</label>
           <input
             type="text"
             required
@@ -1054,7 +1232,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Emergency Contact Phone *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Emergency Contact Phone *</label>
           <input
             type="tel"
             required
@@ -1077,13 +1255,13 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
   const renderParentFields = () => (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Parent Information</h2>
-        <p className="text-gray-600">Help us keep you informed about your child&apos;s progress</p>
+        <h2 className="text-lg sm:text-xl md:text-2xl lg:text-3xl font-bold text-gray-900 mb-1 sm:mb-2">Parent Information</h2>
+        <p className="text-xs sm:text-sm md:text-base text-gray-600">Help us keep you informed about your child&apos;s progress</p>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Relationship to Student *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Relationship to Student *</label>
           <select
             required
             value={getStringValue(formData.relationship_to_student)}
@@ -1104,7 +1282,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Occupation</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Occupation</label>
           <input
             type="text"
             value={getStringValue(formData.occupation)}
@@ -1118,7 +1296,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Workplace</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Workplace</label>
           <input
             type="text"
             value={getStringValue(formData.workplace)}
@@ -1132,7 +1310,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Contact Method *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Preferred Contact Method *</label>
           <select
             required
             value={getStringValue(formData.preferred_contact_method)}
@@ -1168,7 +1346,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Emergency Contact Name *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Emergency Contact Name *</label>
           <input
             type="text"
             required
@@ -1186,7 +1364,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Emergency Contact Phone *</label>
+          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Emergency Contact Phone *</label>
           <input
             type="tel"
             required
@@ -1254,7 +1432,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen chat-grid-bg flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl w-full space-y-8">
         {/* Back button */}
         {onBack && (
@@ -1273,14 +1451,14 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         
         <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
           {/* Progress Bar */}
-          <div className="mb-8">
+          <div className="mb-4 sm:mb-6 md:mb-8">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-700">Step {currentStep} of 3</span>
-              <span className="text-sm text-gray-500">{Math.round((currentStep / 3) * 100)}% Complete</span>
+              <span className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Step {currentStep} of 3</span>
+              <span className="text-xs sm:text-sm md:text-base text-gray-500">{Math.round((currentStep / 3) * 100)}% Complete</span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
+            <div className="w-full bg-gray-200 rounded-full h-1.5 sm:h-2">
               <div 
-                className="h-2 rounded-full transition-all duration-300"
+                className="h-1.5 sm:h-2 rounded-full transition-all duration-300"
                 style={{ 
                   width: `${(currentStep / 3) * 100}%`,
                   backgroundColor: 'var(--brand-primary)'
@@ -1293,8 +1471,8 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
             {renderStepContent()}
             
             {error && (
-              <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-md">
-                <p className="text-sm text-red-600">{error}</p>
+              <div className="mt-4 p-3 sm:p-4 bg-red-50 border border-red-200 rounded-md">
+                <p className="text-xs sm:text-sm md:text-base text-red-600">{error}</p>
               </div>
             )}
 
@@ -1303,7 +1481,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
                 type="button"
                 onClick={() => setCurrentStep(Math.max(1, currentStep - 1))}
                 disabled={currentStep === 1}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm md:text-base font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Previous
               </button>
@@ -1313,7 +1491,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
                   type="button"
                   onClick={() => setCurrentStep(currentStep + 1)}
                   disabled={!canProceed()}
-                  className="px-4 py-2 text-sm font-medium text-white border border-transparent rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm md:text-base font-medium text-white border border-transparent rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{ backgroundColor: 'var(--brand-primary)' }}
                   onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary-800)'}
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary)'}
@@ -1325,7 +1503,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
                   <button
                     type="submit"
                     disabled={!canProceed() || loading}
-                    className="px-4 py-2 text-sm font-medium text-white border border-transparent rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm md:text-base font-medium text-white border border-transparent rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ backgroundColor: 'var(--brand-primary)' }}
                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary-800)'}
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--brand-primary)'}

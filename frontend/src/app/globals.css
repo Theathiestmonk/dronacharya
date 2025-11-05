@@ -97,6 +97,96 @@ body {
   background-size: 16px 16px;
 }
 
+/* Animated background for form - subtle gradient animation with sparkle effect */
+.animated-bg {
+  background: linear-gradient(-45deg, #ffffff, #f8fafc, #ffffff, #f0f9ff);
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+  position: relative;
+  overflow: hidden;
+  transform-style: preserve-3d;
+  perspective: 1000px;
+  box-shadow: 
+    0 20px 60px rgba(35, 71, 159, 0.08),
+    0 10px 30px rgba(35, 71, 159, 0.05),
+    0 0 0 1px rgba(35, 71, 159, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(35, 71, 159, 0.05);
+  transform: translateZ(20px) rotateX(2deg) rotateY(-1deg);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.animated-bg > * {
+  position: relative;
+  z-index: 2;
+}
+
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Shine effect for form */
+.animated-bg::before {
+  content: '';
+  position: absolute;
+  width: 50%;
+  height: 100%;
+  top: 0;
+  left: -100%;
+  pointer-events: none;
+  z-index: 1;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.3) 20%,
+    rgba(255, 255, 255, 0.7) 50%,
+    rgba(255, 255, 255, 0.3) 80%,
+    transparent 100%
+  );
+  transform: skewX(-20deg);
+  animation: shine 4s ease-in-out infinite;
+}
+
+@keyframes shine {
+  0% {
+    left: -100%;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  50% {
+    left: 150%;
+    opacity: 1;
+  }
+  51% {
+    opacity: 0;
+  }
+  100% {
+    left: 150%;
+    opacity: 0;
+  }
+}
+
+/* 3D hover effect for form */
+.animated-bg:hover {
+  transform: translateZ(30px) rotateX(1deg) rotateY(0deg);
+  box-shadow: 
+    0 30px 80px rgba(35, 71, 159, 0.12),
+    0 15px 40px rgba(35, 71, 159, 0.08),
+    0 0 0 1px rgba(35, 71, 159, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(35, 71, 159, 0.08);
+}
+
 /* Tailwind base styles */
 @tailwind base;
 @tailwind components;
