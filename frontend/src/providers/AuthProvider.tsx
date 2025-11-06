@@ -97,9 +97,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // User needs to complete onboarding to select their role
         console.log('User profile not found - user needs to complete onboarding');
         console.log('Not creating profile automatically - user will select role in onboarding form');
-        setProfile(null);
-        setIsFirstLogin(true);
-        setProfileLoadError(false);
+          setProfile(null);
+          setIsFirstLogin(true);
+          setProfileLoadError(false);
       } else {
         console.error('Error fetching user profile:', response.status, response.statusText);
         setProfile(null);

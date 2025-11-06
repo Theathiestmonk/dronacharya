@@ -20,6 +20,7 @@ const AppContent: React.FC<{
   setShowAuthForm: (show: boolean) => void;
   chatbotRef: React.RefObject<{ clearChat: () => void } | null>;
   chatKey: number;
+  setChatKey: (key: number | ((prev: number) => number)) => void;
 }> = ({ 
   user, 
   loading, 
@@ -27,7 +28,8 @@ const AppContent: React.FC<{
   showAuthForm, 
   setShowAuthForm, 
   chatbotRef, 
-  chatKey 
+  chatKey,
+  setChatKey
 }) => {
   const { isLoading: chatHistoryLoading } = useChatHistory();
   const { profile, signOut } = useAuth();
@@ -378,6 +380,8 @@ const AppContent: React.FC<{
     try {
       await signOut();
       setShowLogoutConfirm(false);
+      // Force remount of Chatbot component to clear all state including conversation history
+      setChatKey(prev => prev + 1);
       router.push('/');
     } catch (error) {
       console.error('Error signing out:', error);
@@ -584,7 +588,7 @@ const AppContent: React.FC<{
 const HomePage: React.FC = () => {
   const { user, loading, needsOnboarding } = useAuth();
   const supabase = useSupabase();
-  const [chatKey] = useState(0); // Key to force re-render of Chatbot
+  const [chatKey, setChatKey] = useState(0); // Key to force re-render of Chatbot
   const chatbotRef = useRef<{ clearChat: () => void }>(null); // Ref for chatbot component
   const [showAuthForm, setShowAuthForm] = useState(false);
 
@@ -648,6 +652,7 @@ const HomePage: React.FC = () => {
         setShowAuthForm={setShowAuthForm}
         chatbotRef={chatbotRef}
         chatKey={chatKey}
+        setChatKey={setChatKey}
       />
     </ChatHistoryProvider>
   );

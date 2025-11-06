@@ -444,10 +444,10 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
   const renderRoleSelection = () => {
     return (
       <div className="space-y-4 sm:space-y-6 md:space-y-8">
-        <div className="text-center">
+      <div className="text-center">
           <h2 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900 mb-2 sm:mb-3">Welcome to Prakriti School!</h2>
           <p className="text-sm sm:text-base md:text-lg text-gray-600">Please select your role to get started</p>
-        </div>
+      </div>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6" style={{ perspective: '1000px', transformStyle: 'preserve-3d' }}>
         {[
@@ -504,10 +504,10 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           const hoverClasses = 'hover:bg-gradient-to-br hover:from-blue-50 hover:to-purple-50';
           
           return (
-            <button
-              key={role}
-              type="button"
-              onClick={() => handleRoleChange(role as UserRole)}
+          <button
+            key={role}
+            type="button"
+            onClick={() => handleRoleChange(role as UserRole)}
               className={`group relative p-4 sm:p-6 md:p-8 border-2 rounded-xl sm:rounded-2xl text-left transition-all duration-300 ${
                 isSelected
                   ? 'bg-gradient-to-br from-blue-50 to-purple-50'
@@ -540,16 +540,16 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
                   e.currentTarget.style.transform = 'translateZ(0)';
                 }
               }}
-            >
+          >
               {/* Selection indicator - same color for all roles when selected */}
               {isSelected && (
                 <div className="absolute -top-1 -right-1 sm:-top-2 sm:-right-2 w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shadow-lg" style={{ backgroundColor: 'var(--brand-primary)' }}>
                   <svg className="w-3 h-3 sm:w-4 sm:h-4 md:w-5 md:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-              )}
-              
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            )}
+            
               {/* Title - Centered */}
               <div className="text-center mb-2 sm:mb-3 md:mb-4">
                 <h3 
@@ -570,12 +570,12 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
                     }
                   }}
                 >
-                  {title}
-                </h3>
-              </div>
-              
-              {/* Description */}
-              <div className="text-center">
+                {title}
+              </h3>
+            </div>
+            
+            {/* Description */}
+            <div className="text-center">
                 <p 
                   className={`text-xs sm:text-sm md:text-base leading-relaxed transition-colors duration-300 ${
                     isSelected ? 'text-blue-600' : 'text-gray-600'
@@ -594,11 +594,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
                     }
                   }}
                 >
-                  {description}
-                </p>
-              </div>
-              
-              {/* Hover effect overlay */}
+                {description}
+              </p>
+            </div>
+            
+            {/* Hover effect overlay */}
               <div 
                 className={`absolute inset-0 rounded-2xl transition-opacity duration-300 ${
                   isSelected ? 'opacity-0' : 'opacity-0 group-hover:opacity-5'
@@ -607,19 +607,19 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
                   backgroundColor: 'var(--brand-primary)'
                 } : {}}
               ></div>
-            </button>
+          </button>
           );
         })}
-        </div>
-        
-        {/* Additional visual enhancement */}
+      </div>
+      
+      {/* Additional visual enhancement */}
         <div className="text-center mt-4 sm:mt-5 md:mt-6">
           <div className="text-xs sm:text-sm md:text-base text-gray-500">
-            Choose your role to continue
-          </div>
+          Choose your role to continue
         </div>
       </div>
-    );
+    </div>
+  );
   };
 
   const renderBasicInfo = () => (

@@ -43,7 +43,9 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     clearActiveSession, 
     activeSessionId,
     refreshChatComponents,
-    isLoading: chatHistoryLoading
+    isLoading: chatHistoryLoading,
+    createNewSession,
+    activeSessionMessageCount // Track message count to detect session updates
   } = useChatHistory();
   
   const [messages, setMessages] = useState<Message[]>([]);
@@ -271,13 +273,36 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     
     console.log('🎯 Suggestion clicked:', suggestion, '→ Sending prompt:', prompt);
     
-    // Set the input and automatically send the message
-    setInput(prompt);
+    // CRITICAL: Don't set input state - pass prompt directly to sendMessage
+    // Setting input and then clearing it causes the message field to be empty in the request
+    // Pass prompt directly to sendMessage to ensure it's used
     
-    // Use setTimeout to ensure the input is set before sending
-    setTimeout(() => {
-      sendMessage();
-    }, 100);
+    // Focus the input field to ensure it's visible and scroll into view
+    if (inputRef.current) {
+      // Temporarily show the prompt in the input for visual feedback
+      inputRef.current.value = prompt;
+      inputRef.current.focus();
+      // Scroll input into view if needed
+      inputRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    
+    // Use requestAnimationFrame to ensure DOM updates are complete
+    requestAnimationFrame(() => {
+      // Use another requestAnimationFrame to ensure state is updated
+      requestAnimationFrame(() => {
+        // Use setTimeout to ensure the input is visible before sending
+        // Give user a moment to see the query in the input field
+        // Pass prompt directly to sendMessage to avoid closure issues
+        setTimeout(() => {
+          sendMessage(prompt);
+          // Clear the input field after sending
+          if (inputRef.current) {
+            inputRef.current.value = '';
+          }
+          setInput('');
+        }, 500);
+      });
+    });
   };
 
   // Handle external query from sidebar - using ref to avoid dependency issues
@@ -285,6 +310,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   
   useEffect(() => {
     if (externalQuery && externalQuery !== previousQueryRef.current && !loading && !requestInProgress && !isGenerating) {
+      // Don't clear conversation history for guest users - they should maintain their session
       previousQueryRef.current = externalQuery;
       handleSuggestionClick(externalQuery);
       if (onQueryProcessed) {
@@ -293,60 +319,135 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         }, 200);
       }
     }
-  }, [externalQuery, loading, requestInProgress, isGenerating]);
+  }, [externalQuery, loading, requestInProgress, isGenerating, user, conversationHistory.length]);
 
   // Send message to backend /chatbot endpoint
-  const sendMessage = async () => {
+  const sendMessage = async (messageText?: string) => {
+    // Use provided messageText or fall back to input state
+    const messageToSend = messageText || input;
+    
     console.log('=== SEND MESSAGE FUNCTION START ===');
-    console.log('Input:', input);
+    console.log('Input:', messageToSend);
     console.log('Loading:', loading);
     console.log('RequestInProgress:', requestInProgress);
     
-    if (!input.trim() || loading || requestInProgress) {
+    if (!messageToSend.trim() || loading || requestInProgress) {
       console.log('Early return - input empty or already processing');
       return; // Prevent sending if already loading or request in progress
     }
     
     // Check if there's an active session
-    const activeSession = getActiveSession();
+    let activeSession = getActiveSession();
     
-    // If no active session, just proceed anyway - don't block the user
+    // CRITICAL: If no active session (especially for guest users), create one immediately
     if (!activeSession) {
-      console.log('No active session - proceeding anyway to avoid blocking user');
-      // Don't show alert, just continue with message sending
+      console.log('⚠️ No active session found - creating one for guest user');
+      try {
+        // Create a new session for guest users
+        await createNewSession();
+        // Wait a bit longer for session to be fully created and saved
+        await new Promise(resolve => setTimeout(resolve, 200));
+        // Get the newly created session - retry a few times if needed
+        let retries = 0;
+        while (!activeSession && retries < 5) {
+          activeSession = getActiveSession();
+          if (!activeSession) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            retries++;
+          }
+        }
+        if (activeSession) {
+          console.log('✅ Session created successfully:', activeSession.id);
+        } else {
+          console.error('⚠️ Session creation completed but still no active session after retries');
+          // Try one more time to get session
+          activeSession = getActiveSession();
+        }
+      } catch (error) {
+        console.error('Error creating session:', error);
+        // Try to get session one more time
+        activeSession = getActiveSession();
+      }
     }
     
-    console.log('Proceeding with message sending...');
-    const userMsg: Message = { sender: 'user', text: input };
+    // If still no session, log error but continue (message will be shown but not saved)
+    if (!activeSession) {
+      console.error('❌ No active session available - message will not be saved to history');
+    }
+    
+    console.log('Proceeding with message sending...', {
+      hasActiveSession: !!activeSession,
+      sessionId: activeSession?.id
+    });
+    const userMsg: Message = { sender: 'user', text: messageToSend };
     setMessages((msgs) => [...msgs, userMsg]);
     
     
     // Add user message to chat history and wait for it to complete
     console.log('=== USER MESSAGE START ===');
     console.log('Adding user message to chat history...');
-    console.log('User message text:', input);
+    console.log('User message text:', messageToSend);
+    console.log('Active session:', activeSession ? { id: activeSession.id, messagesCount: activeSession.messages.length } : 'null');
     
     try {
       // Add message to chat history if we have an active session
       if (activeSession) {
         await addMessage({
           sender: 'user',
-          text: input,
+          text: messageToSend,
         });
-        console.log('User message added to chat history successfully');
+        console.log('✅ User message added to chat history successfully');
+        
+        // Wait a bit for session to be updated in localStorage
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        // Get fresh session after adding message to ensure we have the latest
+        activeSession = getActiveSession();
       } else {
-        console.log('No active session available for adding message');
+        console.error('❌ No active session available for adding message - message will not be persisted');
       }
     } catch (error) {
-      console.error('Error adding user message to chat history:', error);
+      console.error('❌ Error adding user message to chat history:', error);
     }
     
     console.log('=== USER MESSAGE END ===');
     
-    // Add user message to conversation history
-    const newHistory = [...conversationHistory, { role: 'user', content: input }];
+    // CRITICAL: Build conversation history from active session messages, not from state
+    // This ensures we always have the complete, up-to-date history
+    let conversationHistoryFromSession: Array<{role: string, content: string}> = [];
+    if (activeSession && activeSession.messages.length > 0) {
+      // Build history from session messages (most reliable source)
+      // The session should now include the user message we just added
+      conversationHistoryFromSession = activeSession.messages.map(msg => ({
+        role: msg.sender === 'bot' ? 'assistant' : msg.sender,
+        content: msg.text,
+      }));
+      console.log('📋 Building conversation history from session:', {
+        sessionId: activeSession.id,
+        messagesCount: activeSession.messages.length,
+        historyLength: conversationHistoryFromSession.length,
+        lastMessage: activeSession.messages[activeSession.messages.length - 1]?.text?.substring(0, 50) + '...'
+      });
+    } else {
+      // Fallback to state if no session messages yet, and manually add user message
+      conversationHistoryFromSession = conversationHistory;
+      console.log('⚠️ No session messages, using state history:', conversationHistoryFromSession.length);
+    }
+    
+    // If we have session messages, use them directly (they already include the user message)
+    // Otherwise, add user message to the history
+    const newHistory = activeSession && activeSession.messages.length > 0 
+      ? conversationHistoryFromSession  // Session already has the user message
+      : [...conversationHistoryFromSession, { role: 'user', content: messageToSend }];  // Add it manually
     setConversationHistory(newHistory);
     
+    console.log('📤 Sending request with conversation history:', {
+      historyLength: newHistory.length,
+      lastMessage: newHistory[newHistory.length - 1]?.content?.substring(0, 50) + '...',
+      messageToSend: messageToSend.substring(0, 50) + '...'
+    });
+    
+    // Clear input AFTER building request data to ensure message is included
     setInput('');
     // Reset textarea height after clearing input
     setTimeout(() => {
@@ -375,10 +476,12 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     try {
       // Check browser cache for web crawler data before making API call
       const { getCachedWebData, setCachedWebData, extractWebDataFromResponse } = await import('@/utils/webCrawlerCache');
-      const cachedWebData = getCachedWebData(input);
+      const cachedWebData = getCachedWebData(messageToSend); // Use messageToSend, not input
       
+      // CRITICAL: Use messageToSend (the parameter) instead of input state
+      // This ensures the message is included even if input was cleared
       const requestData = { 
-        message: input,
+        message: messageToSend, // Use the parameter, not input state
         conversation_history: newHistory,
         user_id: user?.id || null,
         user_profile: profile || null,  // Pass the complete user profile including gender
@@ -494,8 +597,22 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             text: fullText,
           });
           
-          console.log('Bot text message added to chat history');
+          console.log('✅ Bot text message added to chat history and saved to localStorage');
           console.log('=== BOT MESSAGE END ===');
+          
+          // CRITICAL: Force a small delay to ensure localStorage is updated, then trigger sync
+          // This ensures the useEffect picks up the new message count
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          // Get fresh session to verify message was saved
+          const freshSession = getActiveSession();
+          if (freshSession) {
+            console.log('✅ Verified bot message in session:', {
+              sessionId: freshSession.id,
+              messagesCount: freshSession.messages.length,
+              lastMessage: freshSession.messages[freshSession.messages.length - 1]?.text?.substring(0, 50) + '...'
+            });
+          }
           
           // Mark that we've had the first response
           setHasFirstResponse(true);
@@ -605,46 +722,40 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       return;
     }
     
-    // Skip if activeSessionId is null and we've already cleared (prevent unnecessary runs)
-    if (!activeSessionId && lastLoadedSessionIdRef.current === null) {
-      return;
-    }
-    
-    // If user is logged out, clear messages immediately
-    if (!user && messages.length > 0) {
-      console.log('🚪 User is logged out - clearing messages');
-      setMessages([]);
-      setConversationHistory([]);
-      setHasFirstResponse(false);
-      lastLoadedSessionIdRef.current = null;
-      return;
-    }
-    
-    console.log('🔄 useEffect triggered - loading messages from active session');
+    // CRITICAL: Check for active session using getActiveSession() first (uses refs, always up-to-date)
+    // Don't rely solely on activeSessionId state which might be null due to timing issues
     const activeSession = getActiveSession();
+    
+    console.log('🔄 useEffect triggered - loading messages from active session', {
+      activeSessionId,
+      activeSessionFromGet: activeSession?.id,
+      isGuest: !user,
+      chatHistoryLoading,
+      messagesCount: messages.length
+    });
+    
     console.log('📋 Active session:', activeSession ? {
       id: activeSession.id,
       messagesCount: activeSession.messages.length,
       messages: activeSession.messages.map(m => ({ sender: m.sender, text: m.text.substring(0, 50) + '...' }))
     } : 'null');
     
-    // Skip if we've already loaded this session to prevent unnecessary re-renders
-    if (activeSession && activeSession.id === lastLoadedSessionIdRef.current) {
-      console.log('⏭️ Skipping reload - session already loaded:', activeSession.id);
-      return;
-    }
-    
-    // If no active session and we haven't cleared yet, clear once
-    if (!activeSession && lastLoadedSessionIdRef.current !== null) {
-      console.log('❌ No active session - clearing messages');
-      lastLoadedSessionIdRef.current = null;
-      setMessages([]);
-      setConversationHistory([]);
-      setHasFirstResponse(false);
+    // CRITICAL: If we have an active session (from refs), load messages even if state is null
+    // This fixes the issue where state is null but ref has the correct value
+    if (!activeSession) {
+      // Only clear if we've previously loaded a session (not on first load)
+      if (lastLoadedSessionIdRef.current !== null) {
+        console.log('❌ No active session - clearing messages');
+        lastLoadedSessionIdRef.current = null;
+        setMessages([]);
+        setConversationHistory([]);
+        setHasFirstResponse(false);
+      }
       return;
     }
     
     // Use requestAnimationFrame to batch state updates and prevent blinking
+    // activeSession is guaranteed to exist here (we checked above)
     requestAnimationFrame(() => {
       if (activeSession) {
         const sessionMessages: Message[] = activeSession.messages.map(msg => ({
@@ -654,27 +765,84 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           ...(msg.url && { url: msg.url }),
           ...(msg.videos && { videos: msg.videos }),
         }));
-        console.log('📝 Setting messages from session:', sessionMessages.length, 'messages');
+        console.log('📝 Checking session messages:', sessionMessages.length, 'messages', {
+          sessionId: activeSession.id,
+          isGuest: !user,
+          currentMessagesCount: messages.length,
+          lastLoadedSessionId: lastLoadedSessionIdRef.current,
+          activeSessionMessageCount
+        });
         
-        // Update ref to track loaded session BEFORE state updates
-        lastLoadedSessionIdRef.current = activeSession.id;
+        // CRITICAL: Only update messages if:
+        // 1. This is the first load (lastLoadedSessionIdRef is null)
+        // 2. Session ID changed (switched to different session)
+        // 3. Session has more messages than current state (session was updated - new messages added)
+        // 4. Session message count changed (activeSessionMessageCount dependency triggered this)
+        // 5. Session has messages but UI is empty (page refresh scenario)
+        // This prevents overwriting messages that are being added in real-time via setMessages
+        const isFirstLoad = lastLoadedSessionIdRef.current === null;
+        const isSessionChanged = lastLoadedSessionIdRef.current !== activeSession.id;
+        const hasMoreMessages = sessionMessages.length > messages.length;
+        const sessionCountChanged = sessionMessages.length !== messages.length; // Session count is different from UI count
+        const isEmptyButSessionHasMessages = messages.length === 0 && sessionMessages.length > 0; // Page refresh - load from session
+        const shouldSyncFromSession = isFirstLoad || isSessionChanged || hasMoreMessages || sessionCountChanged || isEmptyButSessionHasMessages;
         
-        // Batch all state updates together to prevent intermediate renders
-        setMessages(sessionMessages);
-        
-        // Check if there are any bot messages to set hasFirstResponse
-        const hasBotMessages = sessionMessages.some(msg => msg.sender === 'bot');
-        setHasFirstResponse(hasBotMessages);
-        
-        // Update conversation history for API calls
-        const history = activeSession.messages.map(msg => ({
-          role: msg.sender === 'bot' ? 'assistant' : msg.sender,
-          content: msg.text,
-        }));
-        setConversationHistory(history);
+        if (shouldSyncFromSession) {
+          console.log('✅ Syncing messages from session to state', {
+            reason: isFirstLoad ? 'first load' : isSessionChanged ? 'session changed' : hasMoreMessages ? 'session has more messages' : isEmptyButSessionHasMessages ? 'page refresh - loading from session' : 'session count changed',
+            sessionMessagesCount: sessionMessages.length,
+            currentMessagesCount: messages.length,
+            activeSessionMessageCount
+          });
+          
+          // CRITICAL: Always use session messages as source of truth (same as logged-in users)
+          // Session messages are the authoritative source - they're saved to localStorage immediately
+          // NEVER replace messages - always use session messages to ensure persistence
+          // This prevents messages from being replaced when state is out of sync
+          const messagesToSet = sessionMessages;
+          
+          console.log('📋 Setting messages from session (source of truth):', {
+            sessionMessagesCount: sessionMessages.length,
+            currentMessagesCount: messages.length,
+            willSync: true
+          });
+          
+          // Update ref to track loaded session BEFORE state updates
+          lastLoadedSessionIdRef.current = activeSession.id;
+          
+          // Batch all state updates together to prevent intermediate renders
+          setMessages(messagesToSet);
+          
+          // Check if there are any bot messages to set hasFirstResponse
+          const hasBotMessages = messagesToSet.some(msg => msg.sender === 'bot');
+          setHasFirstResponse(hasBotMessages);
+          
+          // Update conversation history for API calls - use merged messages
+          const history = messagesToSet.map(msg => ({
+            role: msg.sender === 'bot' ? 'assistant' : msg.sender,
+            content: msg.text,
+          }));
+          setConversationHistory(history);
+        } else {
+          console.log('⏭️ Skipping sync - messages are up to date or being updated in real-time', {
+            sessionMessagesCount: sessionMessages.length,
+            currentMessagesCount: messages.length,
+            sessionId: activeSession.id,
+            lastLoadedSessionId: lastLoadedSessionIdRef.current,
+            isFirstLoad,
+            isSessionChanged,
+            hasMoreMessages,
+            sessionCountChanged,
+            isEmptyButSessionHasMessages
+          });
+          // Still update the ref to track that we've seen this session (if it changed)
+          if (isSessionChanged) {
+            lastLoadedSessionIdRef.current = activeSession.id;
+          }
+        }
       }
     });
-  }, [activeSessionId, getActiveSession, chatHistoryLoading, user]); // Include user to clear messages on logout
+  }, [activeSessionId, getActiveSession, chatHistoryLoading, user, activeSessionMessageCount]); // Include activeSessionMessageCount to detect when session messages are added
 
   // Listen for custom refresh event
   useEffect(() => {

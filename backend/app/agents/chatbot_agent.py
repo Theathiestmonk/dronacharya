@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from app.core.openai_client import get_openai_client
 from app.agents.youtube_intent_classifier import process_video_query
 from app.agents.web_crawler_agent import get_web_enhanced_response
@@ -51,7 +52,7 @@ def retrieve_from_json(query: str, threshold: int = 50) -> str | None:
         print(f"[Chatbot] Error reading KB: {e}")
     return None
 
-def get_student_coursework_data(student_user_id: str, student_email: str = None, limit_coursework: int = None) -> dict:
+def get_student_coursework_data(student_user_id: str, student_email: str = None, limit_coursework: int = None, user_grade: str = None) -> dict:
     """
     Get coursework data directly from google_classroom_coursework table for a student.
     This is used when students ask about assignments - we check coursework table directly
@@ -60,12 +61,16 @@ def get_student_coursework_data(student_user_id: str, student_email: str = None,
     Strategy: Query coursework directly and join with courses to get course names.
     We get all coursework that exists (synced by students or admin) and filter by
     checking if submissions exist for this student.
+    
+    Also filters by student's grade if provided - only shows assignments from courses matching their grade.
     """
     try:
         from supabase_config import get_supabase_client
         supabase = get_supabase_client()
         
         print(f"[Chatbot] Getting student coursework for user_id: {student_user_id}, email: {student_email}")
+        if user_grade:
+            print(f"[Chatbot] Grade filter: Will filter coursework for Grade {user_grade} student")
         
         # Get student's Google email if not provided
         if not student_email:
@@ -136,7 +141,31 @@ def get_student_coursework_data(student_user_id: str, student_email: str = None,
             ).in_('id', course_ids).execute()
             
             if courses_result.data:
+                # Filter courses by grade if provided
+                user_grade_num = None
+                if user_grade:
+                    grade_match = re.search(r'(\d+)', str(user_grade))
+                    if grade_match:
+                        user_grade_num = grade_match.group(1)
+                        print(f"[Chatbot] Extracted grade number: {user_grade_num}")
+                
                 for course in courses_result.data:
+                    course_name = course.get('name', '')
+                    course_section = course.get('section', '')
+                    
+                    # Filter by grade: course name or section should contain the grade number
+                    if user_grade_num:
+                        # Check if course name or section contains the grade number (e.g., "Grade 6", "G6", "6")
+                        grade_pattern = rf'\b(?:Grade|G|grade)\s*{user_grade_num}\b|\b{user_grade_num}\b'
+                        name_matches = bool(re.search(grade_pattern, course_name, re.IGNORECASE))
+                        section_matches = bool(re.search(grade_pattern, course_section, re.IGNORECASE))
+                        
+                        if not name_matches and not section_matches:
+                            print(f"[Chatbot] ⚠️ Skipping course '{course_name}' (section: {course_section}) - doesn't match Grade {user_grade_num}")
+                            continue
+                        else:
+                            print(f"[Chatbot] ✅ Course '{course_name}' matches Grade {user_grade_num}")
+                    
                     courses_map[course.get('id')] = course
         
         # Build submissions map for submission status
@@ -151,14 +180,18 @@ def get_student_coursework_data(student_user_id: str, student_email: str = None,
                         'draft_grade': sub.get('draft_grade')
                     }
         
-        # Format coursework with course info
+        # Format coursework with course info (only include courses that passed grade filter)
         coursework_list = []
         for cw in coursework_result.data:
             course_id = cw.get('course_id')
             course = courses_map.get(course_id) if course_id else None
             
-            course_name = course.get('name', 'Unknown Course') if course else 'Unknown Course'
-            course_link = course.get('alternate_link') if course else None
+            # Skip if course was filtered out by grade
+            if not course:
+                continue
+            
+            course_name = course.get('name', 'Unknown Course')
+            course_link = course.get('alternate_link')
             
             # Get submission info if available
             sub_info = submissions_map.get(cw.get('id'))
@@ -508,20 +541,176 @@ def generate_chatbot_response(request):
     """
     Use OpenAI GPT-4 to generate a chatbot response with RAG logic and fuzzy matching.
     """
+    # Capture re module at function start to avoid closure issues in generator expressions
+    re_module = re
     openai_client = get_openai_client()
     user_query = request.message
     conversation_history = getattr(request, 'conversation_history', [])
     user_profile = getattr(request, 'user_profile', None)
 
+    # Step 0.1: Handle empty queries - treat them as greetings so they get proper handling
+    query_stripped = user_query.strip() if user_query else ""
+    
+    # Check conversation history for homework context if query is empty
+    homework_context_in_history = False
+    if not query_stripped and conversation_history:
+        # Check last few messages for homework-related keywords
+        recent_messages = conversation_history[-3:] if len(conversation_history) > 3 else conversation_history
+        for msg in recent_messages:
+            msg_content = msg.get('content', '').lower() if isinstance(msg, dict) else str(msg).lower()
+            if any(kw in msg_content for kw in ['homework', 'help', 'assignment', 'solve', 'question', 'problem']):
+                homework_context_in_history = True
+                break
+    
+    # If query is completely empty, handle appropriately
+    if not query_stripped:
+        # If there's homework context in history and user is guest, prompt to connect
+        if homework_context_in_history and not user_profile:
+            return """Hello! I noticed you're asking about homework help. To provide you with the most relevant assistance, I need access to your assignments and coursework.
+
+**To get personalized homework help:**
+
+**Step 1: Sign In**
+- Click on the profile icon in the top right corner
+- Select "Sign In" or "Log In"
+- Use your Google account to authenticate
+
+**Step 2: Connect Google Classroom**
+- After signing in, click on your profile icon again
+- Go to "Profile Settings" or "Edit Profile"
+- Click on "Connect Google Classroom" button
+- Authorize the connection with your Google account
+
+**Step 3: Sync Your Data**
+- Once connected, click "Sync Classroom Data" to load your courses, assignments, and announcements
+
+After connecting, I'll be able to help you with your specific assignments and provide subject-specific guidance!"""
+        
+        # If there's homework context and logged-in user, ask for subject/topic
+        elif homework_context_in_history and user_profile:
+            first_name = user_profile.get('first_name', '') or ''
+            capitalized_first_name = first_name.capitalize() if first_name else ''
+            return f"""Hi {capitalized_first_name}! I'd be happy to help you with your homework!
+
+To provide you with the most accurate and helpful answer, could you please tell me:
+
+1. **Which subject** are you working on? (e.g., Mathematics, Science, English, History, etc.)
+2. **What specific topic or problem** do you need help with?
+
+For example:
+- "Help me with math - solving quadratic equations"
+- "I need help with science - photosynthesis"
+- "Can you explain the water cycle in geography?"
+
+Once you provide the subject and topic, I'll be able to give you detailed, step-by-step explanations!"""
+        
+        # Otherwise, treat as greeting and let it proceed to greeting handler
+        pass  # Continue to greeting handler
+    elif len(query_stripped) < 3:
+        # Very short query (1-2 chars) - check if it's a greeting
+        greeting_patterns_quick = [
+            r'\bhi\b', r'\bhello\b', r'\bhey\b', 
+            r'\bgood morning\b', r'\bgood afternoon\b', r'\bgood evening\b', 
+            r'\bgreetings\b'
+        ]
+        is_likely_greeting = any(re_module.search(pattern, query_stripped.lower()) for pattern in greeting_patterns_quick)
+        
+        # If it's not a greeting, treat very short queries as needing more input
+        if not is_likely_greeting:
+            # Very short non-greeting - let it proceed to LLM for natural handling
+            pass  # Continue to normal processing
+    
+    # Step 0.2: Check if user is asking about classroom/homework/assignments FIRST (before generic check)
+    # This ensures queries like "help with homework" are caught here and show connection steps
+    query_lower = user_query.lower()
+    
+    # Expanded keywords to catch queries like "help with homework", "I need help with my homework", etc.
+    is_coursework_query_early = any(kw in query_lower for kw in [
+        'assignment', 'homework', 'coursework', 'task', 'due', 'submit',
+        'my assignments', 'my coursework', 'my classes', 'my courses', 'my homework',
+        'help with homework', 'help with assignment', 'help with coursework',
+        'need help with homework', 'need help with assignment',
+        'homework help', 'assignment help', 'coursework help'
+    ])
+    is_classroom_related_query_early = any(kw in query_lower for kw in [
+        'assignment', 'homework', 'coursework', 'task', 'due', 'submit', 
+        'announcement', 'announce', 'notice', 'update',
+        'student', 'classmate', 'roster',
+        'teacher', 'instructor', 'faculty',
+        'course', 'class', 'subject',
+        'event', 'events', 'calendar', 'schedule',
+        'my assignments', 'my coursework', 'my classes', 'my courses', 'my homework',
+        'help with homework', 'help with assignment', 'help with coursework',
+        'need help with homework', 'need help with assignment',
+        'homework help', 'assignment help', 'coursework help'
+    ])
+    is_home_related_query_early = any(kw in query_lower for kw in [
+        'home', 'homework', 'my assignments', 'my coursework', 'my classes', 'my courses',
+        'help with homework', 'help with assignment'
+    ])
+    
+    # For guest users: Tell them to login first
+    if not user_profile and (is_classroom_related_query_early or is_home_related_query_early):
+        print(f"[Chatbot] 🚫 Guest user asking about classroom/home - returning early (user needs to login first)")
+        return """To access your assignments, homework, and coursework information, please follow these steps:
+
+**Step 1: Sign In**
+- Click on the profile icon in the top right corner
+- Select "Sign In" or "Log In"
+- Use your Google account to authenticate
+
+**Step 2: Connect Google Classroom**
+- After signing in, click on your profile icon again
+- Go to "Profile Settings" or "Edit Profile"
+- Click on "Connect Google Classroom" button
+- Authorize the connection with your Google account
+
+**Step 3: Sync Your Data**
+- Once connected, click "Sync Classroom Data" to load your courses, assignments, and announcements
+
+After completing these steps, I'll be able to help you with all your coursework-related questions!"""
+    
+    # For logged-in users: Check if they have Google Classroom connected
+    if user_profile and (is_coursework_query_early or is_home_related_query_early):
+        user_id = user_profile.get('user_id') or user_profile.get('id')  # Try both possible keys
+        if user_id:
+            try:
+                from supabase_config import get_supabase_client
+                supabase = get_supabase_client()
+                
+                # Check if user has any courses synced (indicates Google Classroom is connected)
+                courses_check = supabase.table('google_classroom_courses').select('id').eq('user_id', user_id).limit(1).execute()
+                has_classroom_connected = courses_check.data and len(courses_check.data) > 0
+                
+                if not has_classroom_connected:
+                    print(f"[Chatbot] 🚫 Logged-in user asking about coursework/homework but no Google Classroom connection found")
+                    first_name = user_profile.get('first_name', '') or ''
+                    capitalized_first_name = first_name.capitalize() if first_name else ''
+                    return f"""Hi {capitalized_first_name}! To access your assignments, homework, and coursework information, please connect your Google Classroom account. Here's how:
+
+**Step 1: Access Profile Settings**
+- Click on your profile icon in the top right corner
+- Select "Profile Settings" or "Edit Profile"
+
+**Step 2: Connect Google Classroom**
+- Look for the "Connect Google Classroom" button in your profile settings
+- Click on it and authorize the connection with your Google account
+
+**Step 3: Sync Your Data**
+- After connecting, click "Sync Classroom Data" to load your courses, assignments, and announcements
+
+Once you've completed these steps, I'll be able to help you with all your coursework-related questions!"""
+            except Exception as e:
+                print(f"[Chatbot] ⚠️ Error checking Google Classroom connection: {e}")
+                # Continue anyway - don't block the user if there's an error checking
     
     # Step 0: Check if this is a greeting and provide role-specific greeting (PRIORITY)
-    import re
     greeting_patterns = [
         r'\bhi\b', r'\bhello\b', r'\bhey\b', 
         r'\bgood morning\b', r'\bgood afternoon\b', r'\bgood evening\b', 
         r'\bgreetings\b'
     ]
-    is_greeting = any(re.search(pattern, user_query.lower()) for pattern in greeting_patterns)
+    is_greeting = any(re_module.search(pattern, user_query.lower()) for pattern in greeting_patterns)
     
     # Check for "how are you" type questions
     how_are_you_keywords = ['how are you', 'how are you doing', 'how do you do', 'how\'s it going', 'how\'s everything']
@@ -588,6 +777,177 @@ def generate_chatbot_response(request):
     # Handle greetings for guest users (no personalization)
     if is_greeting and not user_profile:
         return "Hello! Welcome to Prakriti School's AI assistant. I'm here to help you learn about our unique educational philosophy and programs. How can I assist you today?"
+    
+    # Handle empty queries that didn't match homework context - return greeting
+    if not query_stripped:
+        if not user_profile:
+            return "Hello! Welcome to Prakriti School's AI assistant. I'm here to help you learn about our unique educational philosophy and programs. How can I assist you today?"
+        else:
+            first_name = user_profile.get('first_name', '') or ''
+            capitalized_first_name = first_name.capitalize() if first_name else ''
+            return f"Hello {capitalized_first_name}! How can I help you today?"
+
+    # Step 0.25: Built-in responses for common queries (to reduce API costs)
+    # Check for IGCSE curriculum queries
+    igcse_keywords = ['igcse', 'international general certificate', 'secondary education', 'igcse curriculum', 'igcse program']
+    igcse_query_patterns = [
+        r'\bigcse\b',
+        r'\b(?:explain|tell|about|what|information|details).*igcse',
+        r'\bigcse.*(?:curriculum|program|course|benefits|advantages)',
+        r'\b(?:curriculum|program|course).*igcse',
+    ]
+    is_igcse_query = any(kw in query_lower for kw in igcse_keywords) or any(re_module.search(pattern, query_lower) for pattern in igcse_query_patterns)
+    
+    if is_igcse_query:
+        print(f"[Chatbot] 📚 IGCSE curriculum query detected - using built-in response (no API call)")
+        return """The IGCSE (International General Certificate of Secondary Education) curriculum offered at Prakriti School is a globally recognized program that provides students with a broad and balanced education. This curriculum is designed to develop students' critical thinking, problem-solving, and communication skills.
+
+**Benefits of the IGCSE curriculum at Prakriti School include:**
+
+**Internationally Recognized Qualification:** IGCSE is widely accepted by universities and employers around the world, providing students with opportunities for higher education and career advancement.
+
+**Holistic Development:** The curriculum focuses on developing students academically, socially, and emotionally, preparing them for the challenges of the modern world.
+
+**Flexibility:** IGCSE offers a wide range of subjects, allowing students to tailor their education to their interests and career goals.
+
+**Emphasis on Practical Skills:** The curriculum includes practical assessments and real-world applications, helping students develop skills that are relevant in today's job market.
+
+**Preparation for Further Education:** IGCSE prepares students for advanced study in subjects such as A-levels, IB Diploma, or other post-secondary programs.
+
+Overall, the IGCSE curriculum at Prakriti School aims to provide students with a well-rounded education that equips them with the knowledge, skills, and attitudes needed to succeed in the 21st century."""
+    
+    # Check for "learning for happiness" philosophy queries
+    # More specific keywords to avoid false positives
+    happiness_philosophy_keywords = ['learning for happiness', 'happiness philosophy', 'prakriti philosophy', 'school philosophy', 'educational philosophy']
+    happiness_philosophy_patterns = [
+        r'\blearning\s+for\s+happiness\b',
+        r'\bhappiness\s+philosophy\b',
+        r'\b(?:how|what|explain|tell|about).*learning\s+for\s+happiness',
+        r'\b(?:how|what|explain|tell|about).*happiness.*philosophy',
+        r'\b(?:prakriti|school).*philosophy.*(?:work|practice|implement|how)',
+        r'\bphilosophy.*(?:prakriti|school).*(?:work|practice|implement|how)',
+        r'\b(?:how|what).*prakriti.*philosophy',
+        r'\b(?:how|what).*school.*philosophy',
+    ]
+    is_happiness_philosophy_query = any(kw in query_lower for kw in happiness_philosophy_keywords) or any(re_module.search(pattern, query_lower) for pattern in happiness_philosophy_patterns)
+    
+    if is_happiness_philosophy_query:
+        print(f"[Chatbot] 🌟 Learning for happiness philosophy query detected - using built-in response (no API call)")
+        return """Prakriti School's "learning for happiness" philosophy is implemented in various ways to ensure a holistic and fulfilling educational experience for students:
+
+**Holistic Curriculum:** The school offers a well-rounded curriculum that focuses not only on academic excellence but also on the overall development of students. This includes a balance of academics, arts, sports, and life skills education.
+
+**Emphasis on Well-being:** Prakriti School prioritizes the well-being of students and staff members. Various initiatives are in place to promote mental health, emotional well-being, and a positive school environment.
+
+**Student-Centric Approach:** The school follows a student-centric approach where the individual needs, interests, and strengths of each student are recognized and nurtured. This helps in fostering a sense of purpose and fulfillment among students.
+
+**Life Skills Education:** Along with traditional subjects, students are also taught essential life skills such as critical thinking, problem-solving, communication, and collaboration. These skills are crucial for personal growth and happiness.
+
+**Community Engagement:** Prakriti School actively involves parents, teachers, and the community in the learning process. This collaborative approach creates a supportive network for students and enhances their overall well-being.
+
+By incorporating these elements into its educational framework, Prakriti School ensures that students not only excel academically but also develop a sense of happiness, purpose, and fulfillment in their learning journey."""
+
+    # Step 0.3: Detect generic homework/study help queries and handle them appropriately
+    # CRITICAL: Only detect ACTUAL homework/assignment queries, not general educational queries
+    # Check for specific homework/assignment context keywords
+    homework_specific_keywords = [
+        'homework', 'assignment', 'due', 'deadline', 'submit', 'turn in',
+        'my homework', 'my assignment', 'homework help', 'assignment help',
+        'coursework', 'classwork', 'project due', 'essay due'
+    ]
+    has_homework_keyword = any(kw in query_lower for kw in homework_specific_keywords)
+    
+    # Check for patterns that indicate homework/assignment context
+    homework_context_patterns = [
+        r'\b(?:my|this|that)\s+(?:homework|assignment|project|essay)\b',
+        r'\bhelp\s+with\s+(?:my|this|that)\s+(?:homework|assignment)\b',
+        r'\b(?:homework|assignment)\s+(?:help|due|deadline)\b',
+        r'\bI\s+need\s+help\s+with\s+(?:my|this|that)\s+(?:homework|assignment)\b',
+    ]
+    has_homework_context = any(re_module.search(pattern, query_lower) for pattern in homework_context_patterns)
+    
+    # Check if it's a generic "help with homework" request (without specific subject/topic)
+    generic_homework_patterns = [
+        r'\bhelp\s+(?:me\s+)?with\s+(?:my\s+)?homework\b',
+        r'\bI\s+need\s+help\s+(?:with\s+)?(?:my\s+)?homework\b',
+        r'\bcan\s+you\s+help\s+(?:me\s+)?with\s+(?:my\s+)?homework\b',
+        r'\bhelp\s+(?:me\s+)?with\s+(?:my\s+)?assignment\b',
+    ]
+    is_generic_homework_request = any(re_module.search(pattern, query_lower) for pattern in generic_homework_patterns)
+    
+    # Only consider it a homework query if it has homework-specific keywords or context
+    is_homework_help_query = has_homework_keyword or has_homework_context or is_generic_homework_request
+    
+    # Check if subject/topic is mentioned in the query
+    subject_keywords = ['math', 'mathematics', 'science', 'english', 'history', 'physics', 'chemistry', 
+                       'biology', 'geography', 'computer', 'programming', 'art', 'music', 'drama',
+                       'literature', 'algebra', 'geometry', 'calculus', 'grammar', 'writing']
+    topic_indicators = ['chapter', 'lesson', 'topic', 'concept', 'formula', 'theorem', 'theory']
+    has_subject = any(kw in query_lower for kw in subject_keywords)
+    has_topic = any(kw in query_lower for kw in topic_indicators)
+    
+    # For guest users asking for ACTUAL homework help (not general educational queries)
+    if not user_profile and is_homework_help_query:
+        print(f"[Chatbot] 🚫 Guest user asking for homework help - prompting to connect Google Classroom")
+        return """Hello! I'd love to help you with your homework and studies! To provide you with the most relevant assistance, I need access to your assignments and coursework.
+
+**To get personalized homework help:**
+
+**Step 1: Sign In**
+- Click on the profile icon in the top right corner
+- Select "Sign In" or "Log In"
+- Use your Google account to authenticate
+
+**Step 2: Connect Google Classroom**
+- After signing in, click on your profile icon again
+- Go to "Profile Settings" or "Edit Profile"
+- Click on "Connect Google Classroom" button
+- Authorize the connection with your Google account
+
+**Step 3: Sync Your Data**
+- Once connected, click "Sync Classroom Data" to load your courses, assignments, and announcements
+
+After connecting, I'll be able to:
+- Help you with your specific assignments
+- Provide subject-specific guidance
+- Answer questions about your coursework
+- Track your progress and deadlines
+
+**Note:** If you have a specific question about a subject (like math, science, etc.), feel free to ask me directly! I can still help with general academic questions."""
+    
+    # For logged-in users asking generic homework help without subject/topic
+    if user_profile and is_generic_homework_request and not (has_subject or has_topic):
+        print(f"[Chatbot] 📝 User asking for generic homework help - requesting subject/topic information")
+        first_name = user_profile.get('first_name', '') or ''
+        capitalized_first_name = first_name.capitalize() if first_name else ''
+        role = user_profile.get('role', '').lower() if user_profile.get('role') else ''
+        
+        if role == 'student':
+            grade = user_profile.get('grade', '')
+            subjects = user_profile.get('subjects', [])
+            subjects_text = f" I see you're in {grade} and studying {', '.join(subjects) if subjects else 'various subjects'}." if grade else ""
+            return f"""Hi {capitalized_first_name}! I'd be happy to help you with your homework!{subjects_text}
+
+To provide you with the most accurate and helpful answer, could you please tell me:
+
+1. **Which subject** are you working on? (e.g., Mathematics, Science, English, History, etc.)
+2. **What specific topic or problem** do you need help with?
+
+For example, you could say:
+- "Help me with math - solving quadratic equations"
+- "I need help with science - photosynthesis"
+- "Can you explain the water cycle in geography?"
+
+Once you provide the subject and topic, I'll be able to give you detailed, step-by-step explanations!"""
+        else:
+            return f"""Hi {capitalized_first_name}! I'd be happy to help with homework!
+
+To provide you with the most accurate answer, could you please tell me:
+
+1. **Which subject** do you need help with? (e.g., Mathematics, Science, English, History, etc.)
+2. **What specific topic or problem** are you working on?
+
+Once you provide the subject and topic, I'll be able to give you detailed assistance!"""
 
     # Step 0.5: Handle "how are you" type questions with friendly responses
     if is_how_are_you and user_profile:
@@ -941,10 +1301,9 @@ def generate_chatbot_response(request):
     is_person_detail_query = any(kw in query_lower for kw in person_detail_keywords)
     
     # Check if query mentions a specific person name (capitalized words or known names)
-    import re
     # Try both original query (for capitalized names) and lowercase (for case-insensitive detection)
     person_name_pattern = r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}\b'
-    potential_names = re.findall(person_name_pattern, user_query)
+    potential_names = re_module.findall(person_name_pattern, user_query)
     # If no capitalized names found, try case-insensitive pattern on lowercase query
     if not potential_names:
         # First, try to extract name after common question patterns (e.g., "who is X", "tell me about X")
@@ -955,11 +1314,11 @@ def generate_chatbot_response(request):
         
         extracted_name = None
         for pattern in question_patterns:
-            match = re.search(pattern, query_lower)
+            match = re_module.search(pattern, query_lower)
             if match:
                 extracted_name = match.group(1).strip()
                 # Remove trailing punctuation and question marks
-                extracted_name = re.sub(r'[?.,!]+$', '', extracted_name).strip()
+                extracted_name = re_module.sub(r'[?.,!]+$', '', extracted_name).strip()
                 if len(extracted_name) > 5:
                     potential_names = [extracted_name.title()]
                     break
@@ -970,7 +1329,7 @@ def generate_chatbot_response(request):
             # Extract potential names (exclude common words like "the", "is", "who", etc.)
             excluded_words = {'the', 'is', 'who', 'what', 'when', 'where', 'why', 'how', 'about', 'tell', 'me', 
                              'information', 'detail', 'details', 'introduction', 'profile', 'biography', 'little', 'bit'}
-            all_words = re.findall(person_name_pattern_lower, query_lower)
+            all_words = re_module.findall(person_name_pattern_lower, query_lower)
             # Filter out phrases that contain excluded words or are too short/common
             potential_names_lower = [name for name in all_words if not any(word in excluded_words for word in name.split()) and len(name) > 5]
             if potential_names_lower:
@@ -1084,11 +1443,40 @@ def generate_chatbot_response(request):
     # This data is a shared knowledge base - not restricted to admins only
     admin_data = {"classroom_data": [], "calendar_data": []}
     
+    # Check if this is a classroom/calendar/home related query
+    is_classroom_related_query = is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query
+    is_home_related_query = any(kw in query_lower for kw in ['home', 'homework', 'my assignments', 'my coursework', 'my classes', 'my courses'])
+    
+    # Check for teacher-specific queries (submissions, grading, student work)
+    is_submission_query = any(kw in query_lower for kw in ['submission', 'submitted', 'submitted work', 'student submission', 'check submission', 'grade submission', 'review submission', 'view submission'])
+    is_grading_query = any(kw in query_lower for kw in ['grade', 'grading', 'assign grade', 'student grade', 'check grade', 'review grade'])
+    is_teacher_classroom_query = is_submission_query or is_grading_query or (is_teacher_query and any(kw in query_lower for kw in ['my courses', 'my classes', 'my students', 'student work']))
+    
     # Skip classroom data for web-only queries (PERFORMANCE OPTIMIZATION)
     is_web_only_query = should_use_web_crawling and not (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query)
     
-    if is_web_only_query:
+    # For guest users: Skip loading classroom data for classroom/home queries - they need to connect first
+    is_guest_classroom_query = not user_profile and (is_classroom_related_query or is_home_related_query)
+    
+    # For teachers: Check if they need their own classroom connection for teacher-specific features
+    user_role = user_profile.get('role', '').lower() if user_profile else None
+    is_teacher_needing_connection = user_role == 'teacher' and (is_teacher_classroom_query or is_submission_query or is_grading_query)
+    
+    # Only load classroom data if it's actually needed for the query type
+    # Don't load for general academic queries that don't need classroom data
+    should_load_classroom_data = is_classroom_related_query or is_home_related_query or should_use_web_crawling_first
+    
+    if is_guest_classroom_query:
+        print(f"[Chatbot] 🚫 Guest user asking about classroom/home - skipping data load (user needs to connect first)")
+        admin_data = {"classroom_data": [], "calendar_data": []}
+    elif is_teacher_needing_connection:
+        print(f"[Chatbot] 🚫 Teacher asking about submissions/grading/their courses - requires their own Google Classroom connection")
+        admin_data = {"classroom_data": [], "calendar_data": []}
+    elif is_web_only_query:
         print(f"[Chatbot] ⚡ Skipping classroom data fetch - web-only query detected (faster response)")
+    elif not should_load_classroom_data:
+        print(f"[Chatbot] ⚡ Skipping classroom data fetch - not a classroom/home related query (general academic query)")
+        admin_data = {"classroom_data": [], "calendar_data": []}
     elif ADMIN_FEATURES_AVAILABLE:
         try:
             print("[Chatbot] Getting reference data from Supabase (Google Classroom/Calendar sync)...")
@@ -1100,201 +1488,195 @@ def generate_chatbot_response(request):
             
             # Determine what to load based on query intent (optimize for speed and cost)
             # Only load what's needed: if asking about teachers, only load teachers; if students, only students; etc.
-            # CRITICAL: For person detail queries, always load teachers to verify web crawler claims (web might say someone is a teacher)
-            should_load_teachers = is_teacher_query or should_use_web_crawling_first or not (is_student_query or is_announcement_query or is_coursework_query)
-            should_load_students = is_student_query or not (is_teacher_query or is_announcement_query or is_coursework_query)
-            should_load_announcements = is_announcement_query or not (is_student_query or is_teacher_query or is_coursework_query)
-            should_load_coursework = is_coursework_query or not (is_student_query or is_announcement_query or is_teacher_query)
+            # CRITICAL: Only load classroom data if it's explicitly needed for the query
+            # For person detail queries, always load teachers to verify web crawler claims (web might say someone is a teacher)
+            should_load_teachers = is_teacher_query or should_use_web_crawling_first
+            should_load_students = is_student_query
+            should_load_announcements = is_announcement_query
+            should_load_coursework = is_coursework_query
             should_load_calendar = is_calendar_query
             
-            # Set SQL-level limits to reduce token usage (cost optimization)
-            # Only fetch what's needed from database, not everything
-            limit_teachers = 50 if should_load_teachers else None  # Max 50 teachers
-            limit_students = 50 if should_load_students else None  # Max 50 students
-            limit_announcements = 20 if should_load_announcements else None  # Max 20 announcements (will filter by date if needed)
-            limit_coursework = 20 if should_load_coursework else None  # Max 20 coursework items
-            
-            print(f"[Chatbot] Data loading plan (SQL-optimized):")
-            print(f"  - Teachers: {should_load_teachers} (limit: {limit_teachers})")
-            print(f"  - Students: {should_load_students} (limit: {limit_students})")
-            print(f"  - Announcements: {should_load_announcements} (limit: {limit_announcements})")
-            print(f"  - Coursework: {should_load_coursework} (limit: {limit_coursework})")
-            print(f"  - Calendar: {should_load_calendar}")
-            
-            # Detect dates BEFORE calling get_admin_data for SQL-level filtering (cost optimization)
-            query_lower = user_query.lower()
-            is_today_query = any(kw in query_lower for kw in ['today', 'todays', "today's"])
-            is_yesterday_query = any(kw in query_lower for kw in ['yesterday', "yesterday's"])
-            
-            # Get today's date for filtering
-            from datetime import datetime, timezone, timedelta
-            import re
-            now = datetime.now(timezone.utc)
-            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
-            
-            # Detect specific date(s) in query for SQL filtering
-            target_date_ranges_for_sql = []  # List of (start, end) tuples for SQL filtering
-            
-            if is_yesterday_query:
-                yesterday = now - timedelta(days=1)
-                target_date_start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
-                target_date_end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
-                target_date_ranges_for_sql.append((target_date_start, target_date_end))
-                print(f"[Chatbot] SQL filtering for 'yesterday': {yesterday.date()}")
-            elif is_today_query:
-                target_date_ranges_for_sql.append((today_start, today_end))
-                print(f"[Chatbot] SQL filtering for 'today': {now.date()}")
+            # If no specific classroom data is needed, don't load anything
+            if not (should_load_teachers or should_load_students or should_load_announcements or should_load_coursework or should_load_calendar):
+                print(f"[Chatbot] ⚡ Skipping classroom data fetch - no classroom-specific data needed for this query")
+                admin_data = {"classroom_data": [], "calendar_data": []}
+                # Skip the rest of the data loading logic
+                if admin_data.get('classroom_data') or admin_data.get('calendar_data'):
+                    print(f"[Chatbot] ✅ Reference data loaded: {len(admin_data.get('classroom_data', []))} courses, {len(admin_data.get('calendar_data', []))} events")
+                else:
+                    print(f"[Chatbot] ⚠️ No reference data available (no courses or events synced yet)")
             else:
-                # Check for specific dates in query - handle "21 and 29 september" or "21, 24, 29 september"
-                month_names = ['january', 'february', 'march', 'april', 'may', 'june',
-                              'july', 'august', 'september', 'october', 'november', 'december']
-                month_abbrevs = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
-                                'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+                # Set SQL-level limits to reduce token usage (cost optimization)
+                # Only fetch what's needed from database, not everything
+                limit_teachers = 50 if should_load_teachers else None  # Max 50 teachers
+                limit_students = 50 if should_load_students else None  # Max 50 students
+                limit_announcements = 20 if should_load_announcements else None  # Max 20 announcements (will filter by date if needed)
+                limit_coursework = 20 if should_load_coursework else None  # Max 20 coursework items
                 
-                for i, (full_name, abbrev) in enumerate(zip(month_names, month_abbrevs)):
-                    # Pattern 1: Handles both single date ("21 september") and multiple dates ("21 and 29 september" or "21, 24, 29 september")
-                    # Matches: one or more digits, optionally followed by (comma or "and" + more digits), then month name
-                    pattern1 = rf'\b(\d{{1,2}}(?:\s*(?:,|\s+and\s+)\s*\d{{1,2}})*)\s+({full_name}|{abbrev})\b'
-                    # Pattern 2: "september 21" or "september 21 and 29" or "september 21, 24, 29"
-                    pattern2 = rf'\b({full_name}|{abbrev})\s+(\d{{1,2}}(?:\s*(?:,|\s+and\s+)\s*\d{{1,2}})*)\b'
+                print(f"[Chatbot] Data loading plan (SQL-optimized):")
+                print(f"  - Teachers: {should_load_teachers} (limit: {limit_teachers})")
+                print(f"  - Students: {should_load_students} (limit: {limit_students})")
+                print(f"  - Announcements: {should_load_announcements} (limit: {limit_announcements})")
+                print(f"  - Coursework: {should_load_coursework} (limit: {limit_coursework})")
+                print(f"  - Calendar: {should_load_calendar}")
+                
+                # Detect dates BEFORE calling get_admin_data for SQL-level filtering (cost optimization)
+                query_lower = user_query.lower()
+                is_today_query = any(kw in query_lower for kw in ['today', 'todays', "today's"])
+                is_yesterday_query = any(kw in query_lower for kw in ['yesterday', "yesterday's"])
+                
+                # Get today's date for filtering
+                from datetime import datetime, timezone, timedelta
+                now = datetime.now(timezone.utc)
+                today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+                
+                # Detect specific date(s) in query for SQL filtering
+                target_date_ranges_for_sql = []  # List of (start, end) tuples for SQL filtering
+                
+                if is_yesterday_query:
+                    yesterday = now - timedelta(days=1)
+                    target_date_start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+                    target_date_end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
+                    target_date_ranges_for_sql.append((target_date_start, target_date_end))
+                    print(f"[Chatbot] SQL filtering for 'yesterday': {yesterday.date()}")
+                elif is_today_query:
+                    target_date_ranges_for_sql.append((today_start, today_end))
+                    print(f"[Chatbot] SQL filtering for 'today': {now.date()}")
+                else:
+                    # Check for specific dates in query - handle "21 and 29 september" or "21, 24, 29 september"
+                    month_names = ['january', 'february', 'march', 'april', 'may', 'june',
+                                  'july', 'august', 'september', 'october', 'november', 'december']
+                    month_abbrevs = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
+                                    'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
                     
-                    match = re.search(pattern1, query_lower, re.IGNORECASE)
-                    if not match:
-                        match = re.search(pattern2, query_lower, re.IGNORECASE)
-                    
-                    # Fuzzy matching for typos (e.g., "octomber" -> "october")
-                    if not match and len(full_name) > 4:
-                        # Try to find month-like words near numbers - matches single or multiple dates
-                        potential_months = re.findall(r'\d{1,2}(?:\s*(?:,|\s+and\s+)\s*\d{1,2})*\s+([a-z]{4,})', query_lower)
-                        for pot_month in potential_months:
-                            if pot_month[:3] == full_name[:3] and len(pot_month) >= len(full_name) - 2:
-                                # Extract all digits before the month word (handles both single and multiple dates)
-                                days_match = re.search(rf'(\d{{1,2}}(?:\s*(?:,|\s+and\s+)\s*\d{{1,2}})*)\s+{re.escape(pot_month)}', query_lower, re.IGNORECASE)
-                                if days_match:
-                                    class MockMatch:
-                                        def __init__(self, days_str):
-                                            self._days = days_str
-                                        def group(self, n):
-                                            return self._days if n == 1 else None
-                                    match = MockMatch(days_match.group(1))
-                                    print(f"[Chatbot] Detected typo: '{pot_month}' → '{full_name}'")
+                    for i, (full_name, abbrev) in enumerate(zip(month_names, month_abbrevs)):
+                        # Pattern 1: Handles both single date ("21 september") and multiple dates ("21 and 29 september" or "21, 24, 29 september")
+                        # Matches: one or more digits, optionally followed by (comma or "and" + more digits), then month name
+                        pattern1 = rf'\b(\d{{1,2}}(?:\s*(?:,|\s+and\s+)\s*\d{{1,2}})*)\s+({full_name}|{abbrev})\b'
+                        # Pattern 2: "september 21" or "september 21 and 29" or "september 21, 24, 29"
+                        pattern2 = rf'\b({full_name}|{abbrev})\s+(\d{{1,2}}(?:\s*(?:,|\s+and\s+)\s*\d{{1,2}})*)\b'
+                        
+                        match = re_module.search(pattern1, query_lower, re_module.IGNORECASE)
+                        if not match:
+                            match = re_module.search(pattern2, query_lower, re_module.IGNORECASE)
+                        
+                        # Fuzzy matching for typos (e.g., "octomber" -> "october")
+                        if not match and len(full_name) > 4:
+                            # Try to find month-like words near numbers - matches single or multiple dates
+                            potential_months = re_module.findall(r'\d{1,2}(?:\s*(?:,|\s+and\s+)\s*\d{1,2})*\s+([a-z]{4,})', query_lower)
+                            for pot_month in potential_months:
+                                if pot_month[:3] == full_name[:3] and len(pot_month) >= len(full_name) - 2:
+                                    # Extract all digits before the month word (handles both single and multiple dates)
+                                    days_match = re_module.search(rf'(\d{{1,2}}(?:\s*(?:,|\s+and\s+)\s*\d{{1,2}})*)\s+{re_module.escape(pot_month)}', query_lower, re_module.IGNORECASE)
+                                    if days_match:
+                                        class MockMatch:
+                                            def __init__(self, days_str):
+                                                self._days = days_str
+                                            def group(self, n):
+                                                return self._days if n == 1 else None
+                                        match = MockMatch(days_match.group(1))
+                                        print(f"[Chatbot] Detected typo: '{pot_month}' → '{full_name}'")
+                                        break
+                        
+                        if match:
+                            month_num = i + 1
+                            # Extract days string - try group 1 first, then group 2
+                            days_str = None
+                            try:
+                                if match.group(1) and (match.group(1)[0].isdigit() or match.group(1).replace(' ', '').replace(',', '').replace('and', '').isdigit()):
+                                    days_str = match.group(1)
+                                elif len(match.groups()) > 1 and match.group(2) and (match.group(2)[0].isdigit() or match.group(2).replace(' ', '').replace(',', '').replace('and', '').isdigit()):
+                                    days_str = match.group(2)
+                            except:
+                                pass
+                            
+                            if days_str:
+                                # Extract all numbers (handles both comma and "and" separators)
+                                days = [int(d.strip()) for d in re_module.findall(r'\d+', days_str)]
+                                year = now.year
+                                for day in days:
+                                    try:
+                                        parsed_date = datetime(year, month_num, day, tzinfo=timezone.utc)
+                                        date_start = parsed_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                                        date_end = parsed_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+                                        target_date_ranges_for_sql.append((date_start, date_end))
+                                        print(f"[Chatbot] SQL filtering for date: {day} {month_names[i]} {year}")
+                                    except ValueError:
+                                        print(f"[Chatbot] Invalid date: {day}/{month_num}")
+                                if target_date_ranges_for_sql:
                                     break
                     
-                    if match:
-                        month_num = i + 1
-                        # Extract days string - try group 1 first, then group 2
-                        days_str = None
-                        try:
-                            if match.group(1) and (match.group(1)[0].isdigit() or match.group(1).replace(' ', '').replace(',', '').replace('and', '').isdigit()):
-                                days_str = match.group(1)
-                            elif len(match.groups()) > 1 and match.group(2) and (match.group(2)[0].isdigit() or match.group(2).replace(' ', '').replace(',', '').replace('and', '').isdigit()):
-                                days_str = match.group(2)
-                        except:
-                            pass
-                        
-                        if days_str:
-                            # Extract all numbers (handles both comma and "and" separators)
-                            days = [int(d.strip()) for d in re.findall(r'\d+', days_str)]
-                            year = now.year
-                            for day in days:
+                    # If no month names found, try DD/MM or MM/DD format (single date only for now)
+                    if not target_date_ranges_for_sql:
+                        date_pattern = r'\b(\d{1,2})[/-](\d{1,2})\b'
+                        match = re_module.search(date_pattern, query_lower)
+                        if match:
+                            num1, num2 = int(match.group(1)), int(match.group(2))
+                            try:
+                                if num1 <= 31 and num2 <= 12:
+                                    day, month = num1, num2
+                                elif num2 <= 31 and num1 <= 12:
+                                    day, month = num2, num1
+                                else:
+                                    day, month = num1, num2
+                                
+                                year = now.year
                                 try:
-                                    parsed_date = datetime(year, month_num, day, tzinfo=timezone.utc)
+                                    parsed_date = datetime(year, month, day, tzinfo=timezone.utc)
                                     date_start = parsed_date.replace(hour=0, minute=0, second=0, microsecond=0)
                                     date_end = parsed_date.replace(hour=23, minute=59, second=59, microsecond=999999)
                                     target_date_ranges_for_sql.append((date_start, date_end))
-                                    print(f"[Chatbot] SQL filtering for date: {day} {month_names[i]} {year}")
+                                    print(f"[Chatbot] SQL filtering for date: {day}/{month}/{year}")
                                 except ValueError:
-                                    print(f"[Chatbot] Invalid date: {day}/{month_num}")
-                            if target_date_ranges_for_sql:
-                                break
+                                    print(f"[Chatbot] Invalid date: {day}/{month}")
+                            except:
+                                pass
                 
-                # If no month names found, try DD/MM or MM/DD format (single date only for now)
-                if not target_date_ranges_for_sql:
-                    date_pattern = r'\b(\d{1,2})[/-](\d{1,2})\b'
-                    match = re.search(date_pattern, query_lower)
-                    if match:
-                        num1, num2 = int(match.group(1)), int(match.group(2))
-                        try:
-                            if num1 <= 31 and num2 <= 12:
-                                day, month = num1, num2
-                            elif num2 <= 31 and num1 <= 12:
-                                day, month = num2, num1
-                            else:
-                                day, month = num1, num2
-                            
-                            year = now.year
-                            try:
-                                parsed_date = datetime(year, month, day, tzinfo=timezone.utc)
-                                date_start = parsed_date.replace(hour=0, minute=0, second=0, microsecond=0)
-                                date_end = parsed_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-                                target_date_ranges_for_sql.append((date_start, date_end))
-                                print(f"[Chatbot] SQL filtering for date: {day}/{month}/{year}")
-                            except ValueError:
-                                print(f"[Chatbot] Invalid date: {day}/{month}")
-                        except:
-                            pass
-            
-            # Check if user is a student asking about coursework - use direct coursework query
-            user_role = user_profile.get('role', '') if user_profile else None
-            user_id = user_profile.get('user_id', '') if user_profile else None
-            
-            if user_role == 'student' and is_coursework_query and user_id:
-                print(f"[Chatbot] Student coursework query detected - querying coursework table directly")
-                admin_data = get_student_coursework_data(user_id, student_email=user_email, limit_coursework=limit_coursework or 20)
-            else:
-                # First try current user if they have admin privileges
-                admin_data = get_admin_data(user_email,
-                                           load_teachers=should_load_teachers,
-                                           load_students=should_load_students,
-                                           load_announcements=should_load_announcements,
-                                           load_coursework=should_load_coursework,
-                                           load_calendar=should_load_calendar,
-                                           announcement_date_ranges=target_date_ranges_for_sql if target_date_ranges_for_sql else None,
-                                           limit_announcements=limit_announcements,
-                                           limit_students=limit_students,
-                                           limit_teachers=limit_teachers,
-                                           limit_coursework=limit_coursework)
-            
-            # If no data found from current user, try to get from any admin who has synced data
-            if not admin_data.get('classroom_data') and not admin_data.get('calendar_data'):
-                print("[Chatbot] No data from current user, trying to get from any admin with synced data...")
-                try:
-                    from supabase_config import get_supabase_client
-                    supabase = get_supabase_client()
-                    
-                    # Find any admin who has synced classroom or calendar data
-                    # IMPORTANT: user_id in google_classroom_courses is auth.users.id, not user_profiles.id
-                    result = supabase.table('google_classroom_courses').select('user_id').limit(1).execute()
-                    if not result.data or len(result.data) == 0:
-                        result = supabase.table('google_calendar_events').select('user_id').limit(1).execute()
-                    
-                    if result.data and len(result.data) > 0:
-                        user_with_data_id = result.data[0]['user_id']  # This is auth.users.id
-                        # Get the user's email - user_profiles.user_id references auth.users.id
-                        user_profile_result = supabase.table('user_profiles').select('email').eq('user_id', user_with_data_id).limit(1).execute()
-                        if user_profile_result.data and len(user_profile_result.data) > 0:
-                            user_email = user_profile_result.data[0]['email']
-                            print(f"[Chatbot] Found user with synced data: {user_email} (auth_user_id: {user_with_data_id})")
-                            admin_data = get_admin_data(user_email,
-                                                       load_teachers=should_load_teachers,
-                                                       load_students=should_load_students,
-                                                       load_announcements=should_load_announcements,
-                                                       load_coursework=should_load_coursework,
-                                                       load_calendar=should_load_calendar,
-                                                       announcement_date_ranges=target_date_ranges_for_sql if target_date_ranges_for_sql else None,
-                                                       limit_announcements=limit_announcements,
-                                                       limit_students=limit_students,
-                                                       limit_teachers=limit_teachers,
-                                                       limit_coursework=limit_coursework)
-                        else:
-                            # If no email found, just use the user_id directly (skip email lookup)
-                            print(f"[Chatbot] Found synced data for user_id: {user_with_data_id}, but no email in user_profiles")
-                            # Query directly using user_id
-                            courses_result = supabase.table('google_classroom_courses').select('*').eq('user_id', user_with_data_id).execute()
-                            if courses_result.data:
-                                print(f"[Chatbot] Direct query found {len(courses_result.data)} courses")
-                                admin_data = get_admin_data(None,  # Let get_admin_data find it via fallback
+                # Check if user is a student asking about coursework - use direct coursework query
+                user_role = user_profile.get('role', '') if user_profile else None
+                user_id = user_profile.get('user_id', '') if user_profile else None
+                
+                if user_role == 'student' and is_coursework_query and user_id:
+                    print(f"[Chatbot] Student coursework query detected - querying coursework table directly")
+                    # Get student's grade for filtering
+                    student_grade = user_profile.get('grade', '') if user_profile else None
+                    admin_data = get_student_coursework_data(user_id, student_email=user_email, limit_coursework=limit_coursework or 20, user_grade=student_grade)
+                else:
+                    # First try current user if they have admin privileges
+                    admin_data = get_admin_data(user_email,
+                                               load_teachers=should_load_teachers,
+                                               load_students=should_load_students,
+                                               load_announcements=should_load_announcements,
+                                               load_coursework=should_load_coursework,
+                                               load_calendar=should_load_calendar,
+                                               announcement_date_ranges=target_date_ranges_for_sql if target_date_ranges_for_sql else None,
+                                               limit_announcements=limit_announcements,
+                                               limit_students=limit_students,
+                                               limit_teachers=limit_teachers,
+                                               limit_coursework=limit_coursework)
+                
+                # If no data found from current user, try to get from any admin who has synced data
+                if not admin_data.get('classroom_data') and not admin_data.get('calendar_data'):
+                    print("[Chatbot] No data from current user, trying to get from any admin with synced data...")
+                    try:
+                        from supabase_config import get_supabase_client
+                        supabase = get_supabase_client()
+                        
+                        # Find any admin who has synced classroom or calendar data
+                        # IMPORTANT: user_id in google_classroom_courses is auth.users.id, not user_profiles.id
+                        result = supabase.table('google_classroom_courses').select('user_id').limit(1).execute()
+                        if not result.data or len(result.data) == 0:
+                            result = supabase.table('google_calendar_events').select('user_id').limit(1).execute()
+                        
+                        if result.data and len(result.data) > 0:
+                            user_with_data_id = result.data[0]['user_id']  # This is auth.users.id
+                            # Get the user's email - user_profiles.user_id references auth.users.id
+                            user_profile_result = supabase.table('user_profiles').select('email').eq('user_id', user_with_data_id).limit(1).execute()
+                            if user_profile_result.data and len(user_profile_result.data) > 0:
+                                user_email = user_profile_result.data[0]['email']
+                                print(f"[Chatbot] Found user with synced data: {user_email} (auth_user_id: {user_with_data_id})")
+                                admin_data = get_admin_data(user_email,
                                                            load_teachers=should_load_teachers,
                                                            load_students=should_load_students,
                                                            load_announcements=should_load_announcements,
@@ -1305,13 +1687,31 @@ def generate_chatbot_response(request):
                                                            limit_students=limit_students,
                                                            limit_teachers=limit_teachers,
                                                            limit_coursework=limit_coursework)
-                except Exception as e:
-                    print(f"[Chatbot] Error getting reference data from other admin: {e}")
-            
-            if admin_data.get('classroom_data') or admin_data.get('calendar_data'):
-                print(f"[Chatbot] ✅ Reference data loaded: {len(admin_data.get('classroom_data', []))} courses, {len(admin_data.get('calendar_data', []))} events")
-            else:
-                print(f"[Chatbot] ⚠️ No reference data available (no courses or events synced yet)")
+                            else:
+                                # If no email found, just use the user_id directly (skip email lookup)
+                                print(f"[Chatbot] Found synced data for user_id: {user_with_data_id}, but no email in user_profiles")
+                                # Query directly using user_id
+                                courses_result = supabase.table('google_classroom_courses').select('*').eq('user_id', user_with_data_id).execute()
+                                if courses_result.data:
+                                    print(f"[Chatbot] Direct query found {len(courses_result.data)} courses")
+                                    admin_data = get_admin_data(None,  # Let get_admin_data find it via fallback
+                                                               load_teachers=should_load_teachers,
+                                                               load_students=should_load_students,
+                                                               load_announcements=should_load_announcements,
+                                                               load_coursework=should_load_coursework,
+                                                               load_calendar=should_load_calendar,
+                                                               announcement_date_ranges=target_date_ranges_for_sql if target_date_ranges_for_sql else None,
+                                                               limit_announcements=limit_announcements,
+                                                               limit_students=limit_students,
+                                                               limit_teachers=limit_teachers,
+                                                               limit_coursework=limit_coursework)
+                    except Exception as e:
+                        print(f"[Chatbot] Error getting reference data from other admin: {e}")
+                
+                if admin_data.get('classroom_data') or admin_data.get('calendar_data'):
+                    print(f"[Chatbot] ✅ Reference data loaded: {len(admin_data.get('classroom_data', []))} courses, {len(admin_data.get('calendar_data', []))} events")
+                else:
+                    print(f"[Chatbot] ⚠️ No reference data available (no courses or events synced yet)")
         except Exception as e:
             print(f"[Chatbot] ❌ Error getting reference data: {e}")
             import traceback
@@ -1330,11 +1730,10 @@ def generate_chatbot_response(request):
 
     # Step 2: Fallback to LLM with streaming approach
     print("=" * 80)
-    print("[Chatbot] 🤖 HYBRID MODEL SELECTION: Intelligent cost optimization")
+    print("[Chatbot] 🤖 MODEL SELECTION: Cost Optimization")
     print("[Chatbot] 📋 Strategy:")
-    print("[Chatbot]   • GPT-3.5-turbo: Queries with structured data (Classroom/Calendar/Web)")
-    print("[Chatbot]   • GPT-4: Complex queries without structured data (reasoning/generation)")
-    print("[Chatbot] 💰 Expected cost: ~70-90% reduction vs using GPT-4 for all queries")
+    print("[Chatbot]   • GPT-3.5-turbo: Used for ALL queries (cost optimization)")
+    print("[Chatbot] 💰 Expected cost: ~97% reduction vs using GPT-4 for all queries")
     print("=" * 80)
     
     # Try multiple approaches to get complete response
@@ -1383,7 +1782,11 @@ def generate_chatbot_response(request):
 - Suggest activities, projects, or resources that align with their interests
 - Use age-appropriate language and examples
 - Emphasize growth mindset and learning from mistakes
-- Connect their learning goals to Prakriti's holistic approach"""
+- Connect their learning goals to Prakriti's holistic approach
+- **CRITICAL for homework help**: If the user asks for help with homework/assignments but doesn't specify the subject or topic, ALWAYS ask them to provide:
+  1. Which subject they need help with (e.g., Mathematics, Science, English, etc.)
+  2. What specific topic or problem they're working on
+- Only provide generic homework solutions if the user explicitly provides both subject and topic information"""
                     
                 elif role == 'teacher':
                     personalization += f"""- **Department**: {department}
@@ -1447,10 +1850,10 @@ def generate_chatbot_response(request):
             # Build concise system prompts (TOKEN OPTIMIZATION - reduced by ~60%)
             if user_profile:
                 # Ultra-concise system prompt for authenticated users
-                system_content = """You are Prakriti School's AI assistant. Progressive K-12 school in Greater Noida. Philosophy: "Learning for happiness". Programs: Bridge Programme, IGCSE, AS/A Level. Address users by first name with titles (Sir/Madam for teachers/parents). Use Markdown (**bold**, ### headings). Never say "as an AI". Present data directly without disclaimers.""" + personalization + """ Use provided data to answer questions."""
+                system_content = """You are Prakriti School's AI assistant. Progressive K-12 school in Greater Noida. Philosophy: "Learning for happiness". Programs: Bridge Programme, IGCSE, AS/A Level. Address users by first name with titles (Sir/Madam for teachers/parents). Use Markdown (**bold**, ### headings). Never say "as an AI". Present data directly without disclaimers.""" + personalization + """ Use provided data to answer questions. IMPORTANT: For homework/study help requests without subject/topic, always ask for both subject and specific topic before providing solutions."""
             else:
                 # Ultra-concise system prompt for guest users (TOKEN OPTIMIZATION)
-                system_content = """You are Prakriti School's AI assistant. Progressive K-12 school in Greater Noida. Philosophy: "Learning for happiness". Use Markdown. Never say "as an AI". Present data directly. Use provided data to answer questions."""
+                system_content = """You are Prakriti School's AI assistant. Progressive K-12 school in Greater Noida. Philosophy: "Learning for happiness". Use Markdown. Never say "as an AI". Present data directly. Use provided data to answer questions. IMPORTANT: For homework/study help, remind guest users to sign in and connect Google Classroom for personalized help. Always ask for subject and topic if not provided."""
             
             messages = [{"role": "system", "content": system_content}]
             
@@ -1486,7 +1889,6 @@ def generate_chatbot_response(request):
             
             # Get today's date for filtering
             from datetime import datetime, timezone, timedelta
-            import re
             now = datetime.now(timezone.utc)
             today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
@@ -1527,23 +1929,23 @@ def generate_chatbot_response(request):
                     pattern2 = rf'\b({full_name}|{abbrev})\s+(\d{{1,2}}(?:\s*,\s*\d{{1,2}})*)\b'
                     pattern3 = rf'\b(\d{{1,2}})\s+({full_name}|{abbrev})(?:\s*,\s*\d{{1,2}}\s+({full_name}|{abbrev}))*\b'
                     
-                    match = re.search(pattern1, query_lower, re.IGNORECASE)
+                    match = re_module.search(pattern1, query_lower, re_module.IGNORECASE)
                     if not match:
-                        match = re.search(pattern2, query_lower, re.IGNORECASE)
+                        match = re_module.search(pattern2, query_lower, re_module.IGNORECASE)
                     if not match:
-                        match = re.search(pattern3, query_lower, re.IGNORECASE)
+                        match = re_module.search(pattern3, query_lower, re_module.IGNORECASE)
                     
                     # If no match, try fuzzy matching for common typos like "octomber" → "october"
                     if not match and len(full_name) > 4:
                         # Simple approach: check if query contains something that looks like the month
                         # Extract potential month words from query (words after numbers)
-                        potential_months = re.findall(r'\d+\s*,\s*\d+(?:\s*,\s*\d+)*\s+([a-z]{4,})', query_lower)
+                        potential_months = re_module.findall(r'\d+\s*,\s*\d+(?:\s*,\s*\d+)*\s+([a-z]{4,})', query_lower)
                         for pot_month in potential_months:
                             # Check if it's similar to current month name (first 3-4 chars match)
                             if pot_month[:3] == full_name[:3] and len(pot_month) >= len(full_name) - 2:
                                 # Extract days from query
-                                days_pattern = rf'(\d+(?:\s*,\s*\d+)*)\s+{re.escape(pot_month)}'
-                                days_match = re.search(days_pattern, query_lower, re.IGNORECASE)
+                                days_pattern = rf'(\d+(?:\s*,\s*\d+)*)\s+{re_module.escape(pot_month)}'
+                                days_match = re_module.search(days_pattern, query_lower, re_module.IGNORECASE)
                                 if days_match:
                                     # Create a mock match object
                                     class MockMatch:
@@ -1571,7 +1973,7 @@ def generate_chatbot_response(request):
                         
                         if days_str:
                             # Parse comma-separated days
-                            days = [int(d.strip()) for d in re.findall(r'\d+', days_str)]
+                            days = [int(d.strip()) for d in re_module.findall(r'\d+', days_str)]
                             year = now.year
                             
                             for day in days:
@@ -1591,7 +1993,7 @@ def generate_chatbot_response(request):
                 
                 # If no month names found, try DD/MM or MM/DD format (single date only for now)
                 if not found_month:
-                    match = re.search(date_pattern_1, user_query)
+                    match = re_module.search(date_pattern_1, user_query)
                     if match:
                         num1, num2 = int(match.group(1)), int(match.group(2))
                         try:
@@ -1630,20 +2032,47 @@ def generate_chatbot_response(request):
                 if admin_data.get('classroom_data') and should_use_web_crawling_first:
                     user_content += "\n⚠️ VERIFICATION: Use Web data to provide general information about the person (role, background, etc.). However, if Web info claims they are a teacher, VERIFY against Classroom Data below. Only confirm they are CURRENTLY a teacher for the user's grade/course if their name appears in the Classroom teacher list. If Web says they're a teacher but they're NOT in Classroom Data, provide the general info from Web but clarify their current teaching status based on Classroom Data.\n"
             
+            # Check again for guest classroom query and teacher connection requirements (re-check in this scope)
+            is_guest_classroom_query_local = not user_profile and (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query or any(kw in query_lower for kw in ['home', 'homework', 'my assignments', 'my coursework', 'my classes', 'my courses']))
+            user_role_local = user_profile.get('role', '').lower() if user_profile else None
+            is_submission_query_local = any(kw in query_lower for kw in ['submission', 'submitted', 'submitted work', 'student submission', 'check submission', 'grade submission', 'review submission', 'view submission'])
+            is_grading_query_local = any(kw in query_lower for kw in ['grade', 'grading', 'assign grade', 'student grade', 'check grade', 'review grade'])
+            is_teacher_classroom_query_local = is_submission_query_local or is_grading_query_local or (is_teacher_query and any(kw in query_lower for kw in ['my courses', 'my classes', 'my students', 'student work']))
+            is_teacher_needing_connection_local = user_role_local == 'teacher' and is_teacher_classroom_query_local
+            
+            # For guest users: If asking about classroom/home, instruct to connect (data was not loaded)
+            if is_guest_classroom_query_local:
+                user_content += "\n⚠️⚠️⚠️ CLASSROOM CONNECTION REQUIRED: ⚠️⚠️⚠️\n"
+                user_content += "**CRITICAL: You are a guest user asking about classroom/home-related information.**\n"
+                user_content += "**DO NOT provide any classroom data or answer with classroom information.**\n"
+                user_content += "**ONLY tell the user:** To access classroom information, announcements, assignments, or calendar events, you need to sign in and connect your Google Classroom account first.\n"
+                user_content += "**RESPONSE FORMAT:** Please sign in to your account and connect Google Classroom to access this information.\n"
+                user_content += "**DO NOT ATTEMPT TO ANSWER THE QUERY WITH CLASSROOM DATA - YOU DON'T HAVE ACCESS TO IT.**\n"
+                user_content += f"**IMPORTANT: The user is asking: '{user_query}' - DO NOT answer this query. Instead, ONLY tell them they need to sign in and connect Google Classroom first.**\n\n"
+            # For teachers: If asking about submissions/grading/their courses, they need their own connection
+            elif is_teacher_needing_connection_local:
+                user_content += "\n⚠️⚠️⚠️ TEACHER CLASSROOM CONNECTION REQUIRED: ⚠️⚠️⚠️\n"
+                user_content += "**CRITICAL: You are a teacher asking about submissions, grading, or your own courses/students.**\n"
+                user_content += "**DO NOT provide any classroom data or answer with classroom information.**\n"
+                user_content += "**ONLY tell the user:** To access student submissions, grade assignments, view your courses, or check student work, you need to connect your Google Classroom account. This allows you to see submissions from your students and access teacher-specific features.\n"
+                user_content += "**RESPONSE FORMAT:** Please connect your Google Classroom account to access submission data, grading features, and your courses.\n"
+                user_content += "**DO NOT ATTEMPT TO ANSWER THE QUERY WITH CLASSROOM DATA - YOU DON'T HAVE ACCESS TO YOUR OWN CLASSROOM DATA YET.**\n"
+                user_content += f"**IMPORTANT: The user is asking: '{user_query}' - DO NOT answer this query. Instead, ONLY tell them they need to connect their Google Classroom account to access teacher features.**\n\n"
+            
             # Add admin data if available - MINIMAL HEADER to save tokens
-            if admin_data.get('classroom_data') or (admin_data.get('calendar_data') and is_calendar_query):
+            # BUT skip for guest users asking classroom/home queries OR teachers needing their own connection
+            if not is_guest_classroom_query_local and not is_teacher_needing_connection_local and (admin_data.get('classroom_data') or (admin_data.get('calendar_data') and is_calendar_query)):
                 user_content += "Data:\n"
                 
                 if admin_data.get('classroom_data'):
                     # ULTRA-AGGRESSIVE FILTERING: Only send exactly what's needed for this query type
                     filtered_courses = []
                     
-                    # Filter courses by student's grade if user is a student (but skip for coursework queries)
-                    # For coursework queries, students should see all their coursework regardless of grade
+                    # Filter courses by student's grade if user is a student
+                    # ALWAYS filter by grade for students to show only relevant data
                     user_grade_num = None
-                    skip_grade_filter = is_coursework_query  # Skip grade filter for coursework queries
                     
-                    if user_profile and not skip_grade_filter:
+                    if user_profile:
                         user_role = user_profile.get('role', '') or ''
                         user_role_lower = user_role.lower()
                         print(f"[Chatbot] User role: {user_role_lower}, Grade filter check...")
@@ -1652,24 +2081,21 @@ def generate_chatbot_response(request):
                             user_grade = user_profile.get('grade', '')
                             print(f"[Chatbot] Student grade from profile: '{user_grade}'")
                             if user_grade:
-                                # Normalize grade format (e.g., "Grade 8", "G8", "8" -> extract "8" or "G8")
-                                import re
-                                grade_match = re.search(r'(\d+)', str(user_grade))
+                                # Normalize grade format (e.g., "Grade 8", "G8", "8" -> extract "8")
+                                grade_match = re_module.search(r'(\d+)', str(user_grade))
                                 if grade_match:
                                     user_grade_num = grade_match.group(1)
-                                    print(f"[Chatbot] ✅ Filtering courses for Grade {user_grade_num} student")
+                                    print(f"[Chatbot] ✅ Filtering ALL data (courses, teachers, announcements, coursework) for Grade {user_grade_num} student")
                                 else:
                                     print(f"[Chatbot] ⚠️ Could not extract grade number from: '{user_grade}'")
                             else:
                                 print(f"[Chatbot] ⚠️ No grade found in user profile")
                         else:
                             print(f"[Chatbot] User is not a student (role: {user_role_lower}), skipping grade filter")
-                    elif skip_grade_filter:
-                        print(f"[Chatbot] Skipping grade filter for coursework query - students should see all their coursework")
                     
                     for course in admin_data['classroom_data']:
-                        # If user is a student, filter courses by grade (but skip for coursework queries)
-                        if user_grade_num and not skip_grade_filter:
+                        # If user is a student, filter ALL courses by grade
+                        if user_grade_num:
                             course_name = course.get('name', '')
                             # Check if course name contains the grade (e.g., "G8", "Grade 8", "(8)")
                             # Match patterns like: G8, G 8, Grade 8, (G8), (8), Grade-8, etc.
@@ -1683,7 +2109,7 @@ def generate_chatbot_response(request):
                                 rf'\({user_grade_num}\)',
                                 rf'Grade-{user_grade_num}',
                             ]
-                            matches_grade = any(re.search(pattern, course_name, re.IGNORECASE) for pattern in grade_patterns)
+                            matches_grade = any(re_module.search(pattern, course_name, re_module.IGNORECASE) for pattern in grade_patterns)
                             
                             if not matches_grade:
                                 print(f"[Chatbot] Skipping course '{course_name}' - doesn't match Grade {user_grade_num}")
@@ -2084,9 +2510,8 @@ def generate_chatbot_response(request):
             else:
                 messages.append({"role": "user", "content": user_content})
             
-            # HYBRID MODEL SELECTION: Choose model based on query type and available data
-            # GPT-3.5-turbo: For queries with structured data (classroom/calendar/web) - can format/enhance data well at low cost
-            # GPT-4: For complex queries without structured data - needs reasoning/generation
+            # MODEL SELECTION: Always use GPT-3.5-turbo for all queries to reduce costs
+            # GPT-3.5-turbo: Used for all queries (data-enhanced and general queries) for cost optimization
             has_structured_data = False
             data_sources = []
             
@@ -2103,16 +2528,15 @@ def generate_chatbot_response(request):
                 has_structured_data = True
                 data_sources.append("Web")
             
-            # Use GPT-3.5 for data-rich queries (95% cheaper), GPT-4 for complex reasoning queries
+            # Always use GPT-3.5-turbo for all queries to reduce costs
+            model_name = "gpt-3.5-turbo"  # Using GPT-3.5-turbo for all queries to reduce costs
             if has_structured_data:
-                model_name = "gpt-3.5-turbo"  # Data formatting/enhancement - GPT-3.5 is sufficient and much cheaper
                 print(f"[Chatbot] 🤖 MODEL SELECTION: GPT-3.5-turbo (Data-Enhanced Query)")
                 print(f"[Chatbot] 📊 Data sources available: {', '.join(data_sources)}")
                 print(f"[Chatbot] 💰 Cost: ~$0.002-0.003 per query (GPT-3.5 can format existing data efficiently)")
             else:
-                model_name = "gpt-4"  # Complex reasoning/generation - needs GPT-4
-                print(f"[Chatbot] 🤖 MODEL SELECTION: GPT-4 (Complex Query - No Structured Data)")
-                print(f"[Chatbot] 💰 Cost: ~$0.064 per query (GPT-4 needed for reasoning/generation)")
+                print(f"[Chatbot] 🤖 MODEL SELECTION: GPT-3.5-turbo (General Query - Using GPT-3.5 for cost savings)")
+                print(f"[Chatbot] 💰 Cost: ~$0.002-0.003 per query (GPT-3.5 for all queries)")
             
             print(f"[Chatbot] 🤖 DEBUG: Using model: {model_name}")
             if model_name == "gpt-3.5-turbo":
@@ -2398,11 +2822,10 @@ def generate_chatbot_response(request):
     # Step 2: Fallback to LLM with streaming approach
 
     print("=" * 80)
-    print("[Chatbot] 🤖 HYBRID MODEL SELECTION: Intelligent cost optimization")
+    print("[Chatbot] 🤖 MODEL SELECTION: Cost Optimization")
     print("[Chatbot] 📋 Strategy:")
-    print("[Chatbot]   • GPT-3.5-turbo: Queries with structured data (Classroom/Calendar/Web)")
-    print("[Chatbot]   • GPT-4: Complex queries without structured data (reasoning/generation)")
-    print("[Chatbot] 💰 Expected cost: ~70-90% reduction vs using GPT-4 for all queries")
+    print("[Chatbot]   • GPT-3.5-turbo: Used for ALL queries (cost optimization)")
+    print("[Chatbot] 💰 Expected cost: ~97% reduction vs using GPT-4 for all queries")
     print("=" * 80)
 
     
@@ -2847,11 +3270,10 @@ Remember: Every response should reflect Prakriti School's unique identity and ed
     # Step 2: Fallback to LLM with streaming approach
 
     print("=" * 80)
-    print("[Chatbot] 🤖 HYBRID MODEL SELECTION: Intelligent cost optimization")
+    print("[Chatbot] 🤖 MODEL SELECTION: Cost Optimization")
     print("[Chatbot] 📋 Strategy:")
-    print("[Chatbot]   • GPT-3.5-turbo: Queries with structured data (Classroom/Calendar/Web)")
-    print("[Chatbot]   • GPT-4: Complex queries without structured data (reasoning/generation)")
-    print("[Chatbot] 💰 Expected cost: ~70-90% reduction vs using GPT-4 for all queries")
+    print("[Chatbot]   • GPT-3.5-turbo: Used for ALL queries (cost optimization)")
+    print("[Chatbot] 💰 Expected cost: ~97% reduction vs using GPT-4 for all queries")
     print("=" * 80)
 
     

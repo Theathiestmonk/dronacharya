@@ -220,8 +220,8 @@ const AuthFormWithOnboarding: React.FC<AuthFormWithOnboardingProps> = ({ onBack 
                   router.push('/forgot-password');
                 }}
                 className="text-gray-600 hover:text-gray-500 text-xs sm:text-sm cursor-pointer"
-              >
-                Forgot your password?
+                >
+                  Forgot your password?
               </a>
             )}
           </div>
