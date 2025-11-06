@@ -78,8 +78,12 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
   
   // Helper function to update both state and ref
   const updateActiveSessionId = useCallback((sessionId: string | null) => {
-    // Prevent unnecessary updates if session ID hasn't changed
-    if (activeSessionIdRef.current === sessionId) {
+    // CRITICAL: Always update state if it's different from sessionId, even if ref matches
+    // This ensures state is synced on page refresh when ref has value but state is null
+    const stateNeedsUpdate = activeSessionId !== sessionId;
+    const refNeedsUpdate = activeSessionIdRef.current !== sessionId;
+    
+    if (!stateNeedsUpdate && !refNeedsUpdate) {
       console.log('⏭️ Skipping updateActiveSessionId - session ID unchanged:', sessionId);
       return;
     }
@@ -87,15 +91,24 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     console.log('🔄 updateActiveSessionId called:', {
       newSessionId: sessionId,
       currentRefValue: activeSessionIdRef.current,
-      previousStateValue: activeSessionId
+      currentStateValue: activeSessionId,
+      stateNeedsUpdate,
+      refNeedsUpdate
     });
-    activeSessionIdRef.current = sessionId; // Update ref first
-    setActiveSessionId(sessionId); // Then update state
+    
+    // Always update ref first
+    activeSessionIdRef.current = sessionId;
+    
+    // Always update state if it's different (important for page refresh)
+    if (stateNeedsUpdate) {
+      setActiveSessionId(sessionId);
+    }
+    
     console.log('✅ updateActiveSessionId completed:', {
       refValue: activeSessionIdRef.current,
-      newStateValue: sessionId
+      stateValue: sessionId
     });
-  }, []); // Empty dependency array - function doesn't depend on any state
+  }, [activeSessionId]); // Include activeSessionId to check if state needs update
   
   useEffect(() => {
     console.log('🔄 useEffect triggered - sessions changed:', {
@@ -293,42 +306,83 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
         
         setSessions(guestSessions);
         
-        // If URL has session ID, use it if it exists in sessions, otherwise create it
+        // CRITICAL: Use activeSessionId from localStorage first (preserves existing session with messages)
+        // Only use URL session ID if it exists in localStorage sessions
+        // This prevents creating empty sessions that overwrite existing sessions with messages
         let activeSessionId = data.activeSessionId || null;
         if (urlSessionId) {
           const urlSession = guestSessions.find((s: ChatSession) => s.id === urlSessionId);
           if (urlSession) {
+            // URL session exists in localStorage - use it (has messages)
             activeSessionId = urlSessionId;
-            console.log('Using existing session from URL:', urlSessionId);
+            console.log('✅ Using existing session from URL (has messages):', urlSessionId, {
+              messagesCount: urlSession.messages.length
+            });
           } else {
-            // Create a new session with the URL session ID
-            console.log('Creating new session with URL session ID:', urlSessionId);
-            const newSession: ChatSession = {
-              id: urlSessionId,
-              title: 'New Chat',
-              messages: [],
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              isActive: true,
-              isSavedToSupabase: false,
-              isDirty: false
-            };
-            const updatedSessions = [newSession, ...guestSessions];
-            sessionsRef.current = updatedSessions; // Update ref immediately
-            setSessions(updatedSessions);
-            activeSessionId = urlSessionId;
-            
-            // Save the new session to localStorage
-            saveGuestSessions(updatedSessions, urlSessionId);
+            // URL session ID doesn't exist in localStorage
+            // CRITICAL: Don't create empty session - use existing activeSessionId from localStorage
+            // This preserves messages that were saved before refresh
+            if (activeSessionId) {
+              const existingSession = guestSessions.find((s: ChatSession) => s.id === activeSessionId);
+              if (existingSession) {
+                console.log('⚠️ URL session ID not found, using existing active session from localStorage:', activeSessionId, {
+                  messagesCount: existingSession.messages.length
+                });
+                // Keep using the existing session - don't create empty one
+              } else {
+                // No valid session found - create new one only as last resort
+                console.log('⚠️ No valid session found, creating new session with URL session ID:', urlSessionId);
+                const newSession: ChatSession = {
+                  id: urlSessionId,
+                  title: 'New Chat',
+                  messages: [],
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                  isActive: true,
+                  isSavedToSupabase: false,
+                  isDirty: false
+                };
+                const updatedSessions = [newSession, ...guestSessions];
+                sessionsRef.current = updatedSessions;
+                setSessions(updatedSessions);
+                activeSessionId = urlSessionId;
+                saveGuestSessions(updatedSessions, urlSessionId);
+              }
+            } else {
+              // No activeSessionId in localStorage either - create new session
+              console.log('Creating new session with URL session ID (no localStorage activeSessionId):', urlSessionId);
+              const newSession: ChatSession = {
+                id: urlSessionId,
+                title: 'New Chat',
+                messages: [],
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                isActive: true,
+                isSavedToSupabase: false,
+                isDirty: false
+              };
+              const updatedSessions = [newSession, ...guestSessions];
+              sessionsRef.current = updatedSessions;
+              setSessions(updatedSessions);
+              activeSessionId = urlSessionId;
+              saveGuestSessions(updatedSessions, urlSessionId);
+            }
           }
         }
         
-        updateActiveSessionId(activeSessionId);
+        // CRITICAL: Update activeSessionId state AND ref immediately
+        // This ensures getActiveSession() works correctly and useEffect triggers
+        if (activeSessionId) {
+          updateActiveSessionId(activeSessionId);
+          // Also ensure ref is updated (updateActiveSessionId should do this, but be explicit)
+          activeSessionIdRef.current = activeSessionId;
+        }
         setIsGuestMode(true);
         const activeSession = guestSessions.find((s: ChatSession) => s.id === activeSessionId);
         console.log('✅ Loaded guest sessions from localStorage:', {
           sessionsCount: guestSessions.length,
           activeSessionId: activeSessionId,
+          activeSessionIdRef: activeSessionIdRef.current,
           activeSessionMessagesCount: activeSession?.messages?.length || 0,
           allMessagesCount: guestSessions.reduce((sum: number, s: ChatSession) => sum + (s.messages?.length || 0), 0),
           activeSessionMessages: activeSession?.messages?.map((m: ChatMessage) => ({ sender: m.sender, text: m.text?.substring(0, 30) + '...' })) || []
@@ -365,19 +419,29 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
         };
         sessionsRef.current = [newSession]; // Update ref immediately
         setSessions([newSession]);
+        // CRITICAL: Update both state and ref immediately
         updateActiveSessionId(newSessionId);
+        activeSessionIdRef.current = newSessionId; // Ensure ref is updated
         
         // Save the new session to localStorage
         saveGuestSessions([newSession], newSessionId);
-        console.log('✅ Guest session created and saved:', newSessionId);
+        console.log('✅ Guest session created and saved:', newSessionId, {
+          activeSessionIdState: newSessionId,
+          activeSessionIdRef: activeSessionIdRef.current
+        });
         
         setIsGuestMode(true);
       }
     } catch (error) {
       console.error('Error loading guest sessions:', error);
       setIsGuestMode(true);
-    } finally {
+      // CRITICAL: Ensure loading is set to false even on error
       setIsLoading(false);
+    } finally {
+      // CRITICAL: Always set loading to false after loading guest sessions
+      // This allows the useEffect in Chatbot to trigger and load messages
+      setIsLoading(false);
+      console.log('✅ Guest sessions loading complete, isLoading set to false');
     }
   }, [updateActiveSessionId, saveGuestSessions]);
 
@@ -1101,25 +1165,142 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     
     // If no active session, try to find or create one for guest users
     if (!currentActiveSessionId) {
-      // For guest users, try to create a session if none exists
+      // For guest users, try to find existing session from URL/localStorage first
       if (!user && isGuestMode) {
-        console.log('⚠️ No active session for guest user - attempting to create one');
+        console.log('⚠️ No active session for guest user - checking URL and localStorage for existing session');
         try {
           // Check if there's a session in the URL
           const urlParams = new URLSearchParams(window.location.search);
           const urlSessionId = urlParams.get('session');
           
           if (urlSessionId) {
-            // Use URL session ID
+            // CRITICAL: Check if this session exists in localStorage first
             const urlSession = latestSessions.find(s => s.id === urlSessionId);
             if (urlSession) {
+              // Session exists in localStorage - use it (preserves messages)
               currentActiveSessionId = urlSessionId;
               updateActiveSessionId(urlSessionId);
-              console.log('✅ Using session from URL:', urlSessionId);
+              console.log('✅ Using existing session from URL/localStorage:', urlSessionId, {
+                messagesCount: urlSession.messages.length
+              });
             } else {
-              // Create new session with URL ID
+              // Session ID in URL but not in localStorage - might be from a different device/browser
+              // Check if there's an activeSessionId in localStorage that we should use instead
+              const guestData = localStorage.getItem('guest_chat_sessions');
+              if (guestData) {
+                const parsed = JSON.parse(guestData);
+                const storedActiveSessionId = parsed.activeSessionId;
+                const storedSessions = parsed.sessions || [];
+                const storedSession = storedSessions.find((s: ChatSession) => s.id === storedActiveSessionId);
+                
+                if (storedSession && storedSession.messages.length > 0) {
+                  // Use the session from localStorage (has messages) instead of creating empty one
+                  console.log('⚠️ URL session not found, using active session from localStorage:', storedActiveSessionId, {
+                    messagesCount: storedSession.messages.length
+                  });
+                  currentActiveSessionId = storedActiveSessionId;
+                  updateActiveSessionId(storedActiveSessionId);
+                  
+                  // Update URL to match localStorage
+                  const url = new URL(window.location.href);
+                  url.searchParams.set('session', storedActiveSessionId);
+                  window.history.replaceState({}, '', url.toString());
+                } else {
+                  // No valid session in localStorage - create new session with URL ID
+                  console.log('⚠️ No valid session found, creating new session with URL ID:', urlSessionId);
+                  const newSession: ChatSession = {
+                    id: urlSessionId,
+                    title: 'New Chat',
+                    messages: [],
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    isActive: true,
+                    isSavedToSupabase: false,
+                    isDirty: false
+                  };
+                  latestSessions = [newSession, ...latestSessions];
+                  sessionsRef.current = latestSessions;
+                  setSessions(latestSessions);
+                  currentActiveSessionId = urlSessionId;
+                  updateActiveSessionId(urlSessionId);
+                  saveGuestSessions(latestSessions, urlSessionId);
+                  console.log('✅ Created new session with URL ID:', urlSessionId);
+                }
+              } else {
+                // No localStorage data - create new session with URL ID
+                console.log('Creating new session with URL ID (no localStorage):', urlSessionId);
+                const newSession: ChatSession = {
+                  id: urlSessionId,
+                  title: 'New Chat',
+                  messages: [],
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                  isActive: true,
+                  isSavedToSupabase: false,
+                  isDirty: false
+                };
+                latestSessions = [newSession, ...latestSessions];
+                sessionsRef.current = latestSessions;
+                setSessions(latestSessions);
+                currentActiveSessionId = urlSessionId;
+                updateActiveSessionId(urlSessionId);
+                saveGuestSessions(latestSessions, urlSessionId);
+                console.log('✅ Created new session with URL ID:', urlSessionId);
+              }
+            }
+          } else {
+            // No URL session ID - check localStorage for existing active session
+            const guestData = localStorage.getItem('guest_chat_sessions');
+            if (guestData) {
+              const parsed = JSON.parse(guestData);
+              const storedActiveSessionId = parsed.activeSessionId;
+              const storedSessions = parsed.sessions || [];
+              const storedSession = storedSessions.find((s: ChatSession) => s.id === storedActiveSessionId);
+              
+              if (storedSession) {
+                // Use existing session from localStorage
+                console.log('✅ Using existing active session from localStorage:', storedActiveSessionId, {
+                  messagesCount: storedSession.messages.length
+                });
+                currentActiveSessionId = storedActiveSessionId;
+                updateActiveSessionId(storedActiveSessionId);
+                
+                // Update URL to match localStorage
+                const url = new URL(window.location.href);
+                url.searchParams.set('session', storedActiveSessionId);
+                window.history.replaceState({}, '', url.toString());
+              } else {
+                // No valid session - create new one
+                const newSessionId = crypto.randomUUID();
+                const newSession: ChatSession = {
+                  id: newSessionId,
+                  title: 'New Chat',
+                  messages: [],
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                  isActive: true,
+                  isSavedToSupabase: false,
+                  isDirty: false
+                };
+                latestSessions = [newSession, ...latestSessions];
+                sessionsRef.current = latestSessions;
+                setSessions(latestSessions);
+                currentActiveSessionId = newSessionId;
+                updateActiveSessionId(newSessionId);
+                
+                // Update URL
+                const url = new URL(window.location.href);
+                url.searchParams.set('session', newSessionId);
+                window.history.replaceState({}, '', url.toString());
+                
+                saveGuestSessions(latestSessions, newSessionId);
+                console.log('✅ Created new session for guest user:', newSessionId);
+              }
+            } else {
+              // No localStorage data - create new session
+              const newSessionId = crypto.randomUUID();
               const newSession: ChatSession = {
-                id: urlSessionId,
+                id: newSessionId,
                 title: 'New Chat',
                 messages: [],
                 created_at: new Date().toISOString(),
@@ -1131,40 +1312,20 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
               latestSessions = [newSession, ...latestSessions];
               sessionsRef.current = latestSessions;
               setSessions(latestSessions);
-              currentActiveSessionId = urlSessionId;
-              updateActiveSessionId(urlSessionId);
-              saveGuestSessions(latestSessions, urlSessionId);
-              console.log('✅ Created new session with URL ID:', urlSessionId);
+              currentActiveSessionId = newSessionId;
+              updateActiveSessionId(newSessionId);
+              
+              // Update URL
+              const url = new URL(window.location.href);
+              url.searchParams.set('session', newSessionId);
+              window.history.replaceState({}, '', url.toString());
+              
+              saveGuestSessions(latestSessions, newSessionId);
+              console.log('✅ Created new session for guest user:', newSessionId);
             }
-          } else {
-            // Create new session with new ID
-            const newSessionId = crypto.randomUUID();
-            const newSession: ChatSession = {
-              id: newSessionId,
-              title: 'New Chat',
-              messages: [],
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              isActive: true,
-              isSavedToSupabase: false,
-              isDirty: false
-            };
-            latestSessions = [newSession, ...latestSessions];
-            sessionsRef.current = latestSessions;
-            setSessions(latestSessions);
-            currentActiveSessionId = newSessionId;
-            updateActiveSessionId(newSessionId);
-            
-            // Update URL
-            const url = new URL(window.location.href);
-            url.searchParams.set('session', newSessionId);
-            window.history.replaceState({}, '', url.toString());
-            
-            saveGuestSessions(latestSessions, newSessionId);
-            console.log('✅ Created new session for guest user:', newSessionId);
           }
         } catch (error) {
-          console.error('❌ Error creating session for guest user:', error);
+          console.error('❌ Error finding/creating session for guest user:', error);
           console.log('❌ Message will be discarded - no active session');
           return;
         }
@@ -1386,18 +1547,33 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, [isGuestMode, updateActiveSessionId]);
 
-  // Load sessions when user changes
+  // Load sessions when user changes OR on initial mount
   useEffect(() => {
     const currentUserId = user?.id || null;
     const previousUserId = hasLoadedForUserRef.current;
     
-    // Only reload if user actually changed, not just because callback was recreated
-    if (currentUserId === previousUserId) {
-      console.log('⏭️ Skipping loadFromLocalStorage - user unchanged:', currentUserId);
+    // CRITICAL: Load on initial mount even if user is null (guest user)
+    // Check if this is the first load (previousUserId is null) OR if sessions are empty
+    const isInitialLoad = previousUserId === null;
+    const hasNoSessions = sessions.length === 0;
+    
+    // Only skip if user unchanged AND we already have sessions loaded
+    if (currentUserId === previousUserId && !isInitialLoad && !hasNoSessions) {
+      console.log('⏭️ Skipping loadFromLocalStorage - user unchanged and sessions already loaded:', currentUserId);
       return;
     }
     
-    console.log('🔄 User changed - loading sessions:', { previous: previousUserId, current: currentUserId });
+    // If this is initial load or sessions are empty, we need to load
+    if (isInitialLoad || hasNoSessions) {
+      console.log('🔄 Loading sessions - initial load or no sessions:', {
+        isInitialLoad,
+        hasNoSessions,
+        currentUserId,
+        previousUserId
+      });
+    } else {
+      console.log('🔄 User changed - loading sessions:', { previous: previousUserId, current: currentUserId });
+    }
     
     // If user logged out (had a user, now no user), clear everything first
     if (previousUserId && !currentUserId) {
@@ -1430,7 +1606,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     loadFromLocalStorage().finally(() => {
       clearTimeout(safetyTimeout);
     });
-  }, [user?.id, loadFromLocalStorage]); // Only depend on user.id, not the entire callback
+  }, [user?.id, loadFromLocalStorage, sessions.length]); // Include sessions.length to detect when sessions are empty
 
   // Clear guest history when user logs in
   useEffect(() => {

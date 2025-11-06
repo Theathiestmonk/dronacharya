@@ -90,9 +90,21 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     return welcomeMessages[randomIndex];
   }, [welcomeMessages]);
 
-  const [welcomeMessage, setWelcomeMessage] = useState<{ text: string; focusWord: string } | null>(null);
+  // Initialize welcome message immediately to prevent "Loading..." flash
+  const [welcomeMessage, setWelcomeMessage] = useState<{ text: string; focusWord: string } | null>(() => {
+    // Set welcome message immediately on mount to prevent "Loading..." from showing
+    if (typeof window !== 'undefined') {
+      try {
+        const randomIndex = Math.floor(Math.random() * welcomeMessages.length);
+        return welcomeMessages[randomIndex];
+      } catch {
+        return welcomeMessages[0];
+      }
+    }
+    return null;
+  });
 
-  // Initialize welcome message on client side only
+  // Initialize welcome message on client side only (fallback)
   useEffect(() => {
     try {
       if (!welcomeMessage) {
@@ -339,15 +351,87 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     // Check if there's an active session
     let activeSession = getActiveSession();
     
-    // CRITICAL: If no active session (especially for guest users), create one immediately
-    if (!activeSession) {
-      console.log('⚠️ No active session found - creating one for guest user');
+    // CRITICAL: If no active session, check URL for existing session ID first (for guest users)
+    // This prevents creating a new session when one already exists in the URL/localStorage
+    if (!activeSession && !user) {
+      console.log('⚠️ No active session found - checking URL for existing session ID');
+      
+      // Check if there's a session ID in the URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlSessionId = urlParams.get('session');
+      
+      if (urlSessionId) {
+        console.log('🔍 Found session ID in URL:', urlSessionId);
+        
+        // Try to load guest sessions from localStorage to find the session
+        try {
+          const guestData = localStorage.getItem('guest_chat_sessions');
+          if (guestData) {
+            const parsed = JSON.parse(guestData);
+            const guestSessions = parsed.sessions || [];
+            const urlSession = guestSessions.find((s: { id: string; messages?: Array<{ sender: string; text: string }> }) => s.id === urlSessionId);
+            
+            if (urlSession) {
+              console.log('✅ Found session in localStorage, using it:', urlSessionId, {
+                messagesCount: urlSession.messages.length
+              });
+              
+              // Session exists in localStorage - ensure it's set as active
+              // The session should already be loaded, but let's make sure
+              // Wait a bit for the session to be loaded by ChatHistoryProvider
+              await new Promise(resolve => setTimeout(resolve, 300));
+              activeSession = getActiveSession();
+              
+              if (activeSession && activeSession.id === urlSessionId) {
+                console.log('✅ Session loaded successfully from localStorage');
+              } else {
+                console.log('⚠️ Session not yet loaded, will be handled by addMessage fallback');
+              }
+            } else {
+              console.log('⚠️ Session ID in URL not found in localStorage - will create new session');
+            }
+          }
+        } catch (error) {
+          console.error('Error checking localStorage for session:', error);
+        }
+      }
+      
+      // Only create a new session if we still don't have one
+      if (!activeSession) {
+        console.log('⚠️ No active session found after checking URL - creating one for guest user');
+        try {
+          // Create a new session for guest users
+          await createNewSession();
+          // Wait a bit longer for session to be fully created and saved
+          await new Promise(resolve => setTimeout(resolve, 200));
+          // Get the newly created session - retry a few times if needed
+          let retries = 0;
+          while (!activeSession && retries < 5) {
+            activeSession = getActiveSession();
+            if (!activeSession) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+              retries++;
+            }
+          }
+          if (activeSession) {
+            console.log('✅ Session created successfully:', activeSession.id);
+          } else {
+            console.error('⚠️ Session creation completed but still no active session after retries');
+            // Try one more time to get session
+            activeSession = getActiveSession();
+          }
+        } catch (error) {
+          console.error('Error creating session:', error);
+          // Try to get session one more time
+          activeSession = getActiveSession();
+        }
+      }
+    } else if (!activeSession && user) {
+      // For logged-in users, create a new session if none exists
+      console.log('⚠️ No active session found - creating one for logged-in user');
       try {
-        // Create a new session for guest users
         await createNewSession();
-        // Wait a bit longer for session to be fully created and saved
         await new Promise(resolve => setTimeout(resolve, 200));
-        // Get the newly created session - retry a few times if needed
         let retries = 0;
         while (!activeSession && retries < 5) {
           activeSession = getActiveSession();
@@ -359,13 +443,10 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         if (activeSession) {
           console.log('✅ Session created successfully:', activeSession.id);
         } else {
-          console.error('⚠️ Session creation completed but still no active session after retries');
-          // Try one more time to get session
           activeSession = getActiveSession();
         }
       } catch (error) {
         console.error('Error creating session:', error);
-        // Try to get session one more time
         activeSession = getActiveSession();
       }
     }
@@ -743,13 +824,22 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     // CRITICAL: If we have an active session (from refs), load messages even if state is null
     // This fixes the issue where state is null but ref has the correct value
     if (!activeSession) {
-      // Only clear if we've previously loaded a session (not on first load)
+      // CRITICAL: On page refresh, wait a bit for session to load from localStorage
+      // Don't clear messages immediately - session might still be loading
       if (lastLoadedSessionIdRef.current !== null) {
-        console.log('❌ No active session - clearing messages');
-        lastLoadedSessionIdRef.current = null;
-        setMessages([]);
-        setConversationHistory([]);
-        setHasFirstResponse(false);
+        // We had a session before, but now it's gone - might be loading
+        // Wait a bit and check again before clearing
+        console.log('⚠️ No active session found - waiting for session to load...');
+        setTimeout(() => {
+          const retrySession = getActiveSession();
+          if (!retrySession && lastLoadedSessionIdRef.current !== null) {
+            console.log('❌ No active session after retry - clearing messages');
+            lastLoadedSessionIdRef.current = null;
+            setMessages([]);
+            setConversationHistory([]);
+            setHasFirstResponse(false);
+          }
+        }, 500);
       }
       return;
     }
@@ -770,7 +860,9 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           isGuest: !user,
           currentMessagesCount: messages.length,
           lastLoadedSessionId: lastLoadedSessionIdRef.current,
-          activeSessionMessageCount
+          activeSessionMessageCount,
+          sessionHasMessages: sessionMessages.length > 0,
+          currentIsEmpty: messages.length === 0
         });
         
         // CRITICAL: Only update messages if:
@@ -778,14 +870,27 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         // 2. Session ID changed (switched to different session)
         // 3. Session has more messages than current state (session was updated - new messages added)
         // 4. Session message count changed (activeSessionMessageCount dependency triggered this)
-        // 5. Session has messages but UI is empty (page refresh scenario)
+        // 5. Session has messages but UI is empty (page refresh scenario) - MOST IMPORTANT FOR GUEST USERS
         // This prevents overwriting messages that are being added in real-time via setMessages
         const isFirstLoad = lastLoadedSessionIdRef.current === null;
         const isSessionChanged = lastLoadedSessionIdRef.current !== activeSession.id;
         const hasMoreMessages = sessionMessages.length > messages.length;
         const sessionCountChanged = sessionMessages.length !== messages.length; // Session count is different from UI count
         const isEmptyButSessionHasMessages = messages.length === 0 && sessionMessages.length > 0; // Page refresh - load from session
-        const shouldSyncFromSession = isFirstLoad || isSessionChanged || hasMoreMessages || sessionCountChanged || isEmptyButSessionHasMessages;
+        // CRITICAL: Always sync if session has messages and UI is empty (page refresh scenario)
+        // This ensures messages are loaded on refresh even if other conditions aren't met
+        const shouldSyncFromSession = isFirstLoad || isSessionChanged || hasMoreMessages || sessionCountChanged || isEmptyButSessionHasMessages || (sessionMessages.length > 0 && messages.length === 0);
+        
+        console.log('🔍 Sync decision:', {
+          isFirstLoad,
+          isSessionChanged,
+          hasMoreMessages,
+          sessionCountChanged,
+          isEmptyButSessionHasMessages,
+          shouldSyncFromSession,
+          sessionMessagesCount: sessionMessages.length,
+          currentMessagesCount: messages.length
+        });
         
         if (shouldSyncFromSession) {
           console.log('✅ Syncing messages from session to state', {
@@ -969,9 +1074,13 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   // Only show loading opacity on the very first app load, never again (even on login/logout)
   const containerClassName = (chatHistoryLoading && !hasShownInitialLoad) ? 'opacity-40 scale-[0.98]' : 'opacity-100 scale-100';
   
+  // Check if we have an active session with messages to prevent welcome screen from showing
+  const activeSession = getActiveSession();
+  const hasActiveSessionWithMessages = activeSession?.messages && activeSession.messages.length > 0;
+  
   return (
     <div className={`flex flex-col h-full w-full bg-transparent mx-auto transition-all duration-200 ${containerClassName}`}>
-      {messages.length === 0 ? (
+      {messages.length === 0 && !hasActiveSessionWithMessages ? (
         <>
           {/* Welcome Screen - Mobile Optimized Layout */}
           <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden">
@@ -1154,7 +1263,8 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             >
               {'text' in msg && msg.sender === 'user' ? (
               <div
-              className="max-w-[95%] sm:max-w-[85%] md:max-w-[80%] break-words bg-blue-600 text-white rounded-2xl rounded-tr-sm px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 shadow-sm"
+              className="max-w-[95%] sm:max-w-[85%] md:max-w-[80%] break-words text-white rounded-2xl rounded-tr-sm px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 shadow-sm"
+              style={{ backgroundColor: 'var(--brand-primary)' }}
               >
                 {'text' in msg && (
                   <div className="markdown-content text-sm sm:text-base leading-relaxed">

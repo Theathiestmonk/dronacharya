@@ -31,10 +31,12 @@ const AppContent: React.FC<{
   chatKey,
   setChatKey
 }) => {
-  const { isLoading: chatHistoryLoading } = useChatHistory();
+  const { isLoading: chatHistoryLoading, getActiveSession, activeSessionId } = useChatHistory();
   const { profile, signOut } = useAuth();
   const router = useRouter();
   const [isFullyInitialized, setIsFullyInitialized] = useState(false);
+  // CRITICAL: Track if we've ever had an active session to prevent loading screen from showing again
+  const hasEverHadSessionRef = useRef(false);
   const [sidebarQuery, setSidebarQuery] = useState<string>('');
   const [queryKey, setQueryKey] = useState(0);
   const [showEditProfile, setShowEditProfile] = useState(false);
@@ -63,6 +65,18 @@ const AppContent: React.FC<{
     window.addEventListener('resize', checkScreenSize);
     return () => window.removeEventListener('resize', checkScreenSize);
   }, []);
+
+  // Track active session with messages to prevent loading screen from showing after first session
+  useEffect(() => {
+    const activeSession = getActiveSession();
+    const hasMessages = activeSession?.messages && activeSession.messages.length > 0;
+    if (activeSession && hasMessages && !hasEverHadSessionRef.current) {
+      hasEverHadSessionRef.current = true;
+      // Also set isFullyInitialized to true immediately
+      setIsFullyInitialized(true);
+      console.log('✅ Active session with messages detected in useEffect - will never show loading screen again');
+    }
+  }, [getActiveSession, activeSessionId]); // Re-check when session ID changes
 
   // Improved loading logic - wait for auth and chat history
   useEffect(() => {
@@ -319,7 +333,34 @@ const AppContent: React.FC<{
   }, [isProfileDropdownOpen]);
 
   // Show loading state while providers are initializing
-  if (loading || chatHistoryLoading || !isFullyInitialized) {
+  // CRITICAL: Only show loading screen on initial load, not when sending messages in existing chat
+  // Once we have an active session with messages, never show loading screen again (prevents blinking when sending inbuilt queries)
+  const activeSession = getActiveSession();
+  const hasActiveSession = !!activeSession;
+  const hasMessages = activeSession?.messages && activeSession.messages.length > 0;
+  
+  // Track if we've ever had a session with messages - once we have, never show loading screen again
+  if (hasActiveSession && hasMessages && !hasEverHadSessionRef.current) {
+    hasEverHadSessionRef.current = true;
+    // Also set isFullyInitialized to true immediately to prevent any loading screen
+    if (!isFullyInitialized) {
+      setIsFullyInitialized(true);
+    }
+    console.log('✅ Active session with messages detected - will never show loading screen again');
+  }
+  
+  // Also check if we have messages even if session just appeared
+  if (hasActiveSession && hasMessages) {
+    hasEverHadSessionRef.current = true;
+  }
+  
+  // Only show loading if:
+  // 1. Auth is still loading, AND we've never had a session with messages, OR
+  // 2. It's initial load AND we've never had a session with messages before
+  // Once we've had a session with messages (tracked by ref), NEVER show loading screen (prevents blinking)
+  const shouldShowLoading = (loading && !hasEverHadSessionRef.current) || (!isFullyInitialized && !hasEverHadSessionRef.current);
+  
+  if (shouldShowLoading) {
     return (
       <div className="flex min-h-screen h-screen bg-gray-50 dark:bg-gray-900">
         <main className="flex-1 flex items-center justify-center h-screen">
