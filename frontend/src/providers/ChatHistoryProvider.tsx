@@ -325,13 +325,13 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
         
         updateActiveSessionId(activeSessionId);
         setIsGuestMode(true);
-        const activeSession = guestSessions.find(s => s.id === activeSessionId);
+        const activeSession = guestSessions.find((s: ChatSession) => s.id === activeSessionId);
         console.log('✅ Loaded guest sessions from localStorage:', {
           sessionsCount: guestSessions.length,
           activeSessionId: activeSessionId,
           activeSessionMessagesCount: activeSession?.messages?.length || 0,
-          allMessagesCount: guestSessions.reduce((sum, s) => sum + (s.messages?.length || 0), 0),
-          activeSessionMessages: activeSession?.messages?.map(m => ({ sender: m.sender, text: m.text?.substring(0, 30) + '...' })) || []
+          allMessagesCount: guestSessions.reduce((sum: number, s: ChatSession) => sum + (s.messages?.length || 0), 0),
+          activeSessionMessages: activeSession?.messages?.map((m: ChatMessage) => ({ sender: m.sender, text: m.text?.substring(0, 30) + '...' })) || []
         });
       } else {
         console.log('No guest sessions found');
@@ -1481,7 +1481,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
       
       console.log('✅ Cache cleared. User data remains in Supabase and will be restored on next login.');
     }
-  }, [user, updateActiveSessionId, loadGuestSessions]);
+  }, [user, updateActiveSessionId, loadGuestSessions]); // updateActiveSessionId is stable (useCallback with dependencies)
 
   // Auto-save sessions before page unload (no popup)
   useEffect(() => {

@@ -319,7 +319,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         }, 200);
       }
     }
-  }, [externalQuery, loading, requestInProgress, isGenerating, user, conversationHistory.length]);
+  }, [externalQuery, loading, requestInProgress, isGenerating, user, conversationHistory.length, handleSuggestionClick, onQueryProcessed]);
 
   // Send message to backend /chatbot endpoint
   const sendMessage = async (messageText?: string) => {
@@ -818,10 +818,13 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           setHasFirstResponse(hasBotMessages);
           
           // Update conversation history for API calls - use merged messages
-          const history = messagesToSet.map(msg => ({
-            role: msg.sender === 'bot' ? 'assistant' : msg.sender,
-            content: msg.text,
-          }));
+          // Only include messages that have text content (exclude calendar, map, videos)
+          const history = messagesToSet
+            .filter((msg): msg is { sender: 'user' | 'bot'; text: string } => 'text' in msg)
+            .map(msg => ({
+              role: msg.sender === 'bot' ? 'assistant' : msg.sender,
+              content: msg.text,
+            }));
           setConversationHistory(history);
         } else {
           console.log('⏭️ Skipping sync - messages are up to date or being updated in real-time', {
@@ -1039,7 +1042,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                         ? 'bg-gray-600 hover:bg-gray-700 shadow-lg animate-pulse' 
                         : 'hover:bg-gray-200'
                     }`}
-                    onClick={(isGenerating || isTyping) ? stopGeneration : sendMessage}
+                    onClick={(isGenerating || isTyping) ? stopGeneration : () => sendMessage()}
                     disabled={!(isGenerating || isTyping) && (loading || requestInProgress || !input.trim())}
                     aria-label={(isGenerating || isTyping) ? "Stop generation" : "Send message"}
                     tabIndex={0}
@@ -1314,7 +1317,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                     ? 'bg-gray-600 hover:bg-gray-700 shadow-lg animate-pulse' 
                     : 'hover:bg-gray-200'
                 }`}
-                onClick={(isGenerating || isTyping) ? stopGeneration : sendMessage}
+                onClick={(isGenerating || isTyping) ? stopGeneration : () => sendMessage()}
                 disabled={!(isGenerating || isTyping) && (loading || requestInProgress || !input.trim())}
                 aria-label={(isGenerating || isTyping) ? "Stop generation" : "Send message"}
                 tabIndex={0}
