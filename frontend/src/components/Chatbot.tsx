@@ -60,6 +60,8 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const isInbuiltQueryRef = useRef(false); // Track if current message is from inbuilt query
   const [displayedBotText, setDisplayedBotText] = useState<string>('');
   const [isTyping, setIsTyping] = useState(false);
   // For copy feedback per message
@@ -218,21 +220,45 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                 setTimeout(typeChar, 8);
               } else {
                 setIsTyping(false);
-                setMessages((msgs) => [...msgs, { sender: 'bot', text: fullText }]);
+                // For inbuilt queries, preserve scroll position when adding bot message
+                if (isInbuiltQueryRef.current && messagesContainerRef.current) {
+                  const savedScrollPosition = messagesContainerRef.current.scrollTop;
+                  setMessages((msgs) => [...msgs, { sender: 'bot', text: fullText }]);
+                  // Restore scroll position immediately after adding message
+                  requestAnimationFrame(() => {
+                    if (messagesContainerRef.current && savedScrollPosition > 0) {
+                      messagesContainerRef.current.scrollTop = savedScrollPosition;
+                    }
+                  });
+                } else {
+                  setMessages((msgs) => [...msgs, { sender: 'bot', text: fullText }]);
+                }
                 setHasFirstResponse(true);
               }
             }
             typeChar();
           })
           .catch(() => {
-            setMessages((msgs) => [...msgs, { sender: 'bot', text: 'Error: Could not get response.' }]);
+            // For inbuilt queries, preserve scroll position when adding error message
+            if (isInbuiltQueryRef.current && messagesContainerRef.current) {
+              const savedScrollPosition = messagesContainerRef.current.scrollTop;
+              setMessages((msgs) => [...msgs, { sender: 'bot', text: 'Error: Could not get response.' }]);
+              // Restore scroll position immediately after adding message
+              requestAnimationFrame(() => {
+                if (messagesContainerRef.current && savedScrollPosition > 0) {
+                  messagesContainerRef.current.scrollTop = savedScrollPosition;
+                }
+              });
+            } else {
+              setMessages((msgs) => [...msgs, { sender: 'bot', text: 'Error: Could not get response.' }]);
+            }
             setHasFirstResponse(true);
           })
           .finally(() => {
             setLoading(false);
           });
       }
-      inputRef.current?.focus();
+      inputRef.current?.focus({ preventScroll: true });
     };
     recognition.onerror = () => {
       setListening(false);
@@ -283,38 +309,48 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
 
     const prompt = suggestionPrompts[suggestion] || suggestion;
     
-    console.log('🎯 Suggestion clicked:', suggestion, '→ Sending prompt:', prompt);
+    console.log('🎯 Suggestion clicked:', suggestion, '→ Populating input with prompt:', prompt);
     
-    // CRITICAL: Don't set input state - pass prompt directly to sendMessage
-    // Setting input and then clearing it causes the message field to be empty in the request
-    // Pass prompt directly to sendMessage to ensure it's used
+    // CRITICAL: Just populate the input field - don't auto-send
+    // User must manually click send button (like normal messages)
+    // This prevents scrolling issues and gives user control
     
-    // Focus the input field to ensure it's visible and scroll into view
+    // CRITICAL: Save scroll position BEFORE any operations that might cause scrolling
+    const savedScrollPosition = messagesContainerRef.current?.scrollTop || 0;
+    
+    // Update input state and ref
+    setInput(prompt);
     if (inputRef.current) {
-      // Temporarily show the prompt in the input for visual feedback
       inputRef.current.value = prompt;
-      inputRef.current.focus();
-      // Scroll input into view if needed
-      inputRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      // Focus the input field WITHOUT scrolling into view
+      // Use preventScroll option to prevent browser from scrolling to input
+      inputRef.current.focus({ preventScroll: true });
+      // Move cursor to end of text
+      inputRef.current.setSelectionRange(prompt.length, prompt.length);
     }
     
-    // Use requestAnimationFrame to ensure DOM updates are complete
+    // CRITICAL: Restore scroll position after focusing to prevent any scrolling
+    // Use multiple attempts to ensure scroll position is preserved
     requestAnimationFrame(() => {
-      // Use another requestAnimationFrame to ensure state is updated
-      requestAnimationFrame(() => {
-        // Use setTimeout to ensure the input is visible before sending
-        // Give user a moment to see the query in the input field
-        // Pass prompt directly to sendMessage to avoid closure issues
-        setTimeout(() => {
-          sendMessage(prompt);
-          // Clear the input field after sending
-          if (inputRef.current) {
-            inputRef.current.value = '';
-          }
-          setInput('');
-        }, 500);
-      });
+      if (messagesContainerRef.current && savedScrollPosition > 0) {
+        messagesContainerRef.current.scrollTop = savedScrollPosition;
+      }
     });
+    setTimeout(() => {
+      if (messagesContainerRef.current && savedScrollPosition > 0) {
+        messagesContainerRef.current.scrollTop = savedScrollPosition;
+      }
+    }, 0);
+    setTimeout(() => {
+      if (messagesContainerRef.current && savedScrollPosition > 0) {
+        messagesContainerRef.current.scrollTop = savedScrollPosition;
+      }
+    }, 50);
+    
+    // Call onQueryProcessed if provided (for external query handling)
+    if (onQueryProcessed) {
+      onQueryProcessed();
+    }
   };
 
   // Handle external query from sidebar - using ref to avoid dependency issues
@@ -335,6 +371,10 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
 
   // Send message to backend /chatbot endpoint
   const sendMessage = async (messageText?: string) => {
+    // Reset inbuilt query flag for all messages (inbuilt queries now behave like normal messages)
+    // Since inbuilt queries are no longer auto-sent, they're treated as normal messages
+    isInbuiltQueryRef.current = false;
+    
     // Use provided messageText or fall back to input state
     const messageToSend = messageText || input;
     
@@ -461,7 +501,42 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       sessionId: activeSession?.id
     });
     const userMsg: Message = { sender: 'user', text: messageToSend };
-    setMessages((msgs) => [...msgs, userMsg]);
+    
+    // CRITICAL: For inbuilt queries, add user message to state FIRST (like normal messages)
+    // This ensures proper message order: user message appears first, then bot response
+    // We still preserve scroll position to prevent unwanted scrolling
+    if (isInbuiltQueryRef.current && messagesContainerRef.current) {
+      const savedScrollPosition = messagesContainerRef.current.scrollTop;
+      // Add user message to state immediately (like normal messages) to ensure proper order
+      console.log('📝 Inbuilt query - adding user message to state first (like normal messages)');
+      setMessages((msgs) => [...msgs, userMsg]);
+      
+      // CRITICAL: Restore scroll position to prevent any scrolling
+      // Use multiple attempts to ensure scroll position is preserved
+      requestAnimationFrame(() => {
+        if (messagesContainerRef.current && savedScrollPosition > 0) {
+          messagesContainerRef.current.scrollTop = savedScrollPosition;
+        }
+      });
+      setTimeout(() => {
+        if (messagesContainerRef.current && savedScrollPosition > 0) {
+          messagesContainerRef.current.scrollTop = savedScrollPosition;
+        }
+      }, 0);
+      setTimeout(() => {
+        if (messagesContainerRef.current && savedScrollPosition > 0) {
+          messagesContainerRef.current.scrollTop = savedScrollPosition;
+        }
+      }, 50);
+      setTimeout(() => {
+        if (messagesContainerRef.current && savedScrollPosition > 0) {
+          messagesContainerRef.current.scrollTop = savedScrollPosition;
+        }
+      }, 100);
+    } else {
+      // Normal query - append at bottom immediately
+      setMessages((msgs) => [...msgs, userMsg]);
+    }
     
     
     // Add user message to chat history and wait for it to complete
@@ -591,7 +666,19 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       // Check for structured responses with type field
       if (data.type === 'calendar' && data.response && data.response.url) {
         const botMsg = { sender: 'bot' as const, type: 'calendar' as const, url: data.response.url };
-        setMessages((msgs) => [...msgs, botMsg]);
+        // For inbuilt queries, preserve scroll position when adding bot message
+        if (isInbuiltQueryRef.current && messagesContainerRef.current) {
+          const savedScrollPosition = messagesContainerRef.current.scrollTop;
+          setMessages((msgs) => [...msgs, botMsg]);
+          // Restore scroll position immediately after adding message
+          requestAnimationFrame(() => {
+            if (messagesContainerRef.current && savedScrollPosition > 0) {
+              messagesContainerRef.current.scrollTop = savedScrollPosition;
+            }
+          });
+        } else {
+          setMessages((msgs) => [...msgs, botMsg]);
+        }
         console.log('Adding bot calendar message to chat history...');
         await addMessage({
           sender: 'bot',
@@ -606,7 +693,19 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         return;
       } else if (data.type === 'map' && data.response && data.response.url) {
         const botMsg = { sender: 'bot' as const, type: 'map' as const, url: data.response.url };
-        setMessages((msgs) => [...msgs, botMsg]);
+        // For inbuilt queries, preserve scroll position when adding bot message
+        if (isInbuiltQueryRef.current && messagesContainerRef.current) {
+          const savedScrollPosition = messagesContainerRef.current.scrollTop;
+          setMessages((msgs) => [...msgs, botMsg]);
+          // Restore scroll position immediately after adding message
+          requestAnimationFrame(() => {
+            if (messagesContainerRef.current && savedScrollPosition > 0) {
+              messagesContainerRef.current.scrollTop = savedScrollPosition;
+            }
+          });
+        } else {
+          setMessages((msgs) => [...msgs, botMsg]);
+        }
         await addMessage({
           sender: 'bot',
           text: data.response.url,
@@ -627,7 +726,19 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           messages_to_add.push({ sender: 'bot', type: 'videos', videos: data.response[1].videos } as Message);
         }
         
-        setMessages((msgs) => [...msgs, ...messages_to_add]);
+        // For inbuilt queries, preserve scroll position when adding bot messages
+        if (isInbuiltQueryRef.current && messagesContainerRef.current) {
+          const savedScrollPosition = messagesContainerRef.current.scrollTop;
+          setMessages((msgs) => [...msgs, ...messages_to_add]);
+          // Restore scroll position immediately after adding messages
+          requestAnimationFrame(() => {
+            if (messagesContainerRef.current && savedScrollPosition > 0) {
+              messagesContainerRef.current.scrollTop = savedScrollPosition;
+            }
+          });
+        } else {
+          setMessages((msgs) => [...msgs, ...messages_to_add]);
+        }
         setIsTyping(false);
         setDisplayedBotText('');
         setHasFirstResponse(true);
@@ -635,7 +746,19 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       } else if (data.type === 'videos' && data.response && data.response.videos) {
         // Handle video responses
         const botMsg = { sender: 'bot' as const, type: 'videos' as const, videos: data.response.videos };
-        setMessages((msgs) => [...msgs, botMsg]);
+        // For inbuilt queries, preserve scroll position when adding bot message
+        if (isInbuiltQueryRef.current && messagesContainerRef.current) {
+          const savedScrollPosition = messagesContainerRef.current.scrollTop;
+          setMessages((msgs) => [...msgs, botMsg]);
+          // Restore scroll position immediately after adding message
+          requestAnimationFrame(() => {
+            if (messagesContainerRef.current && savedScrollPosition > 0) {
+              messagesContainerRef.current.scrollTop = savedScrollPosition;
+            }
+          });
+        } else {
+          setMessages((msgs) => [...msgs, botMsg]);
+        }
         await addMessage({
           sender: 'bot',
           text: JSON.stringify(data.response.videos),
@@ -666,7 +789,33 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         } else {
           setIsTyping(false);
           // Store the full Markdown text for rendering
-          setMessages((msgs) => [...msgs, { sender: 'bot', text: fullText }]);
+          // For inbuilt queries, preserve scroll position when adding bot message
+          // User message is already in state, so bot message will appear after it (correct order)
+          const botMsg: Message = { sender: 'bot', text: fullText };
+          
+          if (isInbuiltQueryRef.current && messagesContainerRef.current) {
+            const savedScrollPosition = messagesContainerRef.current.scrollTop;
+            // Append bot message after user message (correct order)
+            setMessages((msgs) => [...msgs, botMsg]);
+            // Restore scroll position immediately after adding message
+            requestAnimationFrame(() => {
+              if (messagesContainerRef.current && savedScrollPosition > 0) {
+                messagesContainerRef.current.scrollTop = savedScrollPosition;
+              }
+            });
+            setTimeout(() => {
+              if (messagesContainerRef.current && savedScrollPosition > 0) {
+                messagesContainerRef.current.scrollTop = savedScrollPosition;
+              }
+            }, 0);
+            setTimeout(() => {
+              if (messagesContainerRef.current && savedScrollPosition > 0) {
+                messagesContainerRef.current.scrollTop = savedScrollPosition;
+              }
+            }, 50);
+          } else {
+            setMessages((msgs) => [...msgs, botMsg]);
+          }
           
           // Add to chat history
           console.log('=== BOT MESSAGE START ===');
@@ -765,15 +914,66 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   };
 
   // Auto-scroll to bottom when messages change or when typing
+  // CRITICAL: For inbuilt queries, NEVER scroll - just add message at bottom
+  // Only scroll for manual messages if user is near bottom
   useEffect(() => {
+    // CRITICAL: If this is an inbuilt query, NEVER scroll - preserve user's current view
+    // Check the ref at the start AND before any scroll operations
+    if (isInbuiltQueryRef.current) {
+      console.log('🚫 Auto-scroll blocked - inbuilt query in progress');
+      return; // Exit early - don't scroll at all for inbuilt queries
+    }
+    
+    const shouldScroll = () => {
+      // Double-check inbuilt query flag before scrolling
+      if (isInbuiltQueryRef.current) {
+        console.log('🚫 Should scroll check blocked - inbuilt query in progress');
+        return false;
+      }
+      
+      // Always scroll if there are few messages (new conversation)
+      if (messages.length < 10) {
+        return true;
+      }
+      
+      // Check if user is near bottom of scroll container
+      if (messagesContainerRef.current) {
+        const container = messagesContainerRef.current;
+        const scrollTop = container.scrollTop;
+        const scrollHeight = container.scrollHeight;
+        const clientHeight = container.clientHeight;
+        const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+        
+        // Only scroll if user is within 200px of bottom (already viewing recent messages)
+        return distanceFromBottom < 200;
+      }
+      
+      // Default to scrolling if container ref not available
+      return true;
+    };
+    
+    // Final check before any scroll operations
+    if (isInbuiltQueryRef.current) {
+      console.log('🚫 Scroll operation blocked - inbuilt query in progress');
+      return;
+    }
+    
     if (isTyping && typingRef.current) {
-      // Scroll to typing text when it's active with a small delay for smooth rendering
-      setTimeout(() => {
-        typingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-      }, 50);
-    } else {
-      // Scroll to bottom for regular messages
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      // Only scroll to typing text if user is near bottom
+      if (shouldScroll()) {
+        setTimeout(() => {
+          // Check again before scrolling
+          if (!isInbuiltQueryRef.current) {
+            typingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+          }
+        }, 50);
+      }
+    } else if (shouldScroll()) {
+      // Scroll to bottom for regular messages only if should scroll
+      // Check again before scrolling
+      if (!isInbuiltQueryRef.current) {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
     }
   }, [messages, loading, isTyping, displayedBotText]);
 
@@ -789,7 +989,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         !(active instanceof HTMLElement && active.isContentEditable)
       ))
     ) {
-      inputRef.current.focus();
+      inputRef.current.focus({ preventScroll: true });
     }
   }, [messages]);
 
@@ -802,6 +1002,10 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     if (chatHistoryLoading) {
       return;
     }
+    
+    // CRITICAL: For inbuilt queries, we need to handle sync differently
+    // Don't skip entirely - we need to load existing messages, but prevent replacement
+    // The actual append logic is handled in the sync block below
     
     // CRITICAL: Check for active session using getActiveSession() first (uses refs, always up-to-date)
     // Don't rely solely on activeSessionId state which might be null due to timing issues
@@ -865,8 +1069,12 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           currentIsEmpty: messages.length === 0
         });
         
+        // CRITICAL: Check if this is an inbuilt query FIRST
+        // This ensures we always append instead of replace for inbuilt queries
+        const isInbuiltQuery = isInbuiltQueryRef.current;
+        
         // CRITICAL: Only update messages if:
-        // 1. This is the first load (lastLoadedSessionIdRef is null)
+        // 1. This is the first load (lastLoadedSessionIdRef is null) - BUT skip for inbuilt queries
         // 2. Session ID changed (switched to different session)
         // 3. Session has more messages than current state (session was updated - new messages added)
         // 4. Session message count changed (activeSessionMessageCount dependency triggered this)
@@ -879,9 +1087,18 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         const isEmptyButSessionHasMessages = messages.length === 0 && sessionMessages.length > 0; // Page refresh - load from session
         // CRITICAL: Always sync if session has messages and UI is empty (page refresh scenario)
         // This ensures messages are loaded on refresh even if other conditions aren't met
-        const shouldSyncFromSession = isFirstLoad || isSessionChanged || hasMoreMessages || sessionCountChanged || isEmptyButSessionHasMessages || (sessionMessages.length > 0 && messages.length === 0);
+        // BUT: For inbuilt queries, we'll handle it differently (append instead of replace)
+        // Exclude inbuilt queries from sync conditions that would cause replacement
+        const shouldSyncFromSession = (!isInbuiltQuery && isFirstLoad) || 
+                                      (!isInbuiltQuery && isSessionChanged) || 
+                                      (!isInbuiltQuery && hasMoreMessages && messages.length === 0) || // Only sync if no messages exist
+                                      (isInbuiltQuery && messages.length === 0 && sessionMessages.length > 0) || // Allow initial load for inbuilt
+                                      (!isInbuiltQuery && sessionCountChanged) || 
+                                      isEmptyButSessionHasMessages || 
+                                      (!isInbuiltQuery && sessionMessages.length > 0 && messages.length === 0);
         
         console.log('🔍 Sync decision:', {
+          isInbuiltQuery,
           isFirstLoad,
           isSessionChanged,
           hasMoreMessages,
@@ -899,6 +1116,183 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             currentMessagesCount: messages.length,
             activeSessionMessageCount
           });
+          
+          // CRITICAL: For inbuilt queries, ALWAYS append new messages instead of replacing all
+          // This prevents messages from appearing at the top - they stay at the bottom
+          // Check isInbuiltQuery FIRST (we already checked it above, but check ref again to be sure)
+          const isInbuiltQueryNow = isInbuiltQueryRef.current;
+          if (isInbuiltQuery || isInbuiltQueryNow) {
+            console.log('📝 Inbuilt query detected - appending new messages instead of replacing', {
+              isInbuiltQuery,
+              isInbuiltQueryNow,
+              messagesCount: messages.length,
+              sessionMessagesCount: sessionMessages.length
+            });
+            
+            // CRITICAL: Always append new messages, never replace
+            // For inbuilt queries, we need to be careful:
+            // - If state has messages, append new ones from session
+            // - If state is empty but session has messages, it means we just added a message
+            //   and the state update hasn't propagated yet, OR the session has old messages
+            //   In this case, we should use session messages (they're the source of truth)
+            //   but we need to ensure we don't lose any messages that were just added
+            if (messages.length > 0) {
+              // Find messages that are in session but not in current state
+              // Compare by text content, sender, and type to identify new messages
+              // Use a more robust comparison that handles message order
+              const currentMessageKeys = new Set(
+                messages.map((m) => {
+                  const text = 'text' in m ? (m.text || '').substring(0, 200) : '';
+                  const type = 'type' in m ? (m.type || '') : '';
+                  const url = 'url' in m ? (m.url || '').substring(0, 100) : '';
+                  // Create a unique key for each message
+                  return `${m.sender}-${text}-${type}-${url}`;
+                })
+              );
+              
+              // Find messages in session that don't exist in current state
+              const newMessages = sessionMessages.filter((msg) => {
+                const text = 'text' in msg ? (msg.text || '').substring(0, 200) : '';
+                const type = 'type' in msg ? (msg.type || '') : '';
+                const url = 'url' in msg ? (msg.url || '').substring(0, 100) : '';
+                const msgKey = `${msg.sender}-${text}-${type}-${url}`;
+                const isNew = !currentMessageKeys.has(msgKey);
+                if (isNew) {
+                  console.log('📝 Found new message to append:', {
+                    sender: msg.sender,
+                    textPreview: text.substring(0, 50),
+                    type
+                  });
+                }
+                return isNew;
+              });
+              
+              if (newMessages.length > 0) {
+                console.log('📝 Appending', newMessages.length, 'new messages at bottom (inbuilt query)');
+                // CRITICAL: For inbuilt queries, user message is already in state
+                // Only append bot messages that aren't already in state
+                // Filter out user messages since they're already added
+                const botMessagesOnly = newMessages.filter(msg => msg.sender === 'bot');
+                
+                if (botMessagesOnly.length > 0) {
+                  // Save scroll position before updating messages
+                  const savedScrollPosition = messagesContainerRef.current?.scrollTop || 0;
+                  
+                  // CRITICAL: Temporarily disable auto-scroll by ensuring flag is set
+                  // This prevents the auto-scroll useEffect from running
+                  const wasInbuiltQuery = isInbuiltQueryRef.current;
+                  if (!wasInbuiltQuery) {
+                    isInbuiltQueryRef.current = true;
+                  }
+                  
+                  // Append only bot messages at the bottom - user message is already in state
+                  setMessages((msgs) => {
+                    const combined = [...msgs, ...botMessagesOnly];
+                    console.log('📝 Combined messages (inbuilt query - bot only):', {
+                      previousCount: msgs.length,
+                      newCount: combined.length,
+                      appended: botMessagesOnly.length
+                    });
+                    return combined;
+                  });
+                  
+                  // CRITICAL: Restore scroll position after messages are added
+                  // Use multiple attempts with increasing delays to ensure scroll position is preserved
+                  // This handles React's render cycle and DOM updates
+                  const restoreScroll = () => {
+                    if (messagesContainerRef.current && savedScrollPosition > 0) {
+                      messagesContainerRef.current.scrollTop = savedScrollPosition;
+                      console.log('📍 Restored scroll position:', savedScrollPosition);
+                    }
+                  };
+                  
+                  // Immediate restoration
+                  requestAnimationFrame(restoreScroll);
+                  // After render
+                  setTimeout(restoreScroll, 0);
+                  // After layout
+                  setTimeout(restoreScroll, 10);
+                  setTimeout(restoreScroll, 50);
+                  setTimeout(restoreScroll, 100);
+                  setTimeout(restoreScroll, 200);
+                  
+                  // Restore flag if it wasn't set before
+                  if (!wasInbuiltQuery) {
+                    // Keep it set for a bit longer to prevent any delayed scrolls
+                    setTimeout(() => {
+                      isInbuiltQueryRef.current = false;
+                    }, 500);
+                  }
+                } else {
+                  console.log('📝 No new bot messages to append (inbuilt query - user message already in state)');
+                }
+              } else {
+                console.log('📝 No new messages to append (inbuilt query)');
+              }
+            } else {
+              // No existing messages in state
+              // This could mean:
+              // 1. State is truly empty (first load)
+              // 2. State update hasn't propagated yet (race condition)
+              // For inbuilt queries, if state is empty but session has messages,
+              // we should use session messages (they're the source of truth)
+              // The session already includes the user message we just added
+              console.log('📝 No messages in state for inbuilt query - loading from session:', {
+                sessionMessagesCount: sessionMessages.length,
+                currentMessagesCount: messages.length,
+                note: 'Session is source of truth, includes user message just added'
+              });
+              
+              // Save scroll position before loading messages
+              const savedScrollPosition = messagesContainerRef.current?.scrollTop || 0;
+              
+              // CRITICAL: Ensure inbuilt query flag is set to prevent auto-scroll
+              const wasInbuiltQuery = isInbuiltQueryRef.current;
+              if (!wasInbuiltQuery) {
+                isInbuiltQueryRef.current = true;
+              }
+              
+              // Use session messages - they're the authoritative source
+              // The session already has the user message that was just added
+              if (sessionMessages.length > 0) {
+                console.log('📝 Setting messages from session (inbuilt query, empty state):', sessionMessages.length);
+                setMessages(sessionMessages);
+                
+                // CRITICAL: Restore scroll position after messages are loaded
+                // Use multiple attempts with increasing delays to ensure scroll position is preserved
+                const restoreScroll = () => {
+                  if (messagesContainerRef.current && savedScrollPosition > 0) {
+                    messagesContainerRef.current.scrollTop = savedScrollPosition;
+                    console.log('📍 Restored scroll position (empty state):', savedScrollPosition);
+                  }
+                };
+                
+                // Immediate restoration
+                requestAnimationFrame(restoreScroll);
+                // After render
+                setTimeout(restoreScroll, 0);
+                // After layout
+                setTimeout(restoreScroll, 10);
+                setTimeout(restoreScroll, 50);
+                setTimeout(restoreScroll, 100);
+                setTimeout(restoreScroll, 200);
+                
+                // Restore flag if it wasn't set before
+                if (!wasInbuiltQuery) {
+                  // Keep it set for a bit longer to prevent any delayed scrolls
+                  setTimeout(() => {
+                    isInbuiltQueryRef.current = false;
+                  }, 500);
+                }
+              }
+              // Mark that we've loaded so we don't replace again
+              lastLoadedSessionIdRef.current = activeSession.id;
+            }
+            
+            // Update ref to track loaded session
+            lastLoadedSessionIdRef.current = activeSession.id;
+            return; // Exit early - don't replace all messages
+          }
           
           // CRITICAL: Always use session messages as source of truth (same as logged-in users)
           // Session messages are the authoritative source - they're saved to localStorage immediately
@@ -1190,7 +1584,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               </div>
             </div>
           )}
-          <div className="flex-1 overflow-y-auto pt-4 sm:pt-6 mb-3 sm:mb-4 space-y-2 px-1 sm:px-2 md:px-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400" style={{ minHeight: 0 }}>
+          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto pt-4 sm:pt-6 mb-3 sm:mb-4 space-y-2 px-1 sm:px-2 md:px-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400" style={{ minHeight: 0 }}>
         
         {messages.map((msg, idx) => (
           'type' in msg && msg.type === 'calendar' ? (

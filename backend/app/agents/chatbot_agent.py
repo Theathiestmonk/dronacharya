@@ -788,6 +788,27 @@ Once you've completed these steps, I'll be able to help you with all your course
             return f"Hello {capitalized_first_name}! How can I help you today?"
 
     # Step 0.25: Built-in responses for common queries (to reduce API costs)
+    
+    # Check for concept explanation queries
+    concept_explanation_keywords = ['explain a concept', 'explain concept', 'explain in simple terms', 'simple terms', 'clear understanding', 'explain with examples', 'concept explanation']
+    concept_explanation_patterns = [
+        r'\bexplain\s+a\s+concept\b',
+        r'\bexplain\s+concept\b',
+        r'\bexplain\s+.*\s+in\s+simple\s+terms\b',
+        r'\bexplain\s+.*\s+with\s+examples\b',
+        r'\b(?:can\s+you|could\s+you|please).*explain\s+.*\s+concept\b',
+        r'\b(?:can\s+you|could\s+you|please).*explain\s+.*\s+simple\s+terms\b',
+        r'\b(?:can\s+you|could\s+you|please).*explain\s+.*\s+clear\s+understanding\b',
+        r'\b(?:can\s+you|could\s+you|please).*explain\s+.*\s+examples\b',
+        r'\bclear\s+understanding\b',
+        r'\b(?:looking\s+for|i\'m\s+looking\s+for).*clear\s+understanding\b',
+    ]
+    is_concept_explanation_query = any(kw in query_lower for kw in concept_explanation_keywords) or any(re_module.search(pattern, query_lower) for pattern in concept_explanation_patterns)
+    
+    if is_concept_explanation_query:
+        print(f"[Chatbot] 📖 Concept explanation query detected - using built-in response (no API call)")
+        return """Of course! I'd be happy to help. Please let me know which concept you would like me to explain, along with any specific details or examples you are interested in."""
+    
     # Check for IGCSE curriculum queries
     igcse_keywords = ['igcse', 'international general certificate', 'secondary education', 'igcse curriculum', 'igcse program']
     igcse_query_patterns = [
@@ -816,6 +837,46 @@ Once you've completed these steps, I'll be able to help you with all your course
 
 Overall, the IGCSE curriculum at Prakriti School aims to provide students with a well-rounded education that equips them with the knowledge, skills, and attitudes needed to succeed in the 21st century."""
     
+    # Check for study tips queries
+    study_tips_keywords = ['study tips', 'study techniques', 'study methods', 'how to study', 'effective study', 'study better', 'learning techniques', 'study strategies', 'study help', 'improve study']
+    study_tips_patterns = [
+        r'\bstudy\s+tips\b',
+        r'\bstudy\s+techniques?\b',
+        r'\bstudy\s+methods?\b',
+        r'\bhow\s+to\s+study\b',
+        r'\beffective\s+study\b',
+        r'\bstudy\s+better\b',
+        r'\blearning\s+techniques?\b',
+        r'\bstudy\s+strateg(?:ies|y)\b',
+        r'\b(?:what|tell|give|share|provide).*study\s+tips',
+        r'\b(?:what|tell|give|share|provide).*effective\s+study',
+        r'\b(?:how|what).*learn\s+better',
+        r'\b(?:how|what).*study\s+effectively',
+    ]
+    is_study_tips_query = any(kw in query_lower for kw in study_tips_keywords) or any(re_module.search(pattern, query_lower) for pattern in study_tips_patterns)
+    
+    if is_study_tips_query:
+        print(f"[Chatbot] 📖 Study tips query detected - using built-in response (no API call)")
+        return """Here are some effective study tips and techniques that can help you learn better:
+
+**1. Create a study schedule**: Plan your study time and allocate specific time slots for each subject or topic. This will help you stay organized and focused.
+
+**2. Set specific goals**: Break down your study material into smaller goals and set achievable targets. This will make your study sessions more manageable and rewarding.
+
+**3. Use active learning techniques**: Instead of passively reading or listening, engage with the material actively. This can include summarizing, teaching someone else, or solving practice problems.
+
+**4. Take regular breaks**: Studies have shown that taking short breaks during study sessions can improve focus and retention. Try the Pomodoro technique - study for 25 minutes, then take a 5-minute break.
+
+**5. Stay organized**: Keep your study space clutter-free and organized. Use tools like folders, color-coded notes, or digital apps to keep track of your study material.
+
+**6. Practice self-testing**: Quiz yourself regularly to reinforce learning and identify areas that need more focus. Flashcards, practice quizzes, and past papers can be helpful for self-testing.
+
+**7. Stay hydrated and get enough sleep**: A well-rested and hydrated brain functions better. Make sure to drink water and get enough sleep to support your learning and memory.
+
+**8. Stay motivated**: Find ways to stay motivated, whether it's setting rewards for achieving study goals, studying with a group, or visualizing your success.
+
+Remember, everyone has different learning styles, so it's important to experiment with these techniques and find what works best for you. If you need personalized study help or have specific questions, feel free to ask!"""
+
     # Check for "learning for happiness" philosophy queries
     # More specific keywords to avoid false positives
     happiness_philosophy_keywords = ['learning for happiness', 'happiness philosophy', 'prakriti philosophy', 'school philosophy', 'educational philosophy']
