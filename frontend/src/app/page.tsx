@@ -38,8 +38,8 @@ const AppContent: React.FC<{
   const [isFullyInitialized, setIsFullyInitialized] = useState(false);
   // CRITICAL: Track if we've ever had an active session to prevent loading screen from showing again
   const hasEverHadSessionRef = useRef(false);
-  // Track page load time to ensure minimum loading duration
-  const pageLoadTimeRef = useRef<number | null>(null);
+  // Track page load time to ensure minimum loading duration - set immediately on component creation
+  const pageLoadTimeRef = useRef<number>(Date.now());
   const [sidebarQuery, setSidebarQuery] = useState<string>('');
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
@@ -69,40 +69,41 @@ const AppContent: React.FC<{
   }, []);
 
   // Track active session with messages to prevent loading screen from showing after first session
+  // BUT: Still respect minimum loading time on page refresh
   useEffect(() => {
     const activeSession = getActiveSession();
     const hasMessages = activeSession?.messages && activeSession.messages.length > 0;
     if (activeSession && hasMessages && !hasEverHadSessionRef.current) {
       hasEverHadSessionRef.current = true;
-      // Also set isFullyInitialized to true immediately
-      setIsFullyInitialized(true);
-      console.log('✅ Active session with messages detected in useEffect - will never show loading screen again');
+      // Don't set isFullyInitialized immediately - let the minimum loading time logic handle it
+      // This ensures logged-in users also get the 2-second delay on refresh
+      console.log('✅ Active session with messages detected - will respect minimum loading time');
     }
   }, [getActiveSession, activeSessionId]); // Re-check when session ID changes
 
-  // Track page load time on mount
-  useEffect(() => {
-    if (pageLoadTimeRef.current === null) {
-      pageLoadTimeRef.current = Date.now();
-    }
-  }, []);
-
   // Improved loading logic - wait for auth and chat history with minimum delay
+  // ALWAYS enforce minimum 2 seconds loading time, regardless of how fast loading completes
   useEffect(() => {
     if (!loading && !chatHistoryLoading) {
       // Ensure minimum loading time of 2 seconds to prevent blinking after refresh
       const minLoadingTime = 2000; // 2 seconds
-      const elapsed = pageLoadTimeRef.current ? Date.now() - pageLoadTimeRef.current : 0;
+      const elapsed = Date.now() - pageLoadTimeRef.current;
       const remainingTime = Math.max(0, minLoadingTime - elapsed);
       
+      console.log(`Loading states completed. Elapsed: ${elapsed}ms, Remaining: ${remainingTime}ms`);
+      
       if (remainingTime > 0) {
-        console.log(`Auth and chat history loading completed, waiting ${remainingTime}ms to prevent blinking`);
-        setTimeout(() => {
-          console.log('Minimum loading time elapsed, initializing app');
+        console.log(`Waiting ${remainingTime}ms to reach minimum loading time (2 seconds)`);
+        const timer = setTimeout(() => {
+          console.log('Minimum loading time (2 seconds) elapsed, initializing app');
           setIsFullyInitialized(true);
         }, remainingTime);
+        
+        // Cleanup timer on unmount
+        return () => clearTimeout(timer);
       } else {
-        console.log('Auth and chat history loading completed, initializing app');
+        // If already past 2 seconds, initialize immediately
+        console.log('Already past minimum loading time, initializing app');
         setIsFullyInitialized(true);
       }
     }
@@ -362,13 +363,12 @@ const AppContent: React.FC<{
   const hasMessages = activeSession?.messages && activeSession.messages.length > 0;
   
   // Track if we've ever had a session with messages - once we have, never show loading screen again
+  // BUT: Still respect minimum loading time on page refresh
   if (hasActiveSession && hasMessages && !hasEverHadSessionRef.current) {
     hasEverHadSessionRef.current = true;
-    // Also set isFullyInitialized to true immediately to prevent any loading screen
-    if (!isFullyInitialized) {
-      setIsFullyInitialized(true);
-    }
-    console.log('✅ Active session with messages detected - will never show loading screen again');
+    // Don't set isFullyInitialized immediately - let the minimum loading time logic handle it
+    // This ensures logged-in users also get the 2-second delay on refresh
+    console.log('✅ Active session with messages detected - will respect minimum loading time');
   }
   
   // Also check if we have messages even if session just appeared
@@ -376,11 +376,11 @@ const AppContent: React.FC<{
     hasEverHadSessionRef.current = true;
   }
   
-  // Only show loading if:
-  // 1. Auth is still loading, AND we've never had a session with messages, OR
-  // 2. It's initial load AND we've never had a session with messages before
-  // Once we've had a session with messages (tracked by ref), NEVER show loading screen (prevents blinking)
-  const shouldShowLoading = (loading && !hasEverHadSessionRef.current) || (!isFullyInitialized && !hasEverHadSessionRef.current);
+  // Show loading if:
+  // 1. Auth is still loading, OR
+  // 2. Not fully initialized yet (enforces minimum 2-second delay for all users)
+  // The minimum loading time is enforced regardless of session state to prevent blinking
+  const shouldShowLoading = loading || !isFullyInitialized;
   
   if (shouldShowLoading) {
     return (
