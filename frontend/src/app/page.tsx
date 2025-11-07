@@ -38,6 +38,8 @@ const AppContent: React.FC<{
   const [isFullyInitialized, setIsFullyInitialized] = useState(false);
   // CRITICAL: Track if we've ever had an active session to prevent loading screen from showing again
   const hasEverHadSessionRef = useRef(false);
+  // Track page load time to ensure minimum loading duration
+  const pageLoadTimeRef = useRef<number | null>(null);
   const [sidebarQuery, setSidebarQuery] = useState<string>('');
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
@@ -78,20 +80,40 @@ const AppContent: React.FC<{
     }
   }, [getActiveSession, activeSessionId]); // Re-check when session ID changes
 
-  // Improved loading logic - wait for auth and chat history
+  // Track page load time on mount
+  useEffect(() => {
+    if (pageLoadTimeRef.current === null) {
+      pageLoadTimeRef.current = Date.now();
+    }
+  }, []);
+
+  // Improved loading logic - wait for auth and chat history with minimum delay
   useEffect(() => {
     if (!loading && !chatHistoryLoading) {
-      console.log('Auth and chat history loading completed, initializing app');
-      setIsFullyInitialized(true);
+      // Ensure minimum loading time of 2 seconds to prevent blinking after refresh
+      const minLoadingTime = 2000; // 2 seconds
+      const elapsed = pageLoadTimeRef.current ? Date.now() - pageLoadTimeRef.current : 0;
+      const remainingTime = Math.max(0, minLoadingTime - elapsed);
+      
+      if (remainingTime > 0) {
+        console.log(`Auth and chat history loading completed, waiting ${remainingTime}ms to prevent blinking`);
+        setTimeout(() => {
+          console.log('Minimum loading time elapsed, initializing app');
+          setIsFullyInitialized(true);
+        }, remainingTime);
+      } else {
+        console.log('Auth and chat history loading completed, initializing app');
+        setIsFullyInitialized(true);
+      }
     }
   }, [loading, chatHistoryLoading]);
 
-  // Reduced fallback timeout to prevent long demo display
+  // Minimum loading time to prevent blinking effect after refresh
   useEffect(() => {
     const fallbackTimer = setTimeout(() => {
       console.log('Fallback timeout - forcing initialization');
       setIsFullyInitialized(true);
-    }, 500); // Reduced to 500ms fallback
+    }, 2000); // Set to 2 seconds to prevent blinking after refresh
 
     return () => clearTimeout(fallbackTimer);
   }, []);
