@@ -1,5 +1,6 @@
 "use client";
 import React, { useRef, useState, useEffect } from 'react';
+import Image from 'next/image';
 import Chatbot from '../components/Chatbot';
 import AuthFormWithOnboarding from '../components/AuthFormWithOnboarding';
 import OnboardingForm from '../components/OnboardingForm';
@@ -38,7 +39,6 @@ const AppContent: React.FC<{
   // CRITICAL: Track if we've ever had an active session to prevent loading screen from showing again
   const hasEverHadSessionRef = useRef(false);
   const [sidebarQuery, setSidebarQuery] = useState<string>('');
-  const [queryKey, setQueryKey] = useState(0);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false); // For mobile sidebar toggle
@@ -112,7 +112,7 @@ const AppContent: React.FC<{
         sessionStorage.setItem('oauth_check_user', currentUserId);
       }
     }
-  }, [user?.id]);
+  }, [user]);
 
   useEffect(() => {
     // Check if we just came from OAuth callback (URL hash contains access_token)
@@ -366,10 +366,11 @@ const AppContent: React.FC<{
         <main className="flex-1 flex items-center justify-center h-screen">
           <div className="w-full max-w-2xl h-full flex flex-col justify-center">
             <div className="flex justify-center mb-6">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img 
+              <Image 
                 src="/prakriti_logo.webp" 
                 alt="Prakriti Visual" 
+                width={150}
+                height={150}
                 style={{ maxWidth: '150px', height: 'auto' }}
               />
             </div>
@@ -392,7 +393,9 @@ const AppContent: React.FC<{
   // Handle sidebar query
   const handleSidebarQuery = (query: string) => {
     setSidebarQuery(query);
-    setQueryKey(prev => prev + 1); // Force re-render with new query
+    // DON'T increment queryKey - it causes component remount and blinking
+    // The externalQuery prop change is enough to trigger handleSuggestionClick
+    // setQueryKey(prev => prev + 1); // REMOVED - causes blinking
   };
 
   const handleQueryProcessed = () => {
@@ -505,9 +508,11 @@ const AppContent: React.FC<{
               <div className="px-4 py-3 border-b border-gray-200">
                 <div className="flex items-center space-x-3">
                   {profile.profile_picture_url ? (
-                    <img
+                    <Image
                       src={profile.profile_picture_url}
                       alt={`${profile.first_name} ${profile.last_name}`}
+                      width={40}
+                      height={40}
                       className="w-10 h-10 rounded-full object-cover"
                     />
                   ) : (
@@ -595,7 +600,7 @@ const AppContent: React.FC<{
       <main className={`flex-1 flex overflow-hidden ${isDesktop ? 'chat-grid-bg' : ''} relative w-full h-full`}>
         <div className={`w-full h-full flex flex-col mx-auto ${isDesktop ? 'px-2 sm:px-4 md:px-6 lg:w-[82.5%] max-w-[85%] justify-center' : 'px-3 sm:px-4'}`}>
           <Chatbot 
-            key={`${chatKey}-${queryKey}`} 
+            key={chatKey} 
             ref={chatbotRef} 
             externalQuery={sidebarQuery}
             onQueryProcessed={handleQueryProcessed}

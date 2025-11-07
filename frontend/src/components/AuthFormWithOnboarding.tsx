@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from 'react';
+import Image from 'next/image';
 import { useAuth } from '@/providers/AuthProvider';
 import OnboardingForm from './OnboardingForm';
 import { useRouter } from 'next/navigation';
@@ -107,9 +108,11 @@ const AuthFormWithOnboarding: React.FC<AuthFormWithOnboardingProps> = ({ onBack 
         
         <div>
           <div className="mx-auto h-14 w-14 sm:h-20 sm:w-20 md:h-24 md:w-24 flex items-center justify-center">
-            <img 
+            <Image 
               src="/prakriti_logo.webp" 
               alt="Prakriti School" 
+              width={96}
+              height={96}
               className="h-14 w-14 sm:h-20 sm:w-20 md:h-24 md:w-24 object-contain"
             />
           </div>

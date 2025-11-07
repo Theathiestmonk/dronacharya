@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useState as useCopyState } from 'react';
+import Image from 'next/image';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useAuth } from '@/providers/AuthProvider';
@@ -61,9 +62,13 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const mainContainerRef = useRef<HTMLDivElement>(null); // Ref for main container to prevent blinking
   const isInbuiltQueryRef = useRef(false); // Track if current message is from inbuilt query
+  const [isInbuiltQueryActive, setIsInbuiltQueryActive] = useState(false); // State to prevent blinking
   const [displayedBotText, setDisplayedBotText] = useState<string>('');
   const [isTyping, setIsTyping] = useState(false);
+  const [typingAnimationKey, setTypingAnimationKey] = useState(0); // Key to retrigger animation
+  const [shouldAnimate, setShouldAnimate] = useState(false); // Control animation trigger
   // For copy feedback per message
   const [copiedIdx, setCopiedIdx] = useCopyState<number | null>(null);
   const [showClearedMessage, setShowClearedMessage] = useState(false);
@@ -213,6 +218,12 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             console.log('Frontend speech received response:', fullText);
             let idx = 0;
             setIsTyping(true);
+            setTypingAnimationKey(prev => prev + 1); // Retrigger animation
+            setShouldAnimate(false); // Reset animation - start with blue
+            // Delay to ensure DOM is ready, then trigger animation
+            requestAnimationFrame(() => {
+              setTimeout(() => setShouldAnimate(true), 50); // Trigger animation after a brief delay
+            });
             function typeChar() {
               setDisplayedBotText(fullText.slice(0, idx + 1));
               if (idx < fullText.length - 1) {
@@ -282,14 +293,64 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     setRequestInProgress(false);
     setIsTyping(false);
     setDisplayedBotText('');
+    setShouldAnimate(false);
   };
 
+  // Store sendMessage in a ref to avoid dependency issues  
+  const sendMessageRef = useRef<((messageText?: string) => Promise<void>) | null>(null);
+  
   // Handle suggestion button clicks with specific prompts
-  const handleSuggestionClick = (suggestion: string) => {
+  const handleSuggestionClick = useCallback((suggestion: string) => {
     // Prevent clicking if already processing
     if (loading || requestInProgress || isGenerating) {
       return;
     }
+
+    // CRITICAL: Set inbuilt query flag IMMEDIATELY and SYNCHRONOUSLY to prevent scrolling and blinking
+    // Set ref FIRST (instant, before any other operations) - this prevents className from changing
+    isInbuiltQueryRef.current = true;
+    
+    // Force the container to have full opacity IMMEDIATELY via DOM manipulation
+    // This must happen BEFORE any state updates or React re-renders
+    // Use both class and inline styles for maximum protection
+    if (mainContainerRef.current) {
+      // Add CSS class for !important override
+      mainContainerRef.current.classList.add('chatbot-no-blink');
+      // Also set inline styles with !important
+      mainContainerRef.current.style.setProperty('opacity', '1', 'important');
+      mainContainerRef.current.style.setProperty('transform', 'scale(1)', 'important');
+      mainContainerRef.current.style.setProperty('transition', 'none', 'important');
+    }
+    
+    // Also set state to prevent blinking (triggers re-render but opacity is already forced)
+    setIsInbuiltQueryActive(true);
+    
+    // Re-apply in next frame to ensure it sticks even after React re-renders
+    requestAnimationFrame(() => {
+      if (mainContainerRef.current) {
+        mainContainerRef.current.classList.add('chatbot-no-blink');
+        mainContainerRef.current.style.setProperty('opacity', '1', 'important');
+        mainContainerRef.current.style.setProperty('transform', 'scale(1)', 'important');
+        mainContainerRef.current.style.setProperty('transition', 'none', 'important');
+      }
+    });
+    
+    // Also apply after a microtask to catch any delayed renders
+    Promise.resolve().then(() => {
+      if (mainContainerRef.current) {
+        mainContainerRef.current.classList.add('chatbot-no-blink');
+        mainContainerRef.current.style.setProperty('opacity', '1', 'important');
+        mainContainerRef.current.style.setProperty('transform', 'scale(1)', 'important');
+        mainContainerRef.current.style.setProperty('transition', 'none', 'important');
+      }
+    });
+    
+    // Remove the class when done (after 2 seconds to be safe)
+    setTimeout(() => {
+      if (mainContainerRef.current) {
+        mainContainerRef.current.classList.remove('chatbot-no-blink');
+      }
+    }, 2000);
 
     // Create specific prompts for each suggestion type
     const suggestionPrompts: { [key: string]: string } = {
@@ -309,49 +370,77 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
 
     const prompt = suggestionPrompts[suggestion] || suggestion;
     
-    console.log('🎯 Suggestion clicked:', suggestion, '→ Populating input with prompt:', prompt);
-    
-    // CRITICAL: Just populate the input field - don't auto-send
-    // User must manually click send button (like normal messages)
-    // This prevents scrolling issues and gives user control
+    console.log('🎯 Suggestion clicked:', suggestion, '→ Auto-sending prompt:', prompt);
     
     // CRITICAL: Save scroll position BEFORE any operations that might cause scrolling
-    const savedScrollPosition = messagesContainerRef.current?.scrollTop || 0;
+    // Also check if user is at bottom - if so, we'll keep them at bottom
+    const container = messagesContainerRef.current;
+    const savedScrollPosition = container?.scrollTop || 0;
+    const scrollHeight = container?.scrollHeight || 0;
+    const clientHeight = container?.clientHeight || 0;
+    const isAtBottom = scrollHeight - savedScrollPosition - clientHeight < 50; // Within 50px of bottom
+    const shouldStayAtBottom = isAtBottom || savedScrollPosition === 0; // At bottom or at top
     
-    // Update input state and ref
-    setInput(prompt);
-    if (inputRef.current) {
-      inputRef.current.value = prompt;
-      // Focus the input field WITHOUT scrolling into view
-      // Use preventScroll option to prevent browser from scrolling to input
-      inputRef.current.focus({ preventScroll: true });
-      // Move cursor to end of text
-      inputRef.current.setSelectionRange(prompt.length, prompt.length);
-    }
-    
-    // CRITICAL: Restore scroll position after focusing to prevent any scrolling
+    // CRITICAL: Restore scroll position to prevent any scrolling
     // Use multiple attempts to ensure scroll position is preserved
-    requestAnimationFrame(() => {
-      if (messagesContainerRef.current && savedScrollPosition > 0) {
-        messagesContainerRef.current.scrollTop = savedScrollPosition;
+    // If user was at bottom, keep them at bottom; otherwise restore exact position
+    const restoreScroll = () => {
+      if (messagesContainerRef.current) {
+        if (shouldStayAtBottom && isAtBottom) {
+          // User was at bottom - scroll to bottom
+          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+        } else {
+          // User was somewhere in the middle - restore exact position
+          messagesContainerRef.current.scrollTop = savedScrollPosition;
+        }
       }
-    });
+    };
+    
+    // Immediate restoration
+    requestAnimationFrame(restoreScroll);
+    setTimeout(restoreScroll, 0);
+    setTimeout(restoreScroll, 10);
+    setTimeout(restoreScroll, 50);
+    setTimeout(restoreScroll, 100);
+    setTimeout(restoreScroll, 200);
+    setTimeout(restoreScroll, 300);
+    setTimeout(restoreScroll, 500);
+    setTimeout(restoreScroll, 800);
+    setTimeout(restoreScroll, 1000);
+    
+    // AUTO-SEND: Automatically send the message immediately (no input population)
+    // Small delay to ensure all scroll/blink prevention is in place
     setTimeout(() => {
-      if (messagesContainerRef.current && savedScrollPosition > 0) {
-        messagesContainerRef.current.scrollTop = savedScrollPosition;
+      // Only auto-send if not already processing
+      if (!loading && !requestInProgress && !isGenerating) {
+        console.log('🚀 Auto-sending inbuilt query:', prompt);
+        // Use ref to call sendMessage - ref is updated immediately after sendMessage is defined
+        if (sendMessageRef.current) {
+          sendMessageRef.current(prompt);
+        } else {
+          console.error('❌ sendMessageRef.current is null - cannot send inbuilt query');
+        }
       }
-    }, 0);
+    }, 100); // Small delay to ensure scroll position is preserved
+    
+    // Reset inbuilt query flag after a delay to allow all operations to complete
+    // This prevents any delayed scrolls or state changes
     setTimeout(() => {
-      if (messagesContainerRef.current && savedScrollPosition > 0) {
-        messagesContainerRef.current.scrollTop = savedScrollPosition;
-      }
-    }, 50);
+      isInbuiltQueryRef.current = false;
+      setIsInbuiltQueryActive(false);
+      // Keep the no-blink class a bit longer to ensure no blinking
+      setTimeout(() => {
+        if (mainContainerRef.current) {
+          mainContainerRef.current.classList.remove('chatbot-no-blink');
+        }
+      }, 500);
+    }, 1500);
     
     // Call onQueryProcessed if provided (for external query handling)
     if (onQueryProcessed) {
       onQueryProcessed();
     }
-  };
+  }, [loading, requestInProgress, isGenerating, onQueryProcessed]);
 
   // Handle external query from sidebar - using ref to avoid dependency issues
   const previousQueryRef = useRef<string>('');
@@ -361,6 +450,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       // Don't clear conversation history for guest users - they should maintain their session
       previousQueryRef.current = externalQuery;
       handleSuggestionClick(externalQuery);
+      // No need to populate input - handleSuggestionClick now auto-sends directly
       if (onQueryProcessed) {
         setTimeout(() => {
           onQueryProcessed();
@@ -626,6 +716,12 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       if (loading) {
         setDisplayedBotText('Thinking...');
         setIsTyping(true);
+        setTypingAnimationKey(prev => prev + 1); // Retrigger animation
+        setShouldAnimate(false); // Reset animation - start with blue
+        // Delay to ensure DOM is ready, then trigger animation
+        requestAnimationFrame(() => {
+          setTimeout(() => setShouldAnimate(true), 50); // Trigger animation after a brief delay
+        });
       }
     }, 100);
     
@@ -781,6 +877,12 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       
       let idx = 0;
       setIsTyping(true);
+      setTypingAnimationKey(prev => prev + 1); // Retrigger animation
+      setShouldAnimate(false); // Reset animation - start with blue
+      // Delay to ensure DOM is ready, then trigger animation
+      requestAnimationFrame(() => {
+        setTimeout(() => setShouldAnimate(true), 50); // Trigger animation after a brief delay
+      });
       async function typeChar() {
         setDisplayedBotText(fullText.slice(0, idx + 1));
         if (idx < fullText.length - 1) {
@@ -865,6 +967,10 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     }
   };
 
+  // Keep sendMessage ref updated - update immediately after sendMessage is defined
+  // This ensures the ref is always available when handleSuggestionClick needs it
+  sendMessageRef.current = sendMessage;
+
   // Auto-resize textarea based on content
   const adjustTextareaHeight = useCallback(() => {
     if (inputRef.current) {
@@ -919,14 +1025,25 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   useEffect(() => {
     // CRITICAL: If this is an inbuilt query, NEVER scroll - preserve user's current view
     // Check the ref at the start AND before any scroll operations
-    if (isInbuiltQueryRef.current) {
+    if (isInbuiltQueryRef.current || isInbuiltQueryActive) {
       console.log('🚫 Auto-scroll blocked - inbuilt query in progress');
+      // If user was at bottom, keep them at bottom
+      if (messagesContainerRef.current) {
+        const container = messagesContainerRef.current;
+        const scrollHeight = container.scrollHeight;
+        const clientHeight = container.clientHeight;
+        const scrollTop = container.scrollTop;
+        // If user is near bottom (within 100px), keep them at bottom
+        if (scrollHeight - scrollTop - clientHeight < 100) {
+          container.scrollTop = scrollHeight;
+        }
+      }
       return; // Exit early - don't scroll at all for inbuilt queries
     }
     
     const shouldScroll = () => {
       // Double-check inbuilt query flag before scrolling
-      if (isInbuiltQueryRef.current) {
+      if (isInbuiltQueryRef.current || isInbuiltQueryActive) {
         console.log('🚫 Should scroll check blocked - inbuilt query in progress');
         return false;
       }
@@ -953,8 +1070,19 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     };
     
     // Final check before any scroll operations
-    if (isInbuiltQueryRef.current) {
+    if (isInbuiltQueryRef.current || isInbuiltQueryActive) {
       console.log('🚫 Scroll operation blocked - inbuilt query in progress');
+      // If user was at bottom, keep them at bottom
+      if (messagesContainerRef.current) {
+        const container = messagesContainerRef.current;
+        const scrollHeight = container.scrollHeight;
+        const clientHeight = container.clientHeight;
+        const scrollTop = container.scrollTop;
+        // If user is near bottom (within 100px), keep them at bottom
+        if (scrollHeight - scrollTop - clientHeight < 100) {
+          container.scrollTop = scrollHeight;
+        }
+      }
       return;
     }
     
@@ -975,10 +1103,17 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       }
     }
-  }, [messages, loading, isTyping, displayedBotText]);
+  }, [messages, loading, isTyping, displayedBotText, isInbuiltQueryActive]);
 
   // Auto-focus textarea when messages change, unless user clicked elsewhere
+  // BUT: Don't interfere if input has value (preserve inbuilt query input)
+  // CRITICAL: Don't focus when inbuilt query is active (prevents scrolling)
   useEffect(() => {
+    // Skip if inbuilt query is active
+    if (isInbuiltQueryRef.current) {
+      return;
+    }
+    
     // Only focus if the active element is not an input, textarea, or contenteditable
     const active = document.activeElement;
     if (
@@ -989,9 +1124,13 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         !(active instanceof HTMLElement && active.isContentEditable)
       ))
     ) {
-      inputRef.current.focus({ preventScroll: true });
+      // Don't focus if input has value (preserve inbuilt query input)
+      // Only focus if input is empty
+      if (!inputRef.current.value && !input) {
+        inputRef.current.focus({ preventScroll: true });
+      }
     }
-  }, [messages]);
+  }, [messages, input]);
 
   // Track last loaded session ID to prevent unnecessary reloads
   const lastLoadedSessionIdRef = useRef<string | null>(null);
@@ -1325,6 +1464,17 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               content: msg.text,
             }));
           setConversationHistory(history);
+          
+          // Scroll to bottom on initial load/refresh (when loading messages from session)
+          // Only if this is a fresh load (first time loading this session)
+          if (isFirstLoad || isEmptyButSessionHasMessages) {
+            // Use setTimeout to ensure DOM is updated before scrolling
+            setTimeout(() => {
+              if (messagesEndRef.current) {
+                messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+              }
+            }, 100);
+          }
         } else {
           console.log('⏭️ Skipping sync - messages are up to date or being updated in real-time', {
             sessionMessagesCount: sessionMessages.length,
@@ -1344,7 +1494,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         }
       }
     });
-  }, [activeSessionId, getActiveSession, chatHistoryLoading, user, activeSessionMessageCount]); // Include activeSessionMessageCount to detect when session messages are added
+  }, [activeSessionId, getActiveSession, chatHistoryLoading, user, activeSessionMessageCount, messages]); // Include activeSessionMessageCount to detect when session messages are added
 
   // Listen for custom refresh event
   useEffect(() => {
@@ -1379,6 +1529,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     setListening(false);
     setDisplayedBotText('');
     setIsTyping(false);
+    setShouldAnimate(false);
     setCopiedIdx(null);
     setHasFirstResponse(false);
     
@@ -1399,7 +1550,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     if (clearChat) {
       clearChat();
     }
-  }, [clearChat, getRandomWelcomeMessage, clearActiveSession, abortController]);
+  }, [clearChat, getRandomWelcomeMessage, clearActiveSession, abortController, setCopiedIdx]);
 
   // Expose clearChat function to parent
   React.useImperativeHandle(ref, () => ({
@@ -1463,17 +1614,28 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     if (!chatHistoryLoading && !hasShownInitialLoad) {
       setHasShownInitialLoad(true);
     }
-  }, [chatHistoryLoading, hasShownInitialLoad, user?.id, abortController]);
+  }, [chatHistoryLoading, hasShownInitialLoad, user?.id, abortController, getRandomWelcomeMessage, setCopiedIdx]);
   
   // Only show loading opacity on the very first app load, never again (even on login/logout)
-  const containerClassName = (chatHistoryLoading && !hasShownInitialLoad) ? 'opacity-40 scale-[0.98]' : 'opacity-100 scale-100';
+  // CRITICAL: Don't show loading opacity when inbuilt query is active (prevents blinking)
+  // Always use full opacity if inbuilt query ref is set (even before state updates)
+  const shouldShowLoading = chatHistoryLoading && !hasShownInitialLoad && !isInbuiltQueryActive && !isInbuiltQueryRef.current;
+  const containerClassName = shouldShowLoading ? 'opacity-40 scale-[0.98]' : 'opacity-100 scale-100';
   
   // Check if we have an active session with messages to prevent welcome screen from showing
   const activeSession = getActiveSession();
   const hasActiveSessionWithMessages = activeSession?.messages && activeSession.messages.length > 0;
   
   return (
-    <div className={`flex flex-col h-full w-full bg-transparent mx-auto transition-all duration-200 ${containerClassName}`}>
+    <div 
+      ref={mainContainerRef}
+      className={`flex flex-col h-full w-full bg-transparent mx-auto ${isInbuiltQueryActive || isInbuiltQueryRef.current ? 'chatbot-no-blink' : 'transition-all duration-200'} ${containerClassName}`}
+      style={(isInbuiltQueryActive || isInbuiltQueryRef.current) ? { 
+        opacity: 1, 
+        transform: 'scale(1)', 
+        transition: 'none',
+      } : undefined}
+    >
       {messages.length === 0 && !hasActiveSessionWithMessages ? (
         <>
           {/* Welcome Screen - Mobile Optimized Layout */}
@@ -1485,10 +1647,11 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             <div className="flex-1 flex flex-col items-center justify-center px-3 sm:px-4 md:px-6 min-h-0 overflow-y-auto">
               {/* Logo - Smaller on mobile */}
               <div className="flex justify-center mb-3 sm:mb-4 md:mb-6 flex-shrink-0">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img 
+                <Image 
                   src="/prakriti_logo.webp" 
                   alt="Prakriti Visual" 
+                  width={128}
+                  height={128}
                   className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 object-contain" 
                 />
               </div>
@@ -1618,10 +1781,13 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                   <div key={videoIdx} className="bg-white border border-gray-200 rounded-lg p-3 sm:p-4 shadow-sm">
                     <div className="flex flex-col gap-3 sm:gap-4">
                       <div className="flex-shrink-0">
-                        <img
+                        <Image
                           src={video.thumbnail_url}
                           alt={video.title}
+                          width={400}
+                          height={160}
                           className="w-full h-40 sm:h-32 object-cover rounded-lg"
+                          unoptimized
                         />
                       </div>
                       <div className="flex-1">
@@ -1724,10 +1890,17 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           )
         ))}
         {isTyping && (
-          <div className="flex justify-start mb-4 sm:mb-5">
+          <div className="flex justify-start mb-4 sm:mb-5" key={`typing-${typingAnimationKey}`}>
             <div 
               ref={typingRef}
-              className="max-w-[85%] sm:max-w-[80%] text-gray-900 px-4 py-2.5 sm:px-5 sm:py-3"
+              className="max-w-[85%] sm:max-w-[80%] text-gray-900 px-4 py-2.5 sm:px-5 sm:py-3 chatbot-typing-reveal"
+              style={{
+                opacity: shouldAnimate ? 1 : 0,
+                transform: shouldAnimate ? 'translateY(0)' : 'translateY(10px)',
+                transition: shouldAnimate 
+                  ? 'opacity 2.5s cubic-bezier(0.4, 0, 0.2, 1), transform 2.5s cubic-bezier(0.4, 0, 0.2, 1)' 
+                  : 'none'
+              } as React.CSSProperties}
             >
               <div className="markdown-content text-sm sm:text-base leading-relaxed">
                 <ReactMarkdown 

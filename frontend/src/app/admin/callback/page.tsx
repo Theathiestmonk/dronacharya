@@ -2,6 +2,7 @@
 import { useEffect, useState, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/providers/AuthProvider';
+import Image from 'next/image';
 
 function CallbackContent() {
   // IMMEDIATE LOG on component render
@@ -254,9 +255,11 @@ function CallbackContent() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
         <div className="mb-6">
-          <img
+          <Image
             src="/prakriti_logo.webp"
             alt="Prakriti Logo"
+            width={64}
+            height={64}
             className="w-16 h-16 mx-auto mb-4"
           />
         </div>
@@ -328,6 +331,7 @@ export default function AdminCallback() {
     </Suspense>
   );
 }
+
 
 
 

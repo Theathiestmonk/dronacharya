@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/providers/AuthProvider';
 import { useSearchParams } from 'next/navigation';
 
@@ -44,7 +44,7 @@ const AdminDashboard: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchIntegrationStatus = async () => {
+  const fetchIntegrationStatus = useCallback(async () => {
     console.log('🔍 [FETCH START] fetchIntegrationStatus called');
     try {
       const adminEmail = profile?.email; // Use logged-in user's email or null for first admin
@@ -99,9 +99,9 @@ const AdminDashboard: React.FC = () => {
       console.error('🔍 [ERROR] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
       // Set error state but don't change integrationStatus to false
     }
-  };
+  }, [profile]);
 
-  const fetchClassroomData = async () => {
+  const fetchClassroomData = useCallback(async () => {
     try {
       const adminEmail = profile?.email;
       const emailParam = adminEmail ? `?email=${encodeURIComponent(adminEmail)}` : '';
@@ -125,9 +125,9 @@ const AdminDashboard: React.FC = () => {
     } catch (error) {
       console.error('Error fetching classroom data:', error);
     }
-  };
+  }, [profile?.email]);
 
-  const fetchCalendarData = async () => {
+  const fetchCalendarData = useCallback(async () => {
     try {
       const adminEmail = profile?.email;
       const emailParam = adminEmail ? `?email=${encodeURIComponent(adminEmail)}` : '';
@@ -151,7 +151,7 @@ const AdminDashboard: React.FC = () => {
     } catch (err) {
       console.error('Error fetching calendar data:', err);
     }
-  };
+  }, [profile?.email]);
 
   const connectGoogleService = async (service: 'classroom' | 'calendar' | 'both') => {
     setLoading(true);
@@ -228,7 +228,7 @@ const AdminDashboard: React.FC = () => {
     fetchIntegrationStatus();
     fetchClassroomData();
     fetchCalendarData();
-  }, []);
+  }, [fetchIntegrationStatus, fetchClassroomData, fetchCalendarData]);
 
   // Re-fetch integrations when profile changes
   useEffect(() => {
@@ -240,7 +240,7 @@ const AdminDashboard: React.FC = () => {
     } else {
       console.log('🔍 [PROFILE EFFECT] Profile is null, skipping fetch');
     }
-  }, [profile?.email, profile]);
+  }, [profile?.email, profile, fetchIntegrationStatus]);
 
   // Handle URL parameters for connection status
   useEffect(() => {
@@ -258,7 +258,7 @@ const AdminDashboard: React.FC = () => {
       url.searchParams.delete('connected');
       window.history.replaceState({}, '', url.toString());
     }
-  }, [searchParams]);
+  }, [searchParams, fetchIntegrationStatus]);
 
   // Debug effect to log integration status changes
   useEffect(() => {
@@ -540,6 +540,9 @@ const AdminDashboard: React.FC = () => {
 };
 
 export default AdminDashboard;
+
+
+
 
 
 

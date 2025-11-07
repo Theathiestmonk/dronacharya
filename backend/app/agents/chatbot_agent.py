@@ -877,6 +877,50 @@ Overall, the IGCSE curriculum at Prakriti School aims to provide students with a
 
 Remember, everyone has different learning styles, so it's important to experiment with these techniques and find what works best for you. If you need personalized study help or have specific questions, feel free to ask!"""
 
+    # Check for math problems queries
+    math_problems_keywords = ['math problems', 'mathematics problems', 'solve math', 'math help', 'math solutions', 'math explanations', 'help solving', 'solving problems', 'math questions']
+    math_problems_patterns = [
+        r'\bmath\s+problems?\b',
+        r'\bmathematics\s+problems?\b',
+        r'\b(?:I\s+have|I\'ve\s+got|I\s+got)\s+math\s+problems?\b',
+        r'\b(?:help|solve|assistance).*math\s+problems?\b',
+        r'\bmath\s+problems?.*(?:help|solve|assistance|solutions?|explanations?)\b',
+        r'\b(?:can\s+you|could\s+you|please).*help.*math\s+problems?\b',
+        r'\b(?:can\s+you|could\s+you|please).*solve.*math\s+problems?\b',
+        r'\b(?:can\s+you|could\s+you|please).*provide.*solutions?.*explanations?\b',
+        r'\b(?:I\s+have|I\'ve\s+got|I\s+got).*math\s+problems?.*(?:help|solve|assistance|solutions?|explanations?)\b',
+        r'\bmath\s+problems?.*(?:need|want|require).*help\s+solving\b',
+        r'\b(?:need|want|require).*help\s+solving.*math\s+problems?\b',
+    ]
+    is_math_problems_query = any(kw in query_lower for kw in math_problems_keywords) or any(re_module.search(pattern, query_lower) for pattern in math_problems_patterns)
+    
+    if is_math_problems_query:
+        print(f"[Chatbot] 🔢 Math problems query detected - using built-in response (no API call)")
+        return """Of course! I'd be happy to help. Please go ahead and share the math problems you need assistance with."""
+
+    # Check for science questions queries
+    science_questions_keywords = ['science questions', 'scientific explanations', 'science help', 'science answers', 'science problems', 'science queries', 'scientific questions', 'detailed scientific', 'scientific explanations']
+    science_questions_patterns = [
+        r'\bscience\s+questions?\b',
+        r'\bscientific\s+questions?\b',
+        r'\b(?:I\s+have|I\'ve\s+got|I\s+got)\s+science\s+questions?\b',
+        r'\b(?:help|answer|explain|assistance).*science\s+questions?\b',
+        r'\bscience\s+questions?.*(?:need|want|require).*answering\b',
+        r'\bscience\s+questions?.*(?:need|want|require).*detailed\s+scientific\s+explanations?\b',
+        r'\b(?:can\s+you|could\s+you|please).*help.*science\s+questions?\b',
+        r'\b(?:can\s+you|could\s+you|please).*answer.*science\s+questions?\b',
+        r'\b(?:can\s+you|could\s+you|please).*provide.*detailed\s+scientific\s+explanations?\b',
+        r'\b(?:I\s+have|I\'ve\s+got|I\s+got).*science\s+questions?.*(?:need|want|require).*answering\b',
+        r'\b(?:I\s+have|I\'ve\s+got|I\s+got).*science\s+questions?.*detailed\s+scientific\s+explanations?\b',
+        r'\bdetailed\s+scientific\s+explanations?\b',
+        r'\bscientific\s+explanations?.*(?:need|want|require|provide)\b',
+    ]
+    is_science_questions_query = any(kw in query_lower for kw in science_questions_keywords) or any(re_module.search(pattern, query_lower) for pattern in science_questions_patterns)
+    
+    if is_science_questions_query:
+        print(f"[Chatbot] 🔬 Science questions query detected - using built-in response (no API call)")
+        return """I can help with your science questions. Please go ahead and ask your first question."""
+
     # Check for "learning for happiness" philosophy queries
     # More specific keywords to avoid false positives
     happiness_philosophy_keywords = ['learning for happiness', 'happiness philosophy', 'prakriti philosophy', 'school philosophy', 'educational philosophy']

@@ -1606,7 +1606,7 @@ export const ChatHistoryProvider: React.FC<{ children: React.ReactNode }> = ({ c
     loadFromLocalStorage().finally(() => {
       clearTimeout(safetyTimeout);
     });
-  }, [user?.id, loadFromLocalStorage, sessions.length]); // Include sessions.length to detect when sessions are empty
+  }, [user?.id, loadFromLocalStorage, sessions.length, updateActiveSessionId]); // Include sessions.length to detect when sessions are empty
 
   // Clear guest history when user logs in
   useEffect(() => {
