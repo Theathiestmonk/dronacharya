@@ -104,7 +104,7 @@ const AppContent: React.FC<{
       } else {
         // If already past 2 seconds, initialize immediately
         console.log('Already past minimum loading time, initializing app');
-        setIsFullyInitialized(true);
+      setIsFullyInitialized(true);
       }
     }
   }, [loading, chatHistoryLoading]);

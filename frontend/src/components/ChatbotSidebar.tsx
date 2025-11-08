@@ -23,6 +23,7 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
     switchToSession, 
     deleteSession,
     updateSessionTitle,
+    clearActiveSession,
     isLoading: chatHistoryLoading
   } = useChatHistory();
   
@@ -32,6 +33,7 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
   const [deleteNotification, setDeleteNotification] = useState<string | null>(null);
   const [deleteConfirmSessionId, setDeleteConfirmSessionId] = useState<string | null>(null);
+  const [showRefreshConfirm, setShowRefreshConfirm] = useState(false);
   
   // Built-in query collection
   const primaryQueries = [
@@ -126,6 +128,35 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
   const handleDeleteCancel = () => {
     setDeleteConfirmSessionId(null);
   };
+
+  // Handle refresh button click for guest users
+  const handleRefreshClick = () => {
+    setShowRefreshConfirm(true);
+  };
+
+  // Handle refresh confirmation
+  const handleRefreshConfirm = () => {
+    setShowRefreshConfirm(false);
+    
+    // Clear guest chat sessions from localStorage first
+    try {
+      localStorage.removeItem('guest_chat_sessions');
+      console.log('🗑️ Cleared guest chat sessions from localStorage');
+    } catch (error) {
+      console.error('Error clearing guest sessions:', error);
+    }
+    
+    // Clear active session
+    clearActiveSession();
+    
+    // Reload the page immediately - it will load with no chat history
+    window.location.reload();
+  };
+
+  // Handle refresh cancel
+  const handleRefreshCancel = () => {
+    setShowRefreshConfirm(false);
+  };
   
   const formatDate = (timestamp: string | number) => {
     const date = new Date(typeof timestamp === 'string' ? timestamp : timestamp);
@@ -160,10 +191,10 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
           isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
-        {/* Close button for mobile */}
+        {/* Close button for mobile - Replace with refresh for guest users */}
         {onClose && (
           <div className="lg:hidden flex justify-between items-center p-4 border-b border-gray-200">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-1">
               {/* Logo */}
               <div className="w-10 h-10 flex items-center justify-center flex-shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -174,36 +205,60 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
                 />
               </div>
               {/* Brand Name */}
-              <div>
+              <div className="flex-1">
                 <div className="font-semibold text-gray-900 text-base">Prakriti School</div>
                 <div className="text-xs text-gray-500">AI Assistant</div>
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors duration-200"
-              aria-label="Close sidebar"
-            >
-              <svg 
-                className="w-5 h-5 text-gray-600" 
-                fill="none" 
-                stroke="currentColor" 
-                viewBox="0 0 24 24"
+            {/* Show refresh button for guest users, close button for logged-in users */}
+            {!user ? (
+              <button
+                onClick={handleRefreshClick}
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors duration-200"
+                title="Clear chat and reload"
+                aria-label="Clear chat and reload"
               >
-                <path 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round" 
-                  strokeWidth={2} 
-                  d="M6 18L18 6M6 6l12 12" 
-                />
-              </svg>
-            </button>
+                <svg 
+                  className="w-5 h-5 text-gray-600 hover:text-gray-900" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    strokeWidth={2} 
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
+                  />
+                </svg>
+              </button>
+            ) : (
+              <button
+                onClick={onClose}
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors duration-200"
+                aria-label="Close sidebar"
+              >
+                <svg 
+                  className="w-5 h-5 text-gray-600" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    strokeWidth={2} 
+                    d="M6 18L18 6M6 6l12 12" 
+                  />
+                </svg>
+              </button>
+            )}
           </div>
         )}
       {/* Top Section - Logo and Branding - Hidden on mobile when close button is shown */}
       <div className={`p-4 border-b border-gray-200 ${onClose ? 'lg:block hidden' : 'block'}`}>
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-1">
             {/* Logo */}
             <div className="w-10 h-10 flex items-center justify-center flex-shrink-0">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -214,10 +269,33 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
               />
             </div>
             {/* Brand Name */}
-            <div>
+            <div className="flex-1">
               <div className="font-semibold text-gray-900 text-base">Prakriti School</div>
               <div className="text-xs text-gray-500">AI Assistant</div>
             </div>
+            {/* Refresh icon for guest users - aligned with logo */}
+            {!user && (
+              <button
+                onClick={handleRefreshClick}
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors duration-200 flex-shrink-0"
+                title="Clear chat and reload"
+                aria-label="Clear chat and reload"
+              >
+                <svg 
+                  className="w-5 h-5 text-gray-600 hover:text-gray-900" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    strokeWidth={2} 
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
+                  />
+                </svg>
+              </button>
+            )}
           </div>
           
           {/* Settings Button - Desktop Only */}
@@ -594,6 +672,18 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
         />
       );
     })()}
+
+    {/* Refresh Confirmation Modal for Guest Users */}
+    <ConfirmationModal
+      isOpen={showRefreshConfirm}
+      onClose={handleRefreshCancel}
+      onConfirm={handleRefreshConfirm}
+      title="Clear Chat"
+      message="Are you sure you want to clear existing chat? This action cannot be undone."
+      confirmText="OK"
+      cancelText="Cancel"
+      type="warning"
+    />
     </>
   );
 };

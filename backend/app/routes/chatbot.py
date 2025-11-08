@@ -38,9 +38,45 @@ async def chat_with_bot(request: ChatbotRequest):
             else:
                 return ChatbotResponse(response=str(result))
         elif isinstance(result, list):
-            # Handle list responses (like location with map)
+            # Handle list responses (like location with map or videos)
+            # Convert YouTubeVideo objects to dictionaries for JSON serialization
+            serialized_result = []
+            for item in result:
+                if isinstance(item, dict):
+                    # Check if this is a videos response
+                    if item.get('type') == 'videos' and 'videos' in item:
+                        # Convert YouTubeVideo objects to dictionaries
+                        videos = item['videos']
+                        converted_videos = []
+                        for video in videos:
+                            if hasattr(video, 'model_dump'):  # Pydantic v2
+                                converted_videos.append(video.model_dump())
+                            elif hasattr(video, 'dict'):  # Pydantic v1
+                                converted_videos.append(video.dict())
+                            elif isinstance(video, dict):
+                                converted_videos.append(video)
+                            else:
+                                # Fallback: convert to dict manually
+                                converted_videos.append({
+                                    'video_id': getattr(video, 'video_id', ''),
+                                    'title': getattr(video, 'title', ''),
+                                    'description': getattr(video, 'description', ''),
+                                    'category': getattr(video, 'category', ''),
+                                    'tags': getattr(video, 'tags', []),
+                                    'duration': getattr(video, 'duration', ''),
+                                    'thumbnail_url': getattr(video, 'thumbnail_url', '')
+                                })
+                        serialized_result.append({
+                            'type': 'videos',
+                            'videos': converted_videos
+                        })
+                    else:
+                        serialized_result.append(item)
+                else:
+                    serialized_result.append(item)
+            
             return JSONResponse(content={
-                "response": result,
+                "response": serialized_result,
                 "type": "mixed"
             })
         else:

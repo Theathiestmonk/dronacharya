@@ -12,14 +12,97 @@ type Message =
   | { sender: 'bot'; type: 'map'; url: string }
   | { sender: 'bot'; type: 'videos'; videos: Array<{video_id: string; title: string; description: string; category: string; duration: string; thumbnail_url: string}> };
 
-// Typing dots animation component
-const TypingDots: React.FC = () => (
-  <span className="inline-flex space-x-1">
-    <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--brand-primary)', animationDelay: '0s' }}></span>
-    <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--brand-primary)', animationDelay: '0.2s' }}></span>
-    <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--brand-primary)', animationDelay: '0.4s' }}></span>
+// Typing animation component - shows "Thinking" character by character, then dots
+const TypingAnimation: React.FC = () => {
+  const [displayText, setDisplayText] = React.useState('');
+  const animationRef = React.useRef<number | null>(null);
+  const dotRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const word = 'Thinking';
+    const dots = '...';
+    let currentIndex = 0;
+    let isTypingWord = true;
+
+    const typeText = () => {
+      if (isTypingWord) {
+        // Typing "Thinking" character by character
+        if (currentIndex < word.length) {
+          setDisplayText(word.substring(0, currentIndex + 1));
+          currentIndex++;
+          animationRef.current = window.setTimeout(typeText, 150); // Slower speed - 150ms per character
+        } else {
+          // Finished typing "Thinking", now add dots one by one
+          isTypingWord = false;
+          currentIndex = 0;
+          animationRef.current = window.setTimeout(typeText, 200); // Brief pause before dots
+        }
+      } else {
+        // Adding dots one by one
+        if (currentIndex < dots.length) {
+          const dotsText = dots.substring(0, currentIndex + 1);
+          setDisplayText(word + dotsText);
+          currentIndex++;
+          animationRef.current = window.setTimeout(typeText, 150); // Speed of typing dots
+        } else {
+          // Finished, reset and start over
+          currentIndex = 0;
+          isTypingWord = true;
+          setDisplayText('');
+          animationRef.current = window.setTimeout(typeText, 500); // Brief pause before restarting
+        }
+      }
+    };
+
+    // Start typing immediately
+    typeText();
+
+    // Cleanup on unmount
+    return () => {
+      if (animationRef.current) {
+        clearTimeout(animationRef.current);
+      }
+    };
+  }, []);
+
+  // Split displayText into word and dots for styling
+  const word = 'Thinking';
+  const isShowingDots = displayText.startsWith(word) && displayText.length > word.length;
+  const wordPart = isShowingDots ? word : displayText;
+  const dotsPart = isShowingDots ? displayText.substring(word.length) : '';
+
+  return (
+    <div className="flex items-center gap-3">
+        {/* First dot - bigger, blinking slowly */}
+        <div 
+          ref={dotRef}
+          className="rounded-full"
+          style={{
+            width: '14px',
+            height: '14px',
+            backgroundColor: 'var(--brand-primary)',
+            animation: 'first-dot-blink 2s ease-in-out infinite'
+          }}
+        />
+        {/* Thinking text */}
+        <span 
+          className="text-sm font-medium"
+          style={{ 
+            color: 'var(--brand-primary)',
+            minWidth: '100px',
+            display: 'inline-block'
+          }}
+        >
+          {wordPart}
+          {dotsPart && (
+            <span style={{ fontSize: '10px', display: 'inline-block' }}>
+              {dotsPart}
   </span>
+          )}
+        </span>
+    </div>
 );
+};
 
 // Simple copy icon SVG
 const CopyIcon = ({ copied }: { copied: boolean }) => (
@@ -69,6 +152,9 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   const [isTyping, setIsTyping] = useState(false);
   const [typingAnimationKey, setTypingAnimationKey] = useState(0); // Key to retrigger animation
   const [shouldAnimate, setShouldAnimate] = useState(false); // Control animation trigger
+  const loadingStartTimeRef = useRef<number | null>(null); // Track when loading starts
+  const [showTypingAnimation, setShowTypingAnimation] = useState(false); // Control typing animation visibility
+  const responseStartedTypingRef = useRef<boolean>(false); // Track if response has started typing to prevent animation from showing again
   // For copy feedback per message
   const [copiedIdx, setCopiedIdx] = useCopyState<number | null>(null);
   const [showClearedMessage, setShowClearedMessage] = useState(false);
@@ -266,7 +352,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             setHasFirstResponse(true);
           })
           .finally(() => {
-            setLoading(false);
+            setLoadingWithMinDuration();
           });
       }
       inputRef.current?.focus({ preventScroll: true });
@@ -282,6 +368,61 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     recognition.start();
   };
 
+  // Helper function to hide typing animation with minimum display duration
+  const hideTypingAnimationWithMinDuration = (immediate: boolean = false) => {
+    if (immediate || !loadingStartTimeRef.current) {
+      setShowTypingAnimation(false);
+      responseStartedTypingRef.current = true; // Mark that response has started
+      return;
+    }
+    
+    // Ensure minimum display duration (3-4 seconds for all queries)
+    const minDisplayDuration = 3500; // 3.5 seconds (middle of 3-4 range)
+    const elapsed = Date.now() - loadingStartTimeRef.current;
+    const remainingTime = Math.max(0, minDisplayDuration - elapsed);
+    
+    if (remainingTime > 0) {
+      // Don't set responseStartedTypingRef immediately - wait for minimum duration
+      setTimeout(() => {
+        setShowTypingAnimation(false);
+        responseStartedTypingRef.current = true; // Mark that response has started after minimum duration
+      }, remainingTime);
+    } else {
+      setShowTypingAnimation(false);
+      responseStartedTypingRef.current = true; // Mark that response has started
+    }
+  };
+
+  // Helper function to set loading to false with minimum display duration
+  const setLoadingWithMinDuration = (immediate: boolean = false) => {
+    if (immediate || !loadingStartTimeRef.current) {
+      setLoading(false);
+      setShowTypingAnimation(false);
+      loadingStartTimeRef.current = null;
+      responseStartedTypingRef.current = false; // Reset flag
+      return;
+    }
+    
+    // Ensure minimum display duration (3-4 seconds for all queries)
+    const minDisplayDuration = 3500; // 3.5 seconds (middle of 3-4 range)
+    const elapsed = Date.now() - loadingStartTimeRef.current;
+    const remainingTime = Math.max(0, minDisplayDuration - elapsed);
+    
+    if (remainingTime > 0) {
+      setTimeout(() => {
+        setLoading(false);
+        setShowTypingAnimation(false);
+        loadingStartTimeRef.current = null;
+        responseStartedTypingRef.current = false; // Reset flag
+      }, remainingTime);
+    } else {
+      setLoading(false);
+      setShowTypingAnimation(false);
+      loadingStartTimeRef.current = null;
+      responseStartedTypingRef.current = false; // Reset flag
+    }
+  };
+
   // Stop current generation
   const stopGeneration = () => {
     if (abortController) {
@@ -289,7 +430,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       setAbortController(null);
     }
     setIsGenerating(false);
-    setLoading(false);
+    setLoadingWithMinDuration(true); // Immediate when user stops
     setRequestInProgress(false);
     setIsTyping(false);
     setDisplayedBotText('');
@@ -298,7 +439,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
 
   // Store sendMessage in a ref to avoid dependency issues  
   const sendMessageRef = useRef<((messageText?: string) => Promise<void>) | null>(null);
-  
+
   // Handle suggestion button clicks with specific prompts
   const handleSuggestionClick = useCallback((suggestion: string) => {
     // Prevent clicking if already processing
@@ -706,6 +847,11 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     setIsGenerating(true);
     setDisplayedBotText('');
     setIsTyping(false);
+    // Reset response started typing flag for new query
+    responseStartedTypingRef.current = false;
+    // Track when loading starts for minimum display duration
+    loadingStartTimeRef.current = Date.now();
+    setShowTypingAnimation(true);
     
     // Create abort controller for this request
     const controller = new AbortController();
@@ -761,6 +907,14 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       
       // Check for structured responses with type field
       if (data.type === 'calendar' && data.response && data.response.url) {
+        // Calculate delay to ensure minimum display duration for typing animation
+        const minDisplayDuration = 3500; // 3.5 seconds (middle of 3-4 range)
+        const elapsed = loadingStartTimeRef.current ? Date.now() - loadingStartTimeRef.current : 0;
+        const delayBeforeShowing = Math.max(0, minDisplayDuration - elapsed);
+        
+        // Wait for minimum duration before showing the response
+        await new Promise(resolve => setTimeout(resolve, delayBeforeShowing));
+        
         const botMsg = { sender: 'bot' as const, type: 'calendar' as const, url: data.response.url };
         // For inbuilt queries, preserve scroll position when adding bot message
         if (isInbuiltQueryRef.current && messagesContainerRef.current) {
@@ -784,10 +938,20 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         });
         console.log('Bot calendar message added to chat history');
         setIsTyping(false);
+        // Note: responseStartedTypingRef will be set inside hideTypingAnimationWithMinDuration after minimum duration
+        hideTypingAnimationWithMinDuration();
         setDisplayedBotText('');
         setHasFirstResponse(true);
         return;
       } else if (data.type === 'map' && data.response && data.response.url) {
+        // Calculate delay to ensure minimum display duration for typing animation
+        const minDisplayDuration = 3500; // 3.5 seconds (middle of 3-4 range)
+        const elapsed = loadingStartTimeRef.current ? Date.now() - loadingStartTimeRef.current : 0;
+        const delayBeforeShowing = Math.max(0, minDisplayDuration - elapsed);
+        
+        // Wait for minimum duration before showing the response
+        await new Promise(resolve => setTimeout(resolve, delayBeforeShowing));
+        
         const botMsg = { sender: 'bot' as const, type: 'map' as const, url: data.response.url };
         // For inbuilt queries, preserve scroll position when adding bot message
         if (isInbuiltQueryRef.current && messagesContainerRef.current) {
@@ -809,10 +973,20 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           url: data.response.url,
         });
         setIsTyping(false);
+        // Note: responseStartedTypingRef will be set inside hideTypingAnimationWithMinDuration after minimum duration
+        hideTypingAnimationWithMinDuration();
         setDisplayedBotText('');
         setHasFirstResponse(true);
         return;
       } else if (data.type === 'mixed' && Array.isArray(data.response)) {
+        // Calculate delay to ensure minimum display duration for typing animation
+        const minDisplayDuration = 3500; // 3.5 seconds (middle of 3-4 range)
+        const elapsed = loadingStartTimeRef.current ? Date.now() - loadingStartTimeRef.current : 0;
+        const delayBeforeShowing = Math.max(0, minDisplayDuration - elapsed);
+        
+        // Wait for minimum duration before showing the response
+        await new Promise(resolve => setTimeout(resolve, delayBeforeShowing));
+        
         // Handle mixed responses (like location with map or videos)
         const messages_to_add = [{ sender: 'bot', text: data.response[0] } as Message];
         
@@ -836,10 +1010,20 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           setMessages((msgs) => [...msgs, ...messages_to_add]);
         }
         setIsTyping(false);
+        // Note: responseStartedTypingRef will be set inside hideTypingAnimationWithMinDuration after minimum duration
+        hideTypingAnimationWithMinDuration();
         setDisplayedBotText('');
         setHasFirstResponse(true);
         return;
       } else if (data.type === 'videos' && data.response && data.response.videos) {
+        // Calculate delay to ensure minimum display duration for typing animation
+        const minDisplayDuration = 3500; // 3.5 seconds (middle of 3-4 range)
+        const elapsed = loadingStartTimeRef.current ? Date.now() - loadingStartTimeRef.current : 0;
+        const delayBeforeShowing = Math.max(0, minDisplayDuration - elapsed);
+        
+        // Wait for minimum duration before showing the response
+        await new Promise(resolve => setTimeout(resolve, delayBeforeShowing));
+        
         // Handle video responses
         const botMsg = { sender: 'bot' as const, type: 'videos' as const, videos: data.response.videos };
         // For inbuilt queries, preserve scroll position when adding bot message
@@ -862,6 +1046,8 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           videos: data.response.videos,
         });
         setIsTyping(false);
+        // Note: responseStartedTypingRef will be set inside hideTypingAnimationWithMinDuration after minimum duration
+        hideTypingAnimationWithMinDuration();
         setDisplayedBotText('');
         setHasFirstResponse(true);
         return;
@@ -875,8 +1061,20 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       // Add bot response to conversation history
       setConversationHistory(prev => [...prev, { role: 'assistant', content: fullText }]);
       
+      // Calculate delay to ensure minimum display duration for typing animation
+      const minDisplayDuration = 3500; // 3.5 seconds (middle of 3-4 range)
+      const elapsed = loadingStartTimeRef.current ? Date.now() - loadingStartTimeRef.current : 0;
+      const delayBeforeTyping = Math.max(0, minDisplayDuration - elapsed);
+      
+      // Wait for minimum duration before starting to type
+      await new Promise(resolve => setTimeout(resolve, delayBeforeTyping));
+      
+      // Now start typing the response
       let idx = 0;
       setIsTyping(true);
+      // Hide typing animation when response starts typing, but respect minimum duration
+      // Note: responseStartedTypingRef will be set inside hideTypingAnimationWithMinDuration after minimum duration
+      hideTypingAnimationWithMinDuration();
       setTypingAnimationKey(prev => prev + 1); // Retrigger animation
       setShouldAnimate(false); // Reset animation - start with blue
       // Delay to ensure DOM is ready, then trigger animation
@@ -890,6 +1088,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           setTimeout(typeChar, 8); // speed of typing
         } else {
           setIsTyping(false);
+          // Ensure typing animation is hidden when response completes (already hidden by hideTypingAnimationWithMinDuration)
           // Store the full Markdown text for rendering
           // For inbuilt queries, preserve scroll position when adding bot message
           // User message is already in state, so bot message will appear after it (correct order)
@@ -960,7 +1159,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         setHasFirstResponse(true);
       }
     } finally {
-      setLoading(false);
+      setLoadingWithMinDuration();
       setRequestInProgress(false);
       setIsGenerating(false);
       setAbortController(null);
@@ -1522,7 +1721,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     }
     setMessages([]);
     setInput('');
-    setLoading(false);
+    setLoadingWithMinDuration(true); // Immediate when clearing
     setRequestInProgress(false);
     setIsGenerating(false);
     setAbortController(null);
@@ -1552,6 +1751,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     }
   }, [clearChat, getRandomWelcomeMessage, clearActiveSession, abortController, setCopiedIdx]);
 
+
   // Expose clearChat function to parent
   React.useImperativeHandle(ref, () => ({
     clearChat: handleClearChat
@@ -1578,7 +1778,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         // Clear all messages and state
         setMessages([]);
         setInput('');
-        setLoading(false);
+        setLoadingWithMinDuration(true); // Immediate when clearing
         setRequestInProgress(false);
         setIsGenerating(false);
         setAbortController(null);
@@ -1664,12 +1864,12 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             </div>
             
             {/* Input Area - Always visible at bottom with safe area for mobile navigation */}
-            <div className="flex-shrink-0 w-full mx-auto px-3 sm:px-4 md:px-6 pb-20 sm:pb-4 md:pb-6 pt-2 sm:pt-3 bg-white" style={{ paddingBottom: 'max(5rem, calc(1rem + env(safe-area-inset-bottom, 0px)))' }}>
+            <div className="flex-shrink-0 w-full mx-auto px-3 sm:px-4 md:px-6 pb-20 sm:pb-4 md:pb-6 pt-2 sm:pt-3 bg-transparent" style={{ paddingBottom: 'max(5rem, calc(1rem + env(safe-area-inset-bottom, 0px)))' }}>
               <div className="relative w-full">
                 <div className="relative">
                   <textarea
                     ref={inputRef}
-                    className="w-full border rounded-[20px] px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 pr-16 sm:pr-20 md:pr-24 bg-white focus:outline-none resize-none font-normal text-sm sm:text-base border-gray-300 text-gray-900 placeholder-gray-400 overflow-hidden"
+                    className="w-full border rounded-[20px] px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 pr-16 sm:pr-20 md:pr-24 bg-transparent focus:outline-none resize-none font-normal text-sm sm:text-base border-gray-300 text-gray-900 placeholder-gray-400 overflow-hidden"
                     style={{ minHeight: '50px', maxHeight: '200px' }}
                     value={input}
                     onChange={(e) => {
@@ -1747,7 +1947,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               </div>
             </div>
           )}
-          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto pt-4 sm:pt-6 mb-3 sm:mb-4 space-y-2 px-1 sm:px-2 md:px-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400" style={{ minHeight: 0 }}>
+          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto pt-4 sm:pt-6 mb-3 sm:mb-4 space-y-2 px-1 sm:px-2 md:px-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 relative" style={{ minHeight: 0 }}>
         
         {messages.map((msg, idx) => (
           'type' in msg && msg.type === 'calendar' ? (
@@ -1941,10 +2141,10 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             </div>
           </div>
         )}
-        {loading && !isTyping && (
+        {showTypingAnimation && loading && !responseStartedTypingRef.current && (
           <div className="flex justify-start mb-4 sm:mb-5">
             <div className="max-w-[90%] sm:max-w-[85%] text-gray-900">
-              <TypingDots />
+              <TypingAnimation />
             </div>
           </div>
         )}
@@ -2021,6 +2221,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           </div>
         </>
       )}
+
     </div>
   );
 });

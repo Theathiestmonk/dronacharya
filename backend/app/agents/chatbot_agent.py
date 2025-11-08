@@ -1369,15 +1369,41 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         return [content.strip() if content else canonical_answer, {"type": "map", "url": map_url}]
 
     # Step 0.12: YouTube Video Intent Detection (only for clear video requests)
-    video_keywords = [
-        "video", "show me", "watch", "see", "demonstration", "example", "gardening", "art", "sports", 
-        "science", "mindfulness", "meditation", "campus", "facilities", "tour", "performance", 
-        "exhibition", "workshop", "activity", "program", "class", "lesson"
+    # Explicit video request keywords - user is asking for a video
+    explicit_video_keywords = [
+        "show me a video", "show me video", "watch a video", "watch video", "see a video", "see video",
+        "video about", "video of", "video on", "videos about", "videos of", "videos on",
+        "play video", "play a video", "demonstration video", "video demonstration"
     ]
     
-    # Only detect video intent for clear video-related queries, not for article/text queries
-    is_article_query = any(word in user_query.lower() for word in ["article", "articles", "substack", "blog", "news", "text", "read"])
-    is_video_query = any(kw in user_query.lower() for kw in video_keywords)
+    # School activity keywords - these are specific to school events/activities that have videos
+    school_activity_keywords = [
+        "gardening program", "art exhibition", "sports day", "campus tour", "school tour",
+        "facilities tour", "science fair", "music performance", "dance performance",
+        "workshop video", "school activity", "school program", "school event"
+    ]
+    
+    # Educational concept keywords that should NOT trigger video intent
+    educational_concept_keywords = [
+        "explain", "what is", "how does", "describe", "tell me about", "define", "meaning of",
+        "concept", "theory", "principle", "detail", "details", "example", "examples",
+        "magnetic field", "electric field", "gravity", "force", "energy", "molecule", "atom"
+    ]
+    
+    query_lower = user_query.lower()
+    
+    # Check for explicit video requests
+    is_explicit_video_query = any(kw in query_lower for kw in explicit_video_keywords)
+    
+    # Check for school activity queries
+    is_school_activity_query = any(kw in query_lower for kw in school_activity_keywords)
+    
+    # Check if it's an educational concept query (should NOT trigger video)
+    is_educational_concept_query = any(kw in query_lower for kw in educational_concept_keywords)
+    
+    # Only detect video intent for explicit video requests or school activities, NOT for educational concepts
+    is_article_query = any(word in query_lower for word in ["article", "articles", "substack", "blog", "news", "text", "read"])
+    is_video_query = (is_explicit_video_query or is_school_activity_query) and not is_educational_concept_query
     
     if is_video_query and not is_article_query:
         print("[Chatbot] Detected video intent, processing with LangGraph...")
@@ -2880,20 +2906,44 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
 
 
 
-    # Step 0.12: YouTube Video Intent Detection
-
-    video_keywords = [
-
-        "video", "show me", "watch", "see", "demonstration", "example", "gardening", "art", "sports", 
-
-        "science", "mindfulness", "meditation", "campus", "facilities", "tour", "performance", 
-
-        "exhibition", "workshop", "activity", "program", "class", "lesson"
-
+    # Step 0.12: YouTube Video Intent Detection (only for clear video requests)
+    # Explicit video request keywords - user is asking for a video
+    explicit_video_keywords = [
+        "show me a video", "show me video", "watch a video", "watch video", "see a video", "see video",
+        "video about", "video of", "video on", "videos about", "videos of", "videos on",
+        "play video", "play a video", "demonstration video", "video demonstration"
     ]
+    
+    # School activity keywords - these are specific to school events/activities that have videos
+    school_activity_keywords = [
+        "gardening program", "art exhibition", "sports day", "campus tour", "school tour",
+        "facilities tour", "science fair", "music performance", "dance performance",
+        "workshop video", "school activity", "school program", "school event"
+    ]
+    
+    # Educational concept keywords that should NOT trigger video intent
+    educational_concept_keywords = [
+        "explain", "what is", "how does", "describe", "tell me about", "define", "meaning of",
+        "concept", "theory", "principle", "detail", "details", "example", "examples",
+        "magnetic field", "electric field", "gravity", "force", "energy", "molecule", "atom"
+    ]
+    
+    query_lower = user_query.lower()
+    
+    # Check for explicit video requests
+    is_explicit_video_query = any(kw in query_lower for kw in explicit_video_keywords)
+    
+    # Check for school activity queries
+    is_school_activity_query = any(kw in query_lower for kw in school_activity_keywords)
+    
+    # Check if it's an educational concept query (should NOT trigger video)
+    is_educational_concept_query = any(kw in query_lower for kw in educational_concept_keywords)
+    
+    # Only detect video intent for explicit video requests or school activities, NOT for educational concepts
+    is_article_query = any(word in query_lower for word in ["article", "articles", "substack", "blog", "news", "text", "read"])
+    is_video_query = (is_explicit_video_query or is_school_activity_query) and not is_educational_concept_query
 
-    if any(kw in user_query.lower() for kw in video_keywords):
-
+    if is_video_query and not is_article_query:
         print("[Chatbot] Detected video intent, processing with LangGraph...")
 
         try:
@@ -3328,20 +3378,44 @@ Remember: Every response should reflect Prakriti School's unique identity and ed
 
 
 
-    # Step 0.12: YouTube Video Intent Detection
-
-    video_keywords = [
-
-        "video", "show me", "watch", "see", "demonstration", "example", "gardening", "art", "sports", 
-
-        "science", "mindfulness", "meditation", "campus", "facilities", "tour", "performance", 
-
-        "exhibition", "workshop", "activity", "program", "class", "lesson"
-
+    # Step 0.12: YouTube Video Intent Detection (only for clear video requests)
+    # Explicit video request keywords - user is asking for a video
+    explicit_video_keywords = [
+        "show me a video", "show me video", "watch a video", "watch video", "see a video", "see video",
+        "video about", "video of", "video on", "videos about", "videos of", "videos on",
+        "play video", "play a video", "demonstration video", "video demonstration"
     ]
+    
+    # School activity keywords - these are specific to school events/activities that have videos
+    school_activity_keywords = [
+        "gardening program", "art exhibition", "sports day", "campus tour", "school tour",
+        "facilities tour", "science fair", "music performance", "dance performance",
+        "workshop video", "school activity", "school program", "school event"
+    ]
+    
+    # Educational concept keywords that should NOT trigger video intent
+    educational_concept_keywords = [
+        "explain", "what is", "how does", "describe", "tell me about", "define", "meaning of",
+        "concept", "theory", "principle", "detail", "details", "example", "examples",
+        "magnetic field", "electric field", "gravity", "force", "energy", "molecule", "atom"
+    ]
+    
+    query_lower = user_query.lower()
+    
+    # Check for explicit video requests
+    is_explicit_video_query = any(kw in query_lower for kw in explicit_video_keywords)
+    
+    # Check for school activity queries
+    is_school_activity_query = any(kw in query_lower for kw in school_activity_keywords)
+    
+    # Check if it's an educational concept query (should NOT trigger video)
+    is_educational_concept_query = any(kw in query_lower for kw in educational_concept_keywords)
+    
+    # Only detect video intent for explicit video requests or school activities, NOT for educational concepts
+    is_article_query = any(word in query_lower for word in ["article", "articles", "substack", "blog", "news", "text", "read"])
+    is_video_query = (is_explicit_video_query or is_school_activity_query) and not is_educational_concept_query
 
-    if any(kw in user_query.lower() for kw in video_keywords):
-
+    if is_video_query and not is_article_query:
         print("[Chatbot] Detected video intent, processing with LangGraph...")
 
         try:
