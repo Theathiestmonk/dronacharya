@@ -19,10 +19,7 @@ export const metadata: Metadata = {
   title: 'Prakriti School AI Assistant',
   description: 'AI-powered school automation system for Prakriti School',
   icons: {
-    icon: [
-      { url: '/prakriti_logo.webp', type: 'image/webp' },
-      { url: '/favicon.ico', sizes: '32x32', type: 'image/x-icon' },
-    ],
+    icon: '/prakriti_logo.webp',
     shortcut: '/prakriti_logo.webp',
     apple: '/prakriti_logo.webp',
   },
@@ -35,7 +32,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="icon" href="/prakriti_logo.webp" type="image/webp" />
         <link rel="shortcut icon" href="/prakriti_logo.webp" type="image/webp" />
         <link rel="apple-touch-icon" href="/prakriti_logo.webp" />
-        <link rel="icon" href="/favicon.ico" type="image/x-icon" sizes="32x32" />
         <meta name="theme-color" content="#23479f" />
       </head>
       <body className="min-h-screen" suppressHydrationWarning>
