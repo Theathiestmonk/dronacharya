@@ -1480,11 +1480,18 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     
     # Detect specific classroom data intent for optimized loading
     is_announcement_query = any(kw in query_lower for kw in ['announcement', 'announce', 'notice', 'update', 'news'])
-    is_student_query = any(kw in query_lower for kw in ['student', 'students', 'classmate', 'classmates', 'roster', 'enrollment'])
-    is_teacher_query = any(kw in query_lower for kw in ['teacher', 'teachers', 'faculty', 'instructor', 'instructors', 'staff member', 'staff'])
+    # Enhanced student query detection: includes "want", "list", "check", "exists" patterns
+    is_student_query = any(kw in query_lower for kw in ['student', 'students', 'classmate', 'classmates', 'roster', 'enrollment']) or \
+                       (any(kw in query_lower for kw in ['want', 'show', 'list', 'check']) and any(kw in query_lower for kw in ['classmate', 'student']))
+    # Enhanced teacher query detection: includes "want", "list", "check" patterns
+    is_teacher_query = any(kw in query_lower for kw in ['teacher', 'teachers', 'faculty', 'instructor', 'instructors', 'staff member', 'staff']) or \
+                       (any(kw in query_lower for kw in ['want', 'show', 'list', 'check']) and any(kw in query_lower for kw in ['teacher', 'instructor']))
     is_coursework_query = any(kw in query_lower for kw in ['assignment', 'homework', 'coursework', 'task', 'due', 'submit'])
     is_course_query = any(kw in query_lower for kw in ['course', 'courses', 'class', 'classes', 'subject', 'subjects'])
     is_calendar_query = any(kw in query_lower for kw in ['event', 'events', 'calendar', 'schedule', 'meeting', 'holiday'])
+    # Detect existence check queries
+    is_existence_check_query = any(kw in query_lower for kw in ['exists', 'exist', 'check if', 'is there', 'is there a']) and \
+                               (is_student_query or is_teacher_query)
     
     print(f"[Chatbot] Query Intent Detection:")
     print(f"  - is_person_detail_query: {is_person_detail_query}")
@@ -1496,6 +1503,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     print(f"  - Coursework: {is_coursework_query}")
     print(f"  - Course: {is_course_query}")
     print(f"  - Calendar: {is_calendar_query}")
+    print(f"  - Existence Check: {is_existence_check_query}")
     
     # For person detail queries, use web crawler first (team page)
     web_enhanced_info = ""
@@ -1993,10 +2001,17 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             # Detect announcement queries (including common typos like "annunce", "announc", etc.)
             announcement_keywords = ['announcement', 'announce', 'annunce', 'announc', 'notice', 'update', 'news']
             is_announcement_query = any(kw in query_lower for kw in announcement_keywords)
-            is_student_query = any(kw in query_lower for kw in ['student', 'classmate', 'roster', 'enrollment'])
-            is_teacher_query = any(kw in query_lower for kw in ['teacher', 'instructor', 'faculty'])
+            # Enhanced student query detection: includes "want", "list", "check", "exists" patterns
+            is_student_query = any(kw in query_lower for kw in ['student', 'classmate', 'roster', 'enrollment']) or \
+                               (any(kw in query_lower for kw in ['want', 'show', 'list', 'check']) and any(kw in query_lower for kw in ['classmate', 'student']))
+            # Enhanced teacher query detection: includes "want", "list", "check" patterns
+            is_teacher_query = any(kw in query_lower for kw in ['teacher', 'instructor', 'faculty']) or \
+                               (any(kw in query_lower for kw in ['want', 'show', 'list', 'check']) and any(kw in query_lower for kw in ['teacher', 'instructor']))
             is_coursework_query = any(kw in query_lower for kw in ['assignment', 'homework', 'coursework', 'task', 'due', 'submit'])
             is_course_query = any(kw in query_lower for kw in ['course', 'class', 'subject'])
+            # Detect existence check queries
+            is_existence_check_query = any(kw in query_lower for kw in ['exists', 'exist', 'check if', 'is there', 'is there a']) and \
+                                       (is_student_query or is_teacher_query)
             is_today_query = any(kw in query_lower for kw in ['today', 'todays', "today's"])
             is_yesterday_query = any(kw in query_lower for kw in ['yesterday', "yesterday's"])
             is_calendar_query = any(kw in query_lower for kw in ['event', 'events', 'calendar', 'schedule', 'meeting', 'holiday'])
@@ -2517,12 +2532,36 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                         user_content += "   | Teacher Name | 123456 | teacher@example.com |\n\n\n"
                     elif is_teacher_query or is_student_query:
                         # Even without email request, format as table for better presentation
-                        user_content += "\n⚠️⚠️⚠️ FORMATTING INSTRUCTIONS FOR TEACHER/STUDENT LISTS: ⚠️⚠️⚠️\n"
-                        user_content += "1. **ALWAYS format teacher/student lists as Markdown tables** for better readability.\n"
-                        user_content += "2. Use format: | Name | ID |\n"
-                        user_content += "3. Separate header with: |---|---|\n"
-                        user_content += "4. Each row: | Teacher/Student Name | ID |\n"
-                        user_content += "5. If email was not requested, don't include it in the table.\n\n"
+                        user_content += "\n⚠️⚠️⚠️ CRITICAL INSTRUCTIONS FOR TEACHER/STUDENT QUERIES: ⚠️⚠️⚠️\n"
+                        user_content += "**ABSOLUTELY FORBIDDEN:**\n"
+                        user_content += "- DO NOT send greetings like 'I see that you are a student in Grade X' when user asks for data\n"
+                        user_content += "- DO NOT say 'How can I assist you today?' when user asks for specific data (lists, existence checks)\n"
+                        user_content += "- DO NOT provide general responses when user asks for specific classroom data\n\n"
+                        user_content += "**REQUIRED ACTIONS:**\n"
+                        user_content += "1. **For list queries** (e.g., 'I want my classmate list', 'show me teachers'):\n"
+                        user_content += "   - IMMEDIATELY check the Data section above for student/teacher lists\n"
+                        user_content += "   - Extract ALL students/teachers from the data\n"
+                        user_content += "   - Format as Markdown table: | Name | ID |\n"
+                        user_content += "   - Start your response directly with the table - NO greetings, NO introductions\n"
+                        user_content += "   - If no data found, say 'No students/teachers found in your courses.'\n\n"
+                        user_content += "2. **For existence check queries** (e.g., 'check if student X exists', 'does Y exist'):\n"
+                        user_content += "   - IMMEDIATELY search the Data section above for the specific name\n"
+                        user_content += "   - Check ALL student/teacher lists in ALL courses\n"
+                        user_content += "   - If found: Respond with 'YES, [Name] exists as a [student/teacher] in [Course Name].'\n"
+                        user_content += "   - If NOT found: Respond with 'NO, [Name] does not exist in your courses.'\n"
+                        user_content += "   - Start your response directly with YES/NO - NO greetings, NO introductions\n\n"
+                        user_content += "3. **ALWAYS format teacher/student lists as Markdown tables** for better readability.\n"
+                        user_content += "   - Use format: | Name | ID |\n"
+                        user_content += "   - Separate header with: |---|---|\n"
+                        user_content += "   - Each row: | Teacher/Student Name | ID |\n"
+                        user_content += "   - If email was not requested, don't include it in the table.\n\n"
+                        user_content += "**EXAMPLES OF CORRECT BEHAVIOR:**\n"
+                        user_content += "- User: 'I want my classmate list'\n"
+                        user_content += "  Response: | Name | ID |\n|---|---|\n| Student 1 | 123 |\n| Student 2 | 456 |\n\n"
+                        user_content += "- User: 'Check if John exists'\n"
+                        user_content += "  Response: YES, John exists as a student in Math Class.\n\n"
+                        user_content += "- User: 'I want my teacher list'\n"
+                        user_content += "  Response: | Name | ID |\n|---|---|\n| Teacher 1 | 789 |\n| Teacher 2 | 012 |\n\n"
                     
                     # Add concise formatting instructions for announcements (TOKEN OPTIMIZATION - reduced from ~60 lines to ~5 lines)
                     if is_announcement_query:
