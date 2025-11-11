@@ -52,10 +52,10 @@ def retrieve_from_json(query: str, threshold: int = 50) -> str | None:
         print(f"[Chatbot] Error reading KB: {e}")
     return None
 
-def get_student_coursework_data(student_user_id: str, student_email: str = None, limit_coursework: int = None, user_grade: str = None) -> dict:
+def get_student_coursework_data(student_user_id: str, student_email: str = None, limit_coursework: int = None, user_grade: str = None, work_type_filter: str = None) -> dict:
     """
     Get coursework data directly from google_classroom_coursework table for a student.
-    This is used when students ask about assignments - we check coursework table directly
+    This is used when students ask about assignments/homework - we check coursework table directly
     instead of going through courses (since courses may be synced by admin).
     
     Strategy: Query coursework directly and join with courses to get course names.
@@ -63,6 +63,10 @@ def get_student_coursework_data(student_user_id: str, student_email: str = None,
     checking if submissions exist for this student.
     
     Also filters by student's grade if provided - only shows assignments from courses matching their grade.
+    
+    Args:
+        work_type_filter: Filter by work_type (e.g., 'ASSIGNMENT', 'QUIZ', etc.). 
+                         If 'homework' is provided, filters for homework-specific work types.
     """
     try:
         from supabase_config import get_supabase_client
@@ -149,24 +153,43 @@ def get_student_coursework_data(student_user_id: str, student_email: str = None,
                         user_grade_num = grade_match.group(1)
                         print(f"[Chatbot] Extracted grade number: {user_grade_num}")
                 
+                # First pass: collect all courses
+                all_courses = []
                 for course in courses_result.data:
-                    course_name = course.get('name', '')
-                    course_section = course.get('section', '')
-                    
-                    # Filter by grade: course name or section should contain the grade number
-                    if user_grade_num:
+                    all_courses.append(course)
+                
+                # Apply grade filtering only if grade is provided
+                # But if filtering would exclude all courses, skip filtering and use email/user_id based access
+                if user_grade_num:
+                    filtered_courses = []
+                    for course in all_courses:
+                        course_name = course.get('name', '')
+                        course_section = course.get('section') or ''  # Handle None case
+                        
                         # Check if course name or section contains the grade number (e.g., "Grade 6", "G6", "6")
                         grade_pattern = rf'\b(?:Grade|G|grade)\s*{user_grade_num}\b|\b{user_grade_num}\b'
                         name_matches = bool(re.search(grade_pattern, course_name, re.IGNORECASE))
-                        section_matches = bool(re.search(grade_pattern, course_section, re.IGNORECASE))
+                        section_matches = bool(re.search(grade_pattern, course_section, re.IGNORECASE)) if course_section else False
                         
-                        if not name_matches and not section_matches:
-                            print(f"[Chatbot] ⚠️ Skipping course '{course_name}' (section: {course_section}) - doesn't match Grade {user_grade_num}")
-                            continue
-                        else:
+                        if name_matches or section_matches:
+                            filtered_courses.append(course)
                             print(f"[Chatbot] ✅ Course '{course_name}' matches Grade {user_grade_num}")
+                        else:
+                            print(f"[Chatbot] ⚠️ Skipping course '{course_name}' (section: {course_section or 'N/A'}) - doesn't match Grade {user_grade_num}")
                     
-                    courses_map[course.get('id')] = course
+                    # If grade filtering would exclude all courses, skip filtering and use email/user_id based access
+                    if not filtered_courses and len(all_courses) > 0:
+                        print(f"[Chatbot] ⚠️ Grade filtering would exclude all courses. Using email/user_id based access instead (showing all {len(all_courses)} courses)")
+                        for course in all_courses:
+                            courses_map[course.get('id')] = course
+                    else:
+                        # Use filtered courses
+                        for course in filtered_courses:
+                            courses_map[course.get('id')] = course
+                else:
+                    # No grade filtering - use all courses (email/user_id based access)
+                    for course in all_courses:
+                        courses_map[course.get('id')] = course
         
         # Build submissions map for submission status
         submissions_map = {}
@@ -192,6 +215,17 @@ def get_student_coursework_data(student_user_id: str, student_email: str = None,
             
             course_name = course.get('name', 'Unknown Course')
             course_link = course.get('alternate_link')
+            
+            # Filter by work_type if specified
+            if work_type_filter:
+                cw_work_type = cw.get('work_type', '').upper()
+                if work_type_filter.upper() == 'HOMEWORK':
+                    # For homework, filter for ASSIGNMENT type (homework is typically assignments)
+                    # You can add other homework-related work types here if needed
+                    if cw_work_type != 'ASSIGNMENT':
+                        continue
+                elif work_type_filter.upper() != cw_work_type:
+                    continue
             
             # Get submission info if available
             sub_info = submissions_map.get(cw.get('id'))
@@ -1426,10 +1460,16 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     # Detect query intent for smart data loading
     query_lower = user_query.lower()
     
+    # Detect coursework queries FIRST (before person detail detection) to avoid conflicts
+    is_homework_query = any(kw in query_lower for kw in ['homework', 'my homework', 'homework help', 'show homework'])
+    is_assignment_query = any(kw in query_lower for kw in ['assignment', 'assignments', 'my assignment', 'my assignments', 'assignment help', 'show assignment', 'show assignments'])
+    is_coursework_query = is_homework_query or is_assignment_query or any(kw in query_lower for kw in ['coursework', 'task', 'due', 'submit'])
+    
     # Check if this is a person introduction/detail query (should use web crawler, NOT classroom data)
+    # BUT exclude coursework/assignment queries - if query is about coursework, it's not a person detail query
     person_detail_keywords = ['introduction', 'detail', 'details', 'who is', 'about', 'little bit about', 
                              'information about', 'tell me about', 'profile', 'biography']
-    is_person_detail_query = any(kw in query_lower for kw in person_detail_keywords)
+    is_person_detail_query = any(kw in query_lower for kw in person_detail_keywords) and not is_coursework_query
     
     # Check if query mentions a specific person name (capitalized words or known names)
     # Try both original query (for capitalized names) and lowercase (for case-insensitive detection)
@@ -1486,7 +1526,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     # Enhanced teacher query detection: includes "want", "list", "check" patterns
     is_teacher_query = any(kw in query_lower for kw in ['teacher', 'teachers', 'faculty', 'instructor', 'instructors', 'staff member', 'staff']) or \
                        (any(kw in query_lower for kw in ['want', 'show', 'list', 'check']) and any(kw in query_lower for kw in ['teacher', 'instructor']))
-    is_coursework_query = any(kw in query_lower for kw in ['assignment', 'homework', 'coursework', 'task', 'due', 'submit'])
+    # Note: is_coursework_query, is_homework_query, and is_assignment_query are already defined above
     is_course_query = any(kw in query_lower for kw in ['course', 'courses', 'class', 'classes', 'subject', 'subjects'])
     is_calendar_query = any(kw in query_lower for kw in ['event', 'events', 'calendar', 'schedule', 'meeting', 'holiday'])
     # Detect existence check queries
@@ -1776,11 +1816,30 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 user_role = user_profile.get('role', '') if user_profile else None
                 user_id = user_profile.get('user_id', '') if user_profile else None
                 
-                if user_role == 'student' and is_coursework_query and user_id:
-                    print(f"[Chatbot] Student coursework query detected - querying coursework table directly")
-                    # Get student's grade for filtering
-                    student_grade = user_profile.get('grade', '') if user_profile else None
-                    admin_data = get_student_coursework_data(user_id, student_email=user_email, limit_coursework=limit_coursework or 20, user_grade=student_grade)
+                # Allow coursework access for any user (not just students) based on email/user_id
+                # Only apply grade filtering if user is actually a student with a grade
+                coursework_data_from_direct_query = False  # Flag to track if data came from get_student_coursework_data
+                if is_coursework_query and user_id:
+                    # Determine work_type filter based on query (homework vs assignments)
+                    work_type_filter = None
+                    if is_homework_query:
+                        work_type_filter = 'HOMEWORK'  # Will filter for ASSIGNMENT type
+                        print(f"[Chatbot] Homework query detected - filtering for homework")
+                    elif is_assignment_query:
+                        work_type_filter = 'ASSIGNMENT'
+                        print(f"[Chatbot] Assignment query detected - filtering for assignments")
+                    
+                    if user_role == 'student':
+                        print(f"[Chatbot] Student coursework query detected - querying coursework table directly")
+                        # Get student's grade for filtering
+                        student_grade = user_profile.get('grade', '') if user_profile else None
+                        admin_data = get_student_coursework_data(user_id, student_email=user_email, limit_coursework=limit_coursework or 20, user_grade=student_grade, work_type_filter=work_type_filter)
+                        coursework_data_from_direct_query = True
+                    else:
+                        # Non-student user (e.g., college ID connected) - access by email/user_id without grade filtering
+                        print(f"[Chatbot] Coursework query detected for non-student user - accessing by email/user_id (no grade filtering)")
+                        admin_data = get_student_coursework_data(user_id, student_email=user_email, limit_coursework=limit_coursework or 20, user_grade=None, work_type_filter=work_type_filter)
+                        coursework_data_from_direct_query = True
                 else:
                     # First try current user if they have admin privileges
                     admin_data = get_admin_data(user_email,
@@ -1989,10 +2048,16 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             # Build concise system prompts (TOKEN OPTIMIZATION - reduced by ~60%)
             if user_profile:
                 # Ultra-concise system prompt for authenticated users
-                system_content = """You are Prakriti School's AI assistant. Progressive K-12 school in Greater Noida. Philosophy: "Learning for happiness". Programs: Bridge Programme, IGCSE, AS/A Level. Address users by first name with titles (Sir/Madam for teachers/parents). Use Markdown (**bold**, ### headings). Never say "as an AI". Present data directly without disclaimers.""" + personalization + """ Use provided data to answer questions. IMPORTANT: For homework/study help requests without subject/topic, always ask for both subject and specific topic before providing solutions."""
+                # Exclude assignment/coursework queries from the "ask for more info" instruction
+                homework_instruction = "" if is_coursework_query else """ IMPORTANT: For homework/study help requests without subject/topic, always ask for both subject and specific topic before providing solutions."""
+                coursework_instruction = """ CRITICAL: For assignment/coursework queries, you MUST extract assignments from the provided Data section and show them immediately. DO NOT create fake assignments or generate examples like 'Topic: Algebra'. Use ONLY the actual assignment titles, descriptions, due dates, and links from the Data section. DO NOT ask for more information - the data is already provided. START your response directly with the assignments from the data, not with greetings or fake examples.""" if is_coursework_query else ""
+                system_content = """You are Prakriti School's AI assistant. Progressive K-12 school in Greater Noida. Philosophy: "Learning for happiness". Programs: Bridge Programme, IGCSE, AS/A Level. Address users by first name with titles (Sir/Madam for teachers/parents). Use Markdown (**bold**, ### headings). Never say "as an AI". Present data directly without disclaimers.""" + personalization + """ Use provided data to answer questions.""" + homework_instruction + coursework_instruction
             else:
                 # Ultra-concise system prompt for guest users (TOKEN OPTIMIZATION)
-                system_content = """You are Prakriti School's AI assistant. Progressive K-12 school in Greater Noida. Philosophy: "Learning for happiness". Use Markdown. Never say "as an AI". Present data directly. Use provided data to answer questions. IMPORTANT: For homework/study help, remind guest users to sign in and connect Google Classroom for personalized help. Always ask for subject and topic if not provided."""
+                # Exclude assignment/coursework queries from the "ask for more info" instruction
+                homework_instruction = "" if is_coursework_query else """ IMPORTANT: For homework/study help, remind guest users to sign in and connect Google Classroom for personalized help. Always ask for subject and topic if not provided."""
+                coursework_instruction = """ CRITICAL: For assignment/coursework queries, you MUST extract assignments from the provided Data section and show them immediately. DO NOT create fake assignments or generate examples like 'Topic: Algebra'. Use ONLY the actual assignment titles, descriptions, due dates, and links from the Data section. DO NOT ask for more information - the data is already provided. START your response directly with the assignments from the data, not with greetings or fake examples.""" if is_coursework_query else ""
+                system_content = """You are Prakriti School's AI assistant. Progressive K-12 school in Greater Noida. Philosophy: "Learning for happiness". Use Markdown. Never say "as an AI". Present data directly. Use provided data to answer questions.""" + homework_instruction + coursework_instruction
             
             messages = [{"role": "system", "content": system_content}]
             
@@ -2007,7 +2072,10 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             # Enhanced teacher query detection: includes "want", "list", "check" patterns
             is_teacher_query = any(kw in query_lower for kw in ['teacher', 'instructor', 'faculty']) or \
                                (any(kw in query_lower for kw in ['want', 'show', 'list', 'check']) and any(kw in query_lower for kw in ['teacher', 'instructor']))
-            is_coursework_query = any(kw in query_lower for kw in ['assignment', 'homework', 'coursework', 'task', 'due', 'submit'])
+            # Distinguish between homework and assignments (different in Google Classroom)
+            is_homework_query = any(kw in query_lower for kw in ['homework', 'my homework', 'homework help', 'show homework'])
+            is_assignment_query = any(kw in query_lower for kw in ['assignment', 'assignments', 'my assignment', 'my assignments', 'assignment help', 'show assignment', 'show assignments'])
+            is_coursework_query = is_homework_query or is_assignment_query or any(kw in query_lower for kw in ['coursework', 'task', 'due', 'submit'])
             is_course_query = any(kw in query_lower for kw in ['course', 'class', 'subject'])
             # Detect existence check queries
             is_existence_check_query = any(kw in query_lower for kw in ['exists', 'exist', 'check if', 'is there', 'is there a']) and \
@@ -2165,6 +2233,29 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             
             # Add current user query - minimal format (TOKEN OPTIMIZATION)
             user_content = f"{user_query}\n"
+            
+            # CRITICAL: For coursework queries, add immediate instruction BEFORE data section
+            if is_coursework_query:
+                user_content += "\n🚨🚨🚨 IMMEDIATE ACTION REQUIRED - READ THIS FIRST! 🚨🚨🚨\n"
+                user_content += "**THE USER IS ASKING FOR ASSIGNMENTS/COURSEWORK. YOU WILL RECEIVE THE DATA BELOW.**\n"
+                user_content += "**YOUR JOB: Extract ALL matching assignments from the Data section and show them IMMEDIATELY.**\n"
+                user_content += "**🚨 ABSOLUTELY FORBIDDEN: DO NOT CREATE FAKE ASSIGNMENTS! DO NOT GENERATE EXAMPLES! 🚨**\n"
+                user_content += "**🚨 YOU MUST USE ONLY THE ASSIGNMENTS FROM THE DATA SECTION BELOW! 🚨**\n"
+                user_content += "**🚨 IF THE DATA SECTION HAS ASSIGNMENTS, SHOW THOSE EXACT ASSIGNMENTS - NOT GENERIC EXAMPLES! 🚨**\n"
+                user_content += "**FORBIDDEN RESPONSES:**\n"
+                user_content += "- DO NOT say 'Topic: Algebra' or 'Topic: Literature Analysis'\n"
+                user_content += "- DO NOT create example problems or generic assignments\n"
+                user_content += "- DO NOT generate fake assignment titles\n"
+                user_content += "- DO NOT make up topics, descriptions, or due dates\n"
+                user_content += "**MANDATORY:** Use ONLY the assignment titles, descriptions, due dates, and links from the Data section below.\n"
+                user_content += "**DO NOT ask for more information - the data is already provided below!**\n"
+                user_content += "**DO NOT start with greetings - START DIRECTLY WITH THE ASSIGNMENTS FROM THE DATA!**\n"
+                if 'english' in query_lower:
+                    user_content += "**SPECIFIC INSTRUCTION: The user asked for 'English assignments'. Find ALL assignments with 'ENGLISH' or 'English' in the title from the Data section below and show them ALL with full details (title, description if available, due date, link). DO NOT create fake English assignments!**\n"
+                elif 'math' in query_lower or 'maths' in query_lower:
+                    user_content += "**SPECIFIC INSTRUCTION: The user asked for 'Math/Maths assignments'. Find ALL assignments with 'Math', 'Maths', 'Mathematics' in the title from the Data section below and show them ALL with full details (title, description if available, due date, link). DO NOT create fake Math assignments!**\n"
+                user_content += "**START YOUR RESPONSE BY LISTING THE ACTUAL ASSIGNMENTS FROM THE DATA - NO GREETINGS, NO QUESTIONS, NO FAKE EXAMPLES!**\n\n"
+            
             if web_enhanced_info:
                 # TRUNCATE web info - TOKEN OPTIMIZATION (reduced to 300 chars for queries with classroom data)
                 # If classroom data exists, use less web info to prioritize classroom data
@@ -2215,10 +2306,15 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                     filtered_courses = []
                     
                     # Filter courses by student's grade if user is a student
-                    # ALWAYS filter by grade for students to show only relevant data
+                    # BUT skip if data came from get_student_coursework_data (already handled grade filtering with fallback)
                     user_grade_num = None
                     
-                    if user_profile:
+                    # Check if data came from direct coursework query (already handled grade filtering)
+                    skip_grade_filter_for_coursework = coursework_data_from_direct_query and is_coursework_query
+                    if skip_grade_filter_for_coursework:
+                        print(f"[Chatbot] Coursework data from direct query - skipping grade filter (already handled with fallback logic)")
+                    
+                    if user_profile and not skip_grade_filter_for_coursework:
                         user_role = user_profile.get('role', '') or ''
                         user_role_lower = user_role.lower()
                         print(f"[Chatbot] User role: {user_role_lower}, Grade filter check...")
@@ -2240,8 +2336,8 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                             print(f"[Chatbot] User is not a student (role: {user_role_lower}), skipping grade filter")
                     
                     for course in admin_data['classroom_data']:
-                        # If user is a student, filter ALL courses by grade
-                        if user_grade_num:
+                        # If user is a student, filter ALL courses by grade (unless data came from direct coursework query)
+                        if user_grade_num and not skip_grade_filter_for_coursework:
                             course_name = course.get('name', '')
                             # Check if course name contains the grade (e.g., "G8", "Grade 8", "(8)")
                             # Match patterns like: G8, G 8, Grade 8, (G8), (8), Grade-8, etc.
@@ -2355,13 +2451,145 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                         if 'coursework' in query_type_priority:
                             coursework = course.get('coursework', [])[:20]  # Limit from SQL already applied
                             if coursework:
+                                # Pre-filter coursework by subject if query is subject-specific
+                                # Extract subject keywords from query (e.g., "BME", "OOPU", "ENGLISH", "MATHS")
+                                query_upper = user_query.upper()
+                                subject_keywords = []
+                                
+                                # Common subject patterns - using word boundaries to avoid false matches
+                                # (e.g., "ES" matching inside "assignment")
+                                if re.search(r'\b(BME|BIOMEDICAL|BIOMED)\b', query_upper):
+                                    subject_keywords.extend(['BME'])
+                                if re.search(r'\b(OOPU|OOP-U|OOP\s+U)\b', query_upper):
+                                    subject_keywords.extend(['OOPU', 'OOP-U', 'OOP U'])
+                                if re.search(r'\b(ENGLISH|ENG)\b', query_upper):
+                                    subject_keywords.extend(['ENGLISH', 'ENG'])
+                                if re.search(r'\b(MATH|MATHS|MATHEMATICS)\b', query_upper):
+                                    subject_keywords.extend(['MATH', 'MATHS', 'MATHEMATICS', 'MATHEMATICS-1', 'MATHS-1'])
+                                if re.search(r'\b(PPS|PROGRAMMING)\b', query_upper):
+                                    subject_keywords.extend(['PPS'])
+                                if re.search(r'\b(BE|BASIC\s+ENGINEERING)\b', query_upper):
+                                    subject_keywords.extend(['BE'])
+                                # ES must be a standalone word, not part of "assignment" or other words
+                                if re.search(r'\b(ES|ENVIRONMENTAL)\b', query_upper):
+                                    subject_keywords.extend(['ES'])
+                                
+                                # If subject keywords found, filter coursework to only matching assignments
+                                if subject_keywords:
+                                    print(f"[Chatbot] Subject-specific query detected. Filtering for: {subject_keywords}")
+                                    filtered_coursework = []
+                                    for c in coursework:
+                                        title_upper = c.get("title", "").upper()
+                                        # Check if assignment title contains any of the subject keywords
+                                        if any(kw in title_upper for kw in subject_keywords):
+                                            filtered_coursework.append(c)
+                                    coursework = filtered_coursework
+                                    print(f"[Chatbot] Filtered to {len(coursework)} matching assignments (from {len(course.get('coursework', []))} total)")
+                                
+                                # Apply date filtering if date is specified in query
+                                if target_date_ranges and len(coursework) > 0:
+                                    print(f"[Chatbot] Date filtering detected - filtering coursework by date")
+                                    from datetime import datetime, timezone
+                                    date_filtered_coursework = []
+                                    for c in coursework:
+                                        due_date_str = c.get("dueDate") or c.get("due_date") or c.get("due")
+                                        if due_date_str:
+                                            try:
+                                                # Parse the due date
+                                                if isinstance(due_date_str, str):
+                                                    # Try parsing ISO format
+                                                    if 'T' in due_date_str:
+                                                        due_date = datetime.fromisoformat(due_date_str.replace('Z', '+00:00'))
+                                                    else:
+                                                        # Try date only format
+                                                        due_date = datetime.strptime(due_date_str.split('T')[0], '%Y-%m-%d').replace(tzinfo=timezone.utc)
+                                                else:
+                                                    continue
+                                                
+                                                # Check if due date falls within any of the target date ranges
+                                                matches_date = False
+                                                for date_start, date_end in target_date_ranges:
+                                                    if date_start <= due_date <= date_end:
+                                                        matches_date = True
+                                                        break
+                                                
+                                                if matches_date:
+                                                    date_filtered_coursework.append(c)
+                                            except Exception as e:
+                                                print(f"[Chatbot] Error parsing due date '{due_date_str}': {e}")
+                                                # If we can't parse, include it (better to show than hide)
+                                                date_filtered_coursework.append(c)
+                                        else:
+                                            # No due date - include it if no date filter is strict
+                                            pass
+                                    
+                                    coursework = date_filtered_coursework
+                                    print(f"[Chatbot] After date filtering: {len(coursework)} assignments match the date(s)")
+                                
+                                # Apply "latest" filter if query asks for latest assignment(s)
+                                is_latest_query = any(kw in query_lower for kw in ['latest', 'recent', 'newest', 'last'])
+                                latest_count = 1  # Default to 1 if "latest" is mentioned
+                                if is_latest_query:
+                                    # Try to extract number (e.g., "latest 3", "latest 5 assignments")
+                                    import re as re_module
+                                    latest_match = re_module.search(r'latest\s+(\d+)|recent\s+(\d+)|newest\s+(\d+)|last\s+(\d+)', query_lower)
+                                    if latest_match:
+                                        latest_count = int(latest_match.group(1) or latest_match.group(2) or latest_match.group(3) or latest_match.group(4) or 1)
+                                    
+                                    if len(coursework) > latest_count:
+                                        print(f"[Chatbot] Latest query detected - showing only {latest_count} most recent assignment(s)")
+                                        # Sort by due date (most recent first) and take latest_count
+                                        try:
+                                            coursework_with_dates = []
+                                            for c in coursework:
+                                                due_date_str = c.get("dueDate") or c.get("due_date") or c.get("due")
+                                                if due_date_str:
+                                                    try:
+                                                        if isinstance(due_date_str, str):
+                                                            if 'T' in due_date_str:
+                                                                due_date = datetime.fromisoformat(due_date_str.replace('Z', '+00:00'))
+                                                            else:
+                                                                due_date = datetime.strptime(due_date_str.split('T')[0], '%Y-%m-%d').replace(tzinfo=timezone.utc)
+                                                        else:
+                                                            due_date = None
+                                                        coursework_with_dates.append((c, due_date))
+                                                    except:
+                                                        coursework_with_dates.append((c, None))
+                                                else:
+                                                    coursework_with_dates.append((c, None))
+                                            
+                                            # Sort by due date (most recent first, None last)
+                                            coursework_with_dates.sort(key=lambda x: x[1] if x[1] else datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+                                            coursework = [c for c, _ in coursework_with_dates[:latest_count]]
+                                        except Exception as e:
+                                            print(f"[Chatbot] Error sorting by date for latest query: {e}")
+                                            # Fallback: just take first latest_count
+                                            coursework = coursework[:latest_count]
+                                
                                 # If coursework data exists, include it
-                                filtered_course["coursework"] = [{
-                                    "id": c.get("courseWorkId"),
-                                    "title": c.get("title"),
-                                    "due": c.get("dueDate"),
-                                    "status": c.get("state")
-                                } for c in coursework]
+                                # Handle both data structures: from get_admin_data (has courseWorkId) and from get_student_coursework_data (has alternate_link directly)
+                                filtered_course["coursework"] = []
+                                for c in coursework:
+                                    cw_item = {
+                                        "title": c.get("title", ""),
+                                    }
+                                    # Include alternate_link if available (from get_student_coursework_data)
+                                    if c.get("alternate_link"):
+                                        cw_item["alternate_link"] = c.get("alternate_link")
+                                    # Include other fields if available
+                                    if c.get("courseWorkId"):
+                                        cw_item["id"] = c.get("courseWorkId")
+                                    if c.get("dueDate"):
+                                        cw_item["due"] = c.get("dueDate")
+                                    elif c.get("due_date"):
+                                        cw_item["due"] = c.get("due_date")
+                                    if c.get("state"):
+                                        cw_item["status"] = c.get("state")
+                                    if c.get("description"):
+                                        cw_item["description"] = c.get("description")
+                                    if c.get("work_type"):
+                                        cw_item["work_type"] = c.get("work_type")
+                                    filtered_course["coursework"].append(cw_item)
                             else:
                                 # If no coursework data (restricted by Google), include course link for user to check
                                 if course.get('course_link'):
@@ -2428,15 +2656,109 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                         user_content += "- And so on... EACH assignment gets its OWN unique link!\n"
                         user_content += "=" * 80 + "\n\n"
                     
+                    # Check if there are any assignments in the data (before sending to LLM)
+                    has_assignments = False
+                    total_assignments = 0
+                    if filtered_courses:
+                        for course in filtered_courses:
+                            coursework_list = course.get('coursework', [])
+                            if coursework_list:
+                                has_assignments = True
+                                total_assignments += len(coursework_list)
+                    
                     # Use compact JSON format to save tokens (minimal whitespace)
-                    user_content += "Data (for additional details):\n"
-                    user_content += f"{json.dumps(filtered_courses, separators=(',', ':'))}\n"  # Compact format, no indentation
+                    user_content += "Data:\n"
+                    data_json = json.dumps(filtered_courses, separators=(',', ':'))
+                    user_content += f"{data_json}\n"  # Compact format, no indentation
+                    
+                    # DEBUG: Log what data is being sent to LLM for coursework queries
+                    if is_coursework_query:
+                        print(f"[Chatbot] 🔍 DEBUG: Data being sent to LLM for coursework query:")
+                        print(f"[Chatbot] 🔍 Number of courses: {len(filtered_courses)}")
+                        print(f"[Chatbot] 🔍 Total assignments in data: {total_assignments}")
+                        for idx, course in enumerate(filtered_courses):
+                            coursework_list = course.get('coursework', [])
+                            print(f"[Chatbot] 🔍 Course {idx + 1}: {course.get('name', 'Unknown')} - {len(coursework_list)} assignments")
+                            for cw_idx, cw in enumerate(coursework_list[:5], 1):  # Show first 5
+                                print(f"[Chatbot] 🔍   Assignment {cw_idx}: {cw.get('title', 'No title')}")
+                                if cw.get('alternate_link'):
+                                    print(f"[Chatbot] 🔍     Link: {cw.get('alternate_link')[:80]}...")
+                        if len(filtered_courses) > 0 and len(filtered_courses[0].get('coursework', [])) > 5:
+                            print(f"[Chatbot] 🔍   ... and {len(filtered_courses[0].get('coursework', [])) - 5} more assignments")
+                        print(f"[Chatbot] 🔍 Data JSON length: {len(data_json)} characters")
+                        print(f"[Chatbot] 🔍 First 500 chars of JSON: {data_json[:500]}...")
                     
                     # Add detailed instructions for coursework queries
                     if is_coursework_query:
                         if filtered_courses:
+                            # If no assignments found after filtering, add explicit instruction
+                            if not has_assignments or total_assignments == 0:
+                                user_content += "\n" + "=" * 80 + "\n"
+                                user_content += "🚨🚨🚨 CRITICAL: NO MATCHING ASSIGNMENTS FOUND! 🚨🚨🚨\n"
+                                user_content += "=" * 80 + "\n"
+                                user_content += "**THE DATA SECTION ABOVE HAS NO ASSIGNMENTS THAT MATCH THE USER'S QUERY.**\n"
+                                user_content += "**YOU MUST TELL THE USER THAT NO MATCHING ASSIGNMENTS WERE FOUND.**\n"
+                                user_content += "**🚨 ABSOLUTELY FORBIDDEN: DO NOT CREATE FAKE ASSIGNMENTS! 🚨**\n"
+                                user_content += "**🚨 DO NOT SAY 'Here are your assignments' OR CREATE EXAMPLE ASSIGNMENTS! 🚨**\n"
+                                user_content += "**YOU MUST SAY: 'I couldn't find any [subject] assignments in your courses.'**\n"
+                                user_content += "=" * 80 + "\n\n"
+                            else:
+                                # Extract actual assignment titles from the data to show as examples
+                                actual_assignment_titles = []
+                                for course in filtered_courses:
+                                    coursework_list = course.get('coursework', [])
+                                    for cw in coursework_list:
+                                        title = cw.get('title', '').strip()
+                                        if title:
+                                            actual_assignment_titles.append(title)
+                                
+                                # Add a section showing the actual assignment titles that MUST be used
+                                if actual_assignment_titles:
+                                    user_content += "\n" + "=" * 80 + "\n"
+                                    user_content += "🚨🚨🚨 ACTUAL ASSIGNMENT TITLES FROM DATA - USE THESE EXACT TITLES! 🚨🚨🚨\n"
+                                    user_content += "=" * 80 + "\n"
+                                    user_content += "**THE FOLLOWING ARE THE ACTUAL ASSIGNMENT TITLES IN THE DATA ABOVE:**\n\n"
+                                    for idx, title in enumerate(actual_assignment_titles[:10], 1):  # Show first 10
+                                        user_content += f"{idx}. \"{title}\"\n"
+                                    if len(actual_assignment_titles) > 10:
+                                        user_content += f"... and {len(actual_assignment_titles) - 10} more assignments\n"
+                                    user_content += "\n**🚨 YOU MUST USE THESE EXACT TITLES IN YOUR RESPONSE! 🚨**\n"
+                                    user_content += "**🚨 DO NOT CREATE NEW TITLES LIKE 'Topic: Algebra' OR 'Topic: Geometry'! 🚨**\n"
+                                    user_content += "**🚨 IF THE USER ASKS FOR 'MATHS' ASSIGNMENTS, FIND ALL TITLES CONTAINING 'Math', 'Maths', OR 'Mathematics' FROM THE LIST ABOVE! 🚨**\n"
+                                    user_content += "**🚨 IF THE USER ASKS FOR 'ENGLISH' ASSIGNMENTS, FIND ALL TITLES CONTAINING 'ENGLISH' OR 'English' FROM THE LIST ABOVE! 🚨**\n"
+                                    user_content += "=" * 80 + "\n\n"
                             user_content += "\n⚠️⚠️⚠️ COURSEWORK FORMATTING - CRITICAL INSTRUCTIONS: ⚠️⚠️⚠️\n"
                             user_content += "**ABSOLUTELY CRITICAL - READ CAREFULLY:**\n\n"
+                            user_content += "**🚨🚨🚨 ABSOLUTELY FORBIDDEN: DO NOT CREATE FAKE ASSIGNMENTS! 🚨🚨🚨**\n"
+                            user_content += "**🚨🚨🚨 YOU MUST USE ONLY THE ASSIGNMENTS FROM THE DATA SECTION ABOVE! 🚨🚨🚨**\n"
+                            user_content += "**🚨🚨🚨 DO NOT GENERATE EXAMPLES LIKE 'Topic: Algebra' OR 'Topic: Literature Analysis'! 🚨🚨🚨**\n\n"
+                            user_content += "**WHAT IS FORBIDDEN:**\n"
+                            user_content += "- ❌ DO NOT create fake assignment titles like 'Solve equations' or 'Write an essay'\n"
+                            user_content += "- ❌ DO NOT generate topics like 'Topic: Algebra', 'Topic: Literature Analysis'\n"
+                            user_content += "- ❌ DO NOT create example problems or generic assignments\n"
+                            user_content += "- ❌ DO NOT make up descriptions, due dates, or links\n"
+                            user_content += "- ❌ DO NOT say 'Here are some example assignments' or 'I can help you with'\n\n"
+                            user_content += "**WHAT IS MANDATORY:**\n"
+                            user_content += "- ✅ Extract assignments from the 'coursework' array in the Data section above\n"
+                            user_content += "- ✅ Use the EXACT 'title' field from each assignment object\n"
+                            user_content += "- ✅ Use the EXACT 'description' field if available (do not make up descriptions)\n"
+                            user_content += "- ✅ Use the EXACT 'due' or 'dueDate' field for due dates\n"
+                            user_content += "- ✅ Use the EXACT 'alternate_link' field for each assignment's link\n"
+                            user_content += "- ✅ Show ALL assignments that match the user's query (e.g., all English assignments if they ask for English)\n\n"
+                            user_content += "**EXAMPLE OF CORRECT RESPONSE:**\n"
+                            user_content += "If the Data section has: `{\"title\":\"CE-1 : ENGLISH : 16/12/2020 Wednesday till 03.00 pm\",\"alternate_link\":\"https://classroom.google.com/c/.../a/.../details\"}`\n"
+                            user_content += "Then show: **CE-1 : ENGLISH : 16/12/2020 Wednesday till 03.00 pm**\n"
+                            user_content += "Due: 16/12/2020, 03:00 PM\n"
+                            user_content += "[View Assignment](https://classroom.google.com/c/.../a/.../details)\n\n"
+                            user_content += "**EXAMPLE OF FORBIDDEN RESPONSE:**\n"
+                            user_content += "❌ DO NOT show: 'Topic: Literature Analysis - Write an essay about...'\n"
+                            user_content += "❌ DO NOT show: '1. Topic: Grammar - Identify errors...'\n\n"
+                            user_content += "**🚨 USE THE DATA PROVIDED ABOVE - DO NOT ASK FOR MORE INFORMATION! 🚨**\n"
+                            user_content += "**CRITICAL:** The user's assignments are ALREADY in the 'Data:' section above. You MUST use this data to answer their query. DO NOT ask them for more information - the data is already there!\n"
+                            user_content += "**FORBIDDEN:** DO NOT say 'I would need more specific information' or 'Could you please provide' - the data is already provided above!\n"
+                            user_content += "**MANDATORY:** Extract the assignments from the Data section and show them to the user immediately using ONLY the data from above.\n\n"
+                            user_content += "**🚨 SHOW ALL ASSIGNMENTS - DO NOT LIMIT TO ONE! 🚨**\n"
+                            user_content += "**MANDATORY:** You MUST list ALL assignments that match the user's query. If they ask for 'English assignments', show ALL English assignments from the data above. If they ask for 'my assignments', show ALL assignments available in the data. Only limit to one assignment if the user explicitly asks for 'one assignment' or 'latest 1 assignment'.\n\n"
                             user_content += "**🚨 CRITICAL RULE: EACH ASSIGNMENT HAS A DIFFERENT 'alternate_link' - DO NOT USE THE SAME URL FOR ALL ASSIGNMENTS! 🚨**\n\n"
                             user_content += "**EACH ASSIGNMENT IN THE 'coursework' ARRAY HAS ITS OWN UNIQUE 'alternate_link' FIELD!**\n"
                             user_content += "**YOU MUST MATCH EACH ASSIGNMENT TITLE WITH ITS CORRESPONDING 'alternate_link' FROM THE DATA JSON ABOVE!**\n"
@@ -2483,7 +2805,10 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                             user_content += "   ⚠️ DO NOT reuse the same link for different assignments - each assignment has its own unique alternate_link!\n\n"
                             user_content += "7. **If coursework is empty for a course:** Only then use course_link with instructions\n"
                             user_content += "8. **Group assignments by course** and show all available details\n"
-                            user_content += "9. **For 'latest assignment' queries:** Show the most recent assignment first (sorted by due_date)\n\n"
+                            user_content += "9. **For 'latest assignment' queries:** Show the most recent assignment first (sorted by due_date)\n"
+                            user_content += "10. **CRITICAL - SHOW ALL ASSIGNMENTS:** When user asks for assignments (e.g., 'English assignments', 'my assignments'), you MUST show ALL matching assignments from the data, not just one. List every assignment that matches the query criteria. If user asks for 'English assignments', show ALL assignments with 'ENGLISH' or 'English' in the title. If user asks for 'my assignments', show ALL assignments available in the coursework data.\n"
+                            user_content += "11. **DO NOT LIMIT TO ONE ASSIGNMENT:** Unless the user specifically asks for 'latest 1 assignment' or 'one assignment', always show all available assignments that match their query.\n"
+                            user_content += "12. **START YOUR RESPONSE IMMEDIATELY WITH THE ASSIGNMENTS:** Do NOT start with greetings or asking for more information. If the Data section contains assignments, START your response by listing those assignments. The user's assignments are in the Data section - use them NOW!\n\n"
                             user_content += "**CRITICAL - MATCHING EACH ASSIGNMENT WITH ITS LINK:**\n"
                             user_content += "**EACH ASSIGNMENT HAS A DIFFERENT 'alternate_link' - YOU MUST MATCH THEM CORRECTLY!**\n\n"
                             user_content += "**STEP-BY-STEP PROCESS FOR EACH ASSIGNMENT:**\n"
@@ -2506,6 +2831,60 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                             user_content += "- When you write 'Assignment C', use: https://classroom.google.com/c/123/a/CCC/details\n\n"
                             user_content += "**WRONG:** Using https://classroom.google.com/c/123/a/AAA/details for all assignments\n"
                             user_content += "**RIGHT:** Each assignment gets its own matching link from the mapping above\n\n"
+                            
+                            # Final explicit instruction with actual examples
+                            if actual_assignment_titles:
+                                user_content += "\n" + "=" * 80 + "\n"
+                                user_content += "🚨🚨🚨 FINAL INSTRUCTION - YOUR RESPONSE MUST LOOK LIKE THIS: 🚨🚨🚨\n"
+                                user_content += "=" * 80 + "\n"
+                                user_content += "**IF USER ASKS FOR MATHS ASSIGNMENTS, YOUR RESPONSE MUST START WITH:**\n\n"
+                                # Find math assignments from actual titles
+                                math_titles = [t for t in actual_assignment_titles if any(kw in t.upper() for kw in ['MATH', 'MATHS', 'MATHEMATICS'])]
+                                if math_titles:
+                                    user_content += "### Maths Assignments:\n\n"
+                                    for idx, title in enumerate(math_titles[:3], 1):
+                                        user_content += f"{idx}. **{title}**\n"
+                                        user_content += "   [View Assignment](USE_THE_EXACT_alternate_link_FROM_DATA_FOR_THIS_TITLE)\n\n"
+                                    user_content += "**NOT LIKE THIS (FORBIDDEN):**\n"
+                                    user_content += "❌ 1. **Topic: Geometry Shapes**\n"
+                                    user_content += "❌ 2. **Topic: Fractions and Decimals**\n\n"
+                                user_content += "**IF USER ASKS FOR ENGLISH ASSIGNMENTS, YOUR RESPONSE MUST START WITH:**\n\n"
+                                # Find English assignments from actual titles
+                                english_titles = [t for t in actual_assignment_titles if 'ENGLISH' in t.upper()]
+                                if english_titles:
+                                    user_content += "### English Assignments:\n\n"
+                                    for idx, title in enumerate(english_titles[:3], 1):
+                                        user_content += f"{idx}. **{title}**\n"
+                                        user_content += "   [View Assignment](USE_THE_EXACT_alternate_link_FROM_DATA_FOR_THIS_TITLE)\n\n"
+                                    user_content += "**NOT LIKE THIS (FORBIDDEN):**\n"
+                                    user_content += "❌ 1. **Topic: Literature Analysis**\n"
+                                    user_content += "❌ 2. **Topic: Grammar**\n\n"
+                                user_content += "**IF USER ASKS FOR BME ASSIGNMENTS, YOUR RESPONSE MUST START WITH:**\n\n"
+                                # Find BME assignments from actual titles
+                                bme_titles = [t for t in actual_assignment_titles if 'BME' in t.upper()]
+                                if bme_titles:
+                                    user_content += "### BME Assignments:\n\n"
+                                    for idx, title in enumerate(bme_titles[:3], 1):
+                                        user_content += f"{idx}. **{title}**\n"
+                                        user_content += "   [View Assignment](USE_THE_EXACT_alternate_link_FROM_DATA_FOR_THIS_TITLE)\n\n"
+                                    user_content += "**NOT LIKE THIS (FORBIDDEN):**\n"
+                                    user_content += "❌ 1. **Assignment 1: Human Anatomy Project**\n"
+                                    user_content += "❌ 2. **Assignment 2: Health and Wellness Essay**\n\n"
+                                user_content += "**IF USER ASKS FOR OOPU ASSIGNMENTS, YOUR RESPONSE MUST START WITH:**\n\n"
+                                # Find OOPU assignments from actual titles
+                                oopu_titles = [t for t in actual_assignment_titles if any(kw in t.upper() for kw in ['OOPU', 'OOP-U', 'OOP U'])]
+                                if oopu_titles:
+                                    user_content += "### OOPU Assignments:\n\n"
+                                    for idx, title in enumerate(oopu_titles[:3], 1):
+                                        user_content += f"{idx}. **{title}**\n"
+                                        user_content += "   [View Assignment](USE_THE_EXACT_alternate_link_FROM_DATA_FOR_THIS_TITLE)\n\n"
+                                    user_content += "**NOT LIKE THIS (FORBIDDEN):**\n"
+                                    user_content += "❌ 1. **Topic: Object-Oriented Programming**\n"
+                                    user_content += "❌ 2. **Assignment: Classes and Objects**\n\n"
+                                user_content += "**🚨 REMEMBER: Use the EXACT titles from the 'ACTUAL ASSIGNMENT TITLES' section above! 🚨**\n"
+                                user_content += "**🚨 DO NOT create new titles or topics! 🚨**\n"
+                                user_content += "**🚨 FOR ANY SUBJECT (BME, OOPU, PPS, BE, ES, etc.), USE ONLY THE EXACT TITLES FROM THE DATA! 🚨**\n"
+                                user_content += "=" * 80 + "\n\n"
                         else:
                             user_content += "\n⚠️ NO COURSES FOUND: Say user has no courses matching their grade, suggest contacting teacher.\n\n"
                     
@@ -2757,6 +3136,191 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             # Check if response is complete
             if content and finish_reason == "stop" and not content.strip().endswith(("of", "and", "the", "in", "to", "for", "with", "by")):
                 print(f"[Chatbot] Complete response received on attempt {attempt + 1}")
+                
+                # VALIDATION: For coursework queries, check if response contains actual assignment titles
+                if is_coursework_query and admin_data.get('classroom_data'):
+                    print(f"[Chatbot] 🔍 VALIDATION: Checking response for actual assignment titles...")
+                    
+                    # Re-apply subject filtering to match what was sent to LLM
+                    query_upper = user_query.upper()
+                    subject_keywords = []
+                    
+                    # Common subject patterns (same as pre-filtering logic) - using word boundaries
+                    if re.search(r'\b(BME|BIOMEDICAL|BIOMED)\b', query_upper):
+                        subject_keywords.extend(['BME'])
+                    if re.search(r'\b(OOPU|OOP-U|OOP\s+U)\b', query_upper):
+                        subject_keywords.extend(['OOPU', 'OOP-U', 'OOP U'])
+                    if re.search(r'\b(ENGLISH|ENG)\b', query_upper):
+                        subject_keywords.extend(['ENGLISH', 'ENG'])
+                    if re.search(r'\b(MATH|MATHS|MATHEMATICS)\b', query_upper):
+                        subject_keywords.extend(['MATH', 'MATHS', 'MATHEMATICS', 'MATHEMATICS-1', 'MATHS-1'])
+                    if re.search(r'\b(PPS|PROGRAMMING)\b', query_upper):
+                        subject_keywords.extend(['PPS'])
+                    if re.search(r'\b(BE|BASIC\s+ENGINEERING)\b', query_upper):
+                        subject_keywords.extend(['BE'])
+                    # ES must be a standalone word, not part of "assignment" or other words
+                    if re.search(r'\b(ES|ENVIRONMENTAL)\b', query_upper):
+                        subject_keywords.extend(['ES'])
+                    
+                    # Extract filtered assignment titles (only matching subject, date, and latest)
+                    actual_titles = []
+                    assignment_map = {}  # title -> alternate_link
+                    filtered_coursework_for_validation = []
+                    
+                    # Detect "latest" query
+                    is_latest_query = any(kw in query_lower for kw in ['latest', 'recent', 'newest', 'last'])
+                    latest_count = 1  # Default to 1 if "latest" is mentioned
+                    if is_latest_query:
+                        import re as re_module
+                        latest_match = re_module.search(r'latest\s+(\d+)|recent\s+(\d+)|newest\s+(\d+)|last\s+(\d+)', query_lower)
+                        if latest_match:
+                            latest_count = int(latest_match.group(1) or latest_match.group(2) or latest_match.group(3) or latest_match.group(4) or 1)
+                    
+                    for course in admin_data.get('classroom_data', []):
+                        coursework_list = course.get('coursework', [])
+                        temp_filtered = []
+                        
+                        # First filter by subject
+                        if subject_keywords:
+                            for cw in coursework_list:
+                                title = cw.get('title', '').strip()
+                                title_upper = title.upper()
+                                if any(kw in title_upper for kw in subject_keywords):
+                                    temp_filtered.append(cw)
+                        else:
+                            temp_filtered = coursework_list
+                        
+                        # Then filter by date if specified
+                        if target_date_ranges and len(temp_filtered) > 0:
+                            from datetime import datetime, timezone
+                            date_filtered = []
+                            for cw in temp_filtered:
+                                due_date_str = cw.get("dueDate") or cw.get("due_date") or cw.get("due")
+                                if due_date_str:
+                                    try:
+                                        if isinstance(due_date_str, str):
+                                            if 'T' in due_date_str:
+                                                due_date = datetime.fromisoformat(due_date_str.replace('Z', '+00:00'))
+                                            else:
+                                                due_date = datetime.strptime(due_date_str.split('T')[0], '%Y-%m-%d').replace(tzinfo=timezone.utc)
+                                        else:
+                                            continue
+                                        
+                                        matches_date = False
+                                        for date_start, date_end in target_date_ranges:
+                                            if date_start <= due_date <= date_end:
+                                                matches_date = True
+                                                break
+                                        
+                                        if matches_date:
+                                            date_filtered.append(cw)
+                                    except:
+                                        pass
+                            temp_filtered = date_filtered
+                        
+                        # Then apply "latest" filter if specified
+                        if is_latest_query and len(temp_filtered) > latest_count:
+                            from datetime import datetime, timezone
+                            try:
+                                coursework_with_dates = []
+                                for cw in temp_filtered:
+                                    due_date_str = cw.get("dueDate") or cw.get("due_date") or cw.get("due")
+                                    if due_date_str:
+                                        try:
+                                            if isinstance(due_date_str, str):
+                                                if 'T' in due_date_str:
+                                                    due_date = datetime.fromisoformat(due_date_str.replace('Z', '+00:00'))
+                                                else:
+                                                    due_date = datetime.strptime(due_date_str.split('T')[0], '%Y-%m-%d').replace(tzinfo=timezone.utc)
+                                            else:
+                                                due_date = None
+                                            coursework_with_dates.append((cw, due_date))
+                                        except:
+                                            coursework_with_dates.append((cw, None))
+                                    else:
+                                        coursework_with_dates.append((cw, None))
+                                
+                                coursework_with_dates.sort(key=lambda x: x[1] if x[1] else datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+                                temp_filtered = [c for c, _ in coursework_with_dates[:latest_count]]
+                            except:
+                                temp_filtered = temp_filtered[:latest_count]
+                        
+                        # Add to final list
+                        for cw in temp_filtered:
+                            title = cw.get('title', '').strip()
+                            if title:
+                                actual_titles.append(title)
+                                filtered_coursework_for_validation.append(cw)
+                                if cw.get('alternate_link'):
+                                    assignment_map[title] = cw.get('alternate_link')
+                    
+                    print(f"[Chatbot] 🔍 VALIDATION: Found {len(actual_titles)} actual assignment titles in data")
+                    print(f"[Chatbot] 🔍 VALIDATION: Sample titles: {actual_titles[:3]}")
+                    
+                    # Check if response contains any actual assignment titles
+                    content_upper = content.upper()
+                    has_actual_title = any(title.upper() in content_upper for title in actual_titles)
+                    print(f"[Chatbot] 🔍 VALIDATION: Response contains actual title: {has_actual_title}")
+                    
+                    # Check for forbidden patterns (generic assignments)
+                    forbidden_patterns = ['TOPIC:', 'TOPIC :', 'ASSIGNMENT 1:', 'ASSIGNMENT 2:', 'GEOMETRY SHAPES', 
+                                        'FRACTIONS AND DECIMALS', 'LITERATURE ANALYSIS', 'HUMAN ANATOMY PROJECT',
+                                        'HEALTH AND WELLNESS ESSAY', 'ASSIGNMENT_LINK', '(ASSIGNMENT_LINK)', '[ASSIGNMENT_LINK]', '(LINK)', '[LINK]']
+                    has_forbidden = any(pattern in content_upper for pattern in forbidden_patterns)
+                    print(f"[Chatbot] 🔍 VALIDATION: Response has forbidden patterns: {has_forbidden}")
+                    if has_forbidden:
+                        found_patterns = [p for p in forbidden_patterns if p in content_upper]
+                        print(f"[Chatbot] 🔍 VALIDATION: Found forbidden patterns: {found_patterns}")
+                    
+                    # If response has forbidden patterns or doesn't contain actual titles, format it ourselves
+                    if has_forbidden or (actual_titles and not has_actual_title):
+                        print(f"[Chatbot] ⚠️ Response contains generic assignments - formatting with actual data")
+                        print(f"[Chatbot] ⚠️ Reason: has_forbidden={has_forbidden}, has_actual_title={has_actual_title}, actual_titles_count={len(actual_titles)}")
+                        
+                        # Determine subject name for heading
+                        subject_name = "Assignments"
+                        if subject_keywords:
+                            if any('MATH' in kw for kw in subject_keywords):
+                                subject_name = "Maths Assignments"
+                            elif any('ENGLISH' in kw for kw in subject_keywords):
+                                subject_name = "English Assignments"
+                            elif any('BME' in kw for kw in subject_keywords):
+                                subject_name = "BME Assignments"
+                            elif any('OOPU' in kw for kw in subject_keywords):
+                                subject_name = "OOPU Assignments"
+                            elif any('PPS' in kw for kw in subject_keywords):
+                                subject_name = "PPS Assignments"
+                            elif any('BE' in kw for kw in subject_keywords):
+                                subject_name = "BE Assignments"
+                            elif any('ES' in kw for kw in subject_keywords):
+                                subject_name = "ES Assignments"
+                        
+                        formatted_response = f"### {subject_name}:\n\n"
+                        
+                        # Use filtered coursework (only matching subject assignments)
+                        assignment_count = 0
+                        for cw in filtered_coursework_for_validation:
+                            assignment_count += 1
+                            title = cw.get('title', '').strip()
+                            if title:
+                                formatted_response += f"{assignment_count}. **{title}**\n"
+                                if cw.get('description'):
+                                    formatted_response += f"   **Description:** {cw.get('description')}\n"
+                                if cw.get('due') or cw.get('dueDate'):
+                                    due = cw.get('due') or cw.get('dueDate', '')
+                                    formatted_response += f"   **Due Date:** {due}\n"
+                                if cw.get('status'):
+                                    formatted_response += f"   **Status:** {cw.get('status')}\n"
+                                if cw.get('alternate_link'):
+                                    formatted_response += f"   **[View Assignment]({cw.get('alternate_link')})**\n"
+                                formatted_response += "\n"
+                        
+                        if assignment_count > 0:
+                            print(f"[Chatbot] ✅ Auto-formatted response with {assignment_count} filtered assignments")
+                            return formatted_response.strip()
+                        else:
+                            return f"I couldn't find any {subject_name.lower()} in your courses."
+                
                 return content.strip()
             elif content and finish_reason == "length":
                 print(f"[Chatbot] Response truncated due to length on attempt {attempt + 1}")

@@ -7,11 +7,8 @@ from app.routes import lessonplan, chatbot, homework, grading, student, admin
 
 load_dotenv()
 
-# Debug environment variables
-print("🔍 Environment variables loaded:")
-print(f"GOOGLE_CLIENT_ID: {os.getenv('GOOGLE_CLIENT_ID')}")
-print(f"GOOGLE_REDIRECT_URI: {os.getenv('GOOGLE_REDIRECT_URI')}")
-print(f"NEXT_PUBLIC_SUPABASE_URL: {os.getenv('NEXT_PUBLIC_SUPABASE_URL')}")
+# Environment variables loaded (not printed for security)
+# Removed debug prints to prevent exposing sensitive information in logs
 
 app = FastAPI(title="AI School Automation System", version="1.0.0")
 
