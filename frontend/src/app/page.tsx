@@ -620,13 +620,26 @@ const AppContent: React.FC<{
       
       {/* Main Content Area with Grid Background */}
       <main className={`flex-1 flex overflow-hidden ${isDesktop ? 'chat-grid-bg' : ''} relative w-full h-full`}>
-        <div className={`w-full h-full flex flex-col mx-auto ${isDesktop ? 'px-2 sm:px-4 md:px-6 lg:w-[82.5%] max-w-[85%] justify-center' : 'px-3 sm:px-4'}`}>
-          <Chatbot 
-            key={chatKey} 
-            ref={chatbotRef} 
-            externalQuery={sidebarQuery}
-            onQueryProcessed={handleQueryProcessed}
-          />
+        <div className={`w-full h-full flex flex-col ${isDesktop ? 'relative' : 'mx-auto px-3 sm:px-4'}`}>
+          {isDesktop ? (
+            <div className="w-full h-full flex justify-center">
+              <div className="w-[90%] max-w-[90%] h-full flex flex-col">
+                <Chatbot 
+                  key={chatKey} 
+                  ref={chatbotRef} 
+                  externalQuery={sidebarQuery}
+                  onQueryProcessed={handleQueryProcessed}
+                />
+              </div>
+            </div>
+          ) : (
+            <Chatbot 
+              key={chatKey} 
+              ref={chatbotRef} 
+              externalQuery={sidebarQuery}
+              onQueryProcessed={handleQueryProcessed}
+            />
+          )}
         </div>
       </main>
 

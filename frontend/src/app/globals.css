@@ -390,6 +390,90 @@ body {
   background: #9ca3af;
 }
 
+/* Hide scrollbar on desktop - must come after all scrollbar styles */
+@media (min-width: 1025px) {
+  /* General override for any element with scrollbar-hide-desktop */
+  .scrollbar-hide-desktop {
+    scrollbar-width: none !important; /* Firefox */
+    -ms-overflow-style: none !important; /* IE and Edge */
+  }
+  
+  .scrollbar-hide-desktop::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+  }
+  
+  .scrollbar-hide-desktop::-webkit-scrollbar-track {
+    display: none !important;
+    background: transparent !important;
+    width: 0 !important;
+  }
+  
+  .scrollbar-hide-desktop::-webkit-scrollbar-thumb {
+    display: none !important;
+    background: transparent !important;
+    width: 0 !important;
+  }
+  
+  .scrollbar-hide-desktop::-webkit-scrollbar-corner {
+    display: none !important;
+    background: transparent !important;
+  }
+  
+  /* Override all scrollbar classes with maximum specificity */
+  .scrollbar-hide-desktop.scrollbar-thin.scrollbar-thumb-gray-300.scrollbar-track-gray-100 {
+    scrollbar-width: none !important; /* Firefox */
+    -ms-overflow-style: none !important; /* IE and Edge */
+  }
+  
+  .scrollbar-hide-desktop.scrollbar-thin.scrollbar-thumb-gray-300.scrollbar-track-gray-100::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+  }
+  
+  .scrollbar-hide-desktop.scrollbar-thin.scrollbar-thumb-gray-300.scrollbar-track-gray-100::-webkit-scrollbar-track {
+    display: none !important;
+    background: transparent !important;
+    width: 0 !important;
+  }
+  
+  .scrollbar-hide-desktop.scrollbar-thin.scrollbar-thumb-gray-300.scrollbar-track-gray-100::-webkit-scrollbar-thumb {
+    display: none !important;
+    background: transparent !important;
+    width: 0 !important;
+  }
+  
+  .scrollbar-hide-desktop.scrollbar-thin.scrollbar-thumb-gray-300.scrollbar-track-gray-100::-webkit-scrollbar-corner {
+    display: none !important;
+    background: transparent !important;
+  }
+  
+  /* Override hover states */
+  .scrollbar-hide-desktop.scrollbar-thin.scrollbar-thumb-gray-300.scrollbar-track-gray-100:hover::-webkit-scrollbar-thumb {
+    display: none !important;
+    background: transparent !important;
+  }
+  
+  .scrollbar-hide-desktop.scrollbar-thin.scrollbar-thumb-gray-300.scrollbar-track-gray-100::-webkit-scrollbar-thumb:hover {
+    display: none !important;
+    background: transparent !important;
+  }
+  
+  /* Override Tailwind hover class */
+  .scrollbar-hide-desktop.hover\:scrollbar-thumb-gray-400:hover::-webkit-scrollbar-thumb {
+    display: none !important;
+    background: transparent !important;
+  }
+}
+
 /* Additional responsive utilities */
 @media (max-width: 640px) {
   /* Ensure touch targets are at least 44px */

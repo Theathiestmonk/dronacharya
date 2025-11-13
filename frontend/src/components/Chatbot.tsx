@@ -155,6 +155,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   const loadingStartTimeRef = useRef<number | null>(null); // Track when loading starts
   const [showTypingAnimation, setShowTypingAnimation] = useState(false); // Control typing animation visibility
   const responseStartedTypingRef = useRef<boolean>(false); // Track if response has started typing to prevent animation from showing again
+  const [isDesktop, setIsDesktop] = useState(false); // Track desktop for scrollbar hiding
   // For copy feedback per message
   const [copiedIdx, setCopiedIdx] = useCopyState<number | null>(null);
   const [showClearedMessage, setShowClearedMessage] = useState(false);
@@ -586,6 +587,46 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   // Handle external query from sidebar - using ref to avoid dependency issues
   const previousQueryRef = useRef<string>('');
   
+  // Detect desktop for scrollbar hiding
+  useEffect(() => {
+    const checkDesktop = () => {
+      setIsDesktop(window.innerWidth >= 1024);
+    };
+    checkDesktop();
+    window.addEventListener('resize', checkDesktop);
+    return () => window.removeEventListener('resize', checkDesktop);
+  }, []);
+
+  // Apply webkit scrollbar hiding styles directly to the element
+  useEffect(() => {
+    if (messagesContainerRef.current && isDesktop) {
+      const style = document.createElement('style');
+      style.id = 'chatbot-scrollbar-hide';
+      style.textContent = `
+        #chatbot-messages-container::-webkit-scrollbar {
+          display: none !important;
+          width: 0 !important;
+          height: 0 !important;
+        }
+        #chatbot-messages-container::-webkit-scrollbar-track {
+          display: none !important;
+        }
+        #chatbot-messages-container::-webkit-scrollbar-thumb {
+          display: none !important;
+        }
+      `;
+      document.head.appendChild(style);
+      messagesContainerRef.current.id = 'chatbot-messages-container';
+      
+      return () => {
+        const existingStyle = document.getElementById('chatbot-scrollbar-hide');
+        if (existingStyle) {
+          existingStyle.remove();
+        }
+      };
+    }
+  }, [isDesktop]);
+
   useEffect(() => {
     if (externalQuery && externalQuery !== previousQueryRef.current && !loading && !requestInProgress && !isGenerating) {
       // Don't clear conversation history for guest users - they should maintain their session
@@ -1947,7 +1988,17 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               </div>
             </div>
           )}
-          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto pt-4 sm:pt-6 mb-3 sm:mb-4 space-y-2 px-1 sm:px-2 md:px-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 relative" style={{ minHeight: 0 }}>
+          <div 
+            ref={messagesContainerRef} 
+            className={`flex-1 overflow-y-auto overflow-x-hidden pt-4 sm:pt-6 mb-3 sm:mb-4 space-y-2 pl-1 sm:pl-2 md:pl-4 pr-4 lg:pr-6 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 relative ${isDesktop ? 'scrollbar-hide-desktop' : ''}`}
+            style={{ 
+              minHeight: 0,
+              ...(isDesktop ? {
+                scrollbarWidth: 'none',
+                msOverflowStyle: 'none',
+              } : {})
+            }}
+          >
         
         {messages.map((msg, idx) => (
           'type' in msg && msg.type === 'calendar' ? (
