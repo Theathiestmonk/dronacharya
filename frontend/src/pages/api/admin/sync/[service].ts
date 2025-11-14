@@ -87,7 +87,72 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const integration = integrations[0];
-    const accessToken = integration.access_token;
+    
+    // Check if token needs refresh
+    let accessToken = integration.access_token;
+    const expiresAt = integration.token_expires_at ? new Date(integration.token_expires_at) : null;
+    
+    // Refresh token if expired or about to expire (within 5 minutes)
+    if (expiresAt && (expiresAt < new Date() || expiresAt < new Date(Date.now() + 5 * 60 * 1000))) {
+      console.log(`🔄 Token expired or expiring soon, refreshing...`);
+      
+      if (!integration.refresh_token) {
+        return res.status(401).json({ 
+          error: 'Token expired and no refresh token available. Please reconnect your Google account.' 
+        });
+      }
+      
+      try {
+        const refreshResponse = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: process.env.GOOGLE_CLIENT_ID!,
+            client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+            refresh_token: integration.refresh_token,
+            grant_type: 'refresh_token'
+          })
+        });
+
+        if (!refreshResponse.ok) {
+          const errorText = await refreshResponse.text();
+          console.error('Token refresh failed:', errorText);
+          return res.status(401).json({ 
+            error: 'Failed to refresh token. Please reconnect your Google account.' 
+          });
+        }
+
+        const refreshData = await refreshResponse.json();
+        accessToken = refreshData.access_token;
+        
+        // Calculate new expiration time
+        const newExpiresAt = refreshData.expires_in
+          ? new Date(Date.now() + refreshData.expires_in * 1000).toISOString()
+          : null;
+
+        // Update token in database
+        const { error: updateError } = await supabase
+          .from('google_integrations')
+          .update({
+            access_token: accessToken,
+            token_expires_at: newExpiresAt,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', integration.id);
+
+        if (updateError) {
+          console.error('Failed to update token in database:', updateError);
+          // Continue with new token even if DB update fails
+        } else {
+          console.log('✅ Token refreshed and saved to database');
+        }
+      } catch (error) {
+        console.error('Error refreshing token:', error);
+        return res.status(500).json({ 
+          error: 'Error refreshing authentication token. Please try again.' 
+        });
+      }
+    }
 
     const syncStats = {
       courses: { created: 0, updated: 0 },
