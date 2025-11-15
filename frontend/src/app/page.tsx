@@ -36,6 +36,7 @@ const AppContent: React.FC<{
   const { profile, signOut } = useAuth();
   const router = useRouter();
   const [isFullyInitialized, setIsFullyInitialized] = useState(false);
+  const [skipOnboarding, setSkipOnboarding] = useState(false);
   // CRITICAL: Track if we've ever had an active session to prevent loading screen from showing again
   const hasEverHadSessionRef = useRef(false);
   // Track page load time to ensure minimum loading duration - set immediately on component creation
@@ -466,7 +467,8 @@ const AppContent: React.FC<{
 
   // Show onboarding form if user is logged in but needs onboarding
   // This check happens after OAuth callback as well, ensuring onboarding is always shown when needed
-  if (user && needsOnboarding && !loading) {
+  // Allow user to skip onboarding temporarily by clicking back button
+  if (user && needsOnboarding && !loading && !skipOnboarding) {
     console.log('📋 Showing onboarding form - user needs onboarding:', {
       userId: user.id,
       hasProfile: !!profile,
@@ -476,8 +478,26 @@ const AppContent: React.FC<{
     return (
       <OnboardingForm
         user={user}
-        onComplete={() => setShowAuthForm(false)}
-        onBack={() => setShowAuthForm(false)}
+        onComplete={() => {
+          setShowAuthForm(false);
+          setSkipOnboarding(false);
+        }}
+        onBack={async () => {
+          // Logout user when they click back to chatbot
+          // This prevents them from being redirected back to onboarding on refresh
+          console.log('🔴 Logging out user who clicked back from onboarding');
+          try {
+            await signOut();
+            setSkipOnboarding(false);
+            // Force remount of Chatbot component to clear all state
+            setChatKey(prev => prev + 1);
+            router.push('/');
+          } catch (error) {
+            console.error('Error signing out:', error);
+            // Even if logout fails, allow access to chatbot
+            setSkipOnboarding(true);
+          }
+        }}
       />
     );
   }

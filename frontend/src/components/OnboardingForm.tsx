@@ -1439,7 +1439,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           <div className="flex justify-start">
             <button
               onClick={onBack}
-              className="flex items-center text-sm text-gray-600 hover:text-gray-800 transition-colors"
+              className="flex items-center text-sm text-gray-600 hover:text-gray-800 transition-colors cursor-pointer"
             >
               <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
