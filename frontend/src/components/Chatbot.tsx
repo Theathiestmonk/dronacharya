@@ -12,27 +12,27 @@ type Message =
   | { sender: 'bot'; type: 'map'; url: string }
   | { sender: 'bot'; type: 'videos'; videos: Array<{video_id: string; title: string; description: string; category: string; duration: string; thumbnail_url: string}> };
 
-// Typing animation component - shows "Thinking" character by character, then dots
+// Typing animation component - shows "Searching" character by character, then dots
 const TypingAnimation: React.FC = () => {
   const [displayText, setDisplayText] = React.useState('');
   const animationRef = React.useRef<number | null>(null);
   const dotRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
-    const word = 'Thinking';
+    const word = 'Searching';
     const dots = '...';
     let currentIndex = 0;
     let isTypingWord = true;
 
     const typeText = () => {
       if (isTypingWord) {
-        // Typing "Thinking" character by character
+        // Typing "Searching" character by character
         if (currentIndex < word.length) {
           setDisplayText(word.substring(0, currentIndex + 1));
           currentIndex++;
           animationRef.current = window.setTimeout(typeText, 150); // Slower speed - 150ms per character
         } else {
-          // Finished typing "Thinking", now add dots one by one
+          // Finished typing "Searching", now add dots one by one
           isTypingWord = false;
           currentIndex = 0;
           animationRef.current = window.setTimeout(typeText, 200); // Brief pause before dots
@@ -66,7 +66,7 @@ const TypingAnimation: React.FC = () => {
   }, []);
 
   // Split displayText into word and dots for styling
-  const word = 'Thinking';
+  const word = 'Searching';
   const isShowingDots = displayText.startsWith(word) && displayText.length > word.length;
   const wordPart = isShowingDots ? word : displayText;
   const dotsPart = isShowingDots ? displayText.substring(word.length) : '';
@@ -84,7 +84,7 @@ const TypingAnimation: React.FC = () => {
             animation: 'first-dot-blink 2s ease-in-out infinite'
           }}
         />
-        {/* Thinking text */}
+        {/* Searching text */}
         <span 
           className="text-sm font-medium"
           style={{ 
@@ -901,7 +901,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     // Show immediate loading feedback
     setTimeout(() => {
       if (loading) {
-        setDisplayedBotText('Thinking...');
+        setDisplayedBotText('Searching...');
         setIsTyping(true);
         setTypingAnimationKey(prev => prev + 1); // Retrigger animation
         setShouldAnimate(false); // Reset animation - start with blue

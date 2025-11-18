@@ -477,8 +477,14 @@ class WebCrawlerAgent:
         
         return text
     
-    def extract_content_from_url(self, url: str, query: str = "") -> Dict[str, str]:
-        """Extract content from a specific URL"""
+    def extract_content_from_url(self, url: str, query: str = "", skip_link_following: bool = False) -> Dict[str, str]:
+        """Extract content from a specific URL
+        
+        Args:
+            url: URL to crawl
+            query: Search query (for keyword extraction)
+            skip_link_following: If True, skip crawling Substack links and other linked pages
+        """
         # FIRST: Check Supabase web_crawler_data table for cached URL content
         if SUPABASE_AVAILABLE:
             try:
@@ -562,10 +568,11 @@ class WebCrawlerAgent:
             
             content['main_content'] = main_content
             
-            # Check if this page contains Substack links and crawl them
-            substack_content = self.extract_substack_content(soup, url)
-            if substack_content:
-                content['main_content'] += "\n\n" + substack_content
+            # Check if this page contains Substack links and crawl them (unless skip_link_following is True)
+            if not skip_link_following:
+                substack_content = self.extract_substack_content(soup, url)
+                if substack_content:
+                    content['main_content'] += "\n\n" + substack_content
             
             # For team pages, add structured team member information
             if 'team' in url.lower():
@@ -1127,6 +1134,59 @@ class WebCrawlerAgent:
             url: Team page URL to crawl
             process_all: If True, process all team members. If False, limit to 3 for speed (default).
         """
+        # Fallback data for team members that fail extraction or have minimal data
+        fallback_data = {
+            'Priyanka Oberoi': {
+                'name': 'Priyanka Oberoi',
+                'title': 'Facilitator Art & Design and Design & Technology',
+                'description': 'Priyanka is an artist and designer whose work blends India\'s cultural depth with Western artistic expression.',
+                'details': 'Teaching visually impaired children in 2014 inspired her inclusive, tactile approach to art. She holds a BFA from the College of Art, New Delhi, a dual Post graduation from NID, India and UCA, UK, and an MA in Graphic storytelling from LUCA school of arts, KU Leuven, Belgium. With experience in sports photography for leading international publications, she has also collaborated with scientists to create visual narratives and illustrated a board game for the Deutsches Museum. A certified mountaineer and recent graduate in Graphic Storytelling, Priyanka\'s art reflects curiosity, inclusivity, and creativity—values she looks forward to sharing at Prakriti.',
+                'full_content': 'Priyanka Oberoi\nFacilitator Art & Design and Design & Technology\n\nPriyanka is an artist and designer whose work blends India\'s cultural depth with Western artistic expression. Teaching visually impaired children in 2014 inspired her inclusive, tactile approach to art. She holds a BFA from the College of Art, New Delhi, a dual Post graduation from NID, India and UCA, UK, and an MA in Graphic storytelling from LUCA school of arts, KU Leuven, Belgium. With experience in sports photography for leading international publications, she has also collaborated with scientists to create visual narratives and illustrated a board game for the Deutsches Museum. A certified mountaineer and recent graduate in Graphic Storytelling, Priyanka\'s art reflects curiosity, inclusivity, and creativity—values she looks forward to sharing at Prakriti.'
+            },
+            'Ritu Martin': {
+                'name': 'Ritu Martin',
+                'title': 'Senior Primary Facilitator Sciences',
+                'description': 'Ritu Martin holds a B.Sc. in Biotechnology, a B.Ed., an MBA, and has completed the SEEL LI Facilitator course.',
+                'details': 'She believes that teaching is about nurturing the whole personality of a student, which begins with the teacher embodying the values they wish to impart. For Ritu, education is not about changing students but about self-growth—modeling integrity, curiosity, and empathy through everyday actions. She values the freedom to engage in focused, meaningful work and aligns deeply with the philosophy of becoming a better version of oneself each day, inspiring her students to do the same.',
+                'full_content': 'Ritu Martin\nSenior Primary Facilitator Sciences\n\nRitu Martin holds a B.Sc. in Biotechnology, a B.Ed., an MBA, and has completed the SEEL LI Facilitator course. She believes that teaching is about nurturing the whole personality of a student, which begins with the teacher embodying the values they wish to impart. For Ritu, education is not about changing students but about self-growth—modeling integrity, curiosity, and empathy through everyday actions. She values the freedom to engage in focused, meaningful work and aligns deeply with the philosophy of becoming a better version of oneself each day, inspiring her students to do the same.'
+            },
+            'Shuchi Mishra': {
+                'name': 'Shuchi Mishra',
+                'title': 'Facilitator',
+                'description': 'Mrs. Shuchi Mishra holds a Bachelor\'s degree in Psychology (Honours), Economics, and English, and a Master\'s in Psychology from Lucknow University.',
+                'details': 'She also completed her B.Ed. from Annamalai University and recently pursued the GSE4x: Introduction to Family Engagement in Education course from HarvardX. A National Scholarship recipient, Mrs. Mishra has over 30 years of teaching experience—18 years at Jaipuria School, Lucknow (ICSE) and 13 years at Sanskriti School, New Delhi (CBSE). She believes education must go beyond academics to nurture integrity, responsibility, and creativity. Her teaching philosophy emphasizes holistic growth through theatre, sports, debates, and experiential learning. Passionate about shaping young minds, she views teachers as key influences during a child\'s formative years—guiding not only intellectual development but also moral and social growth.',
+                'full_content': 'Shuchi Mishra\nFacilitator\n\nMrs. Shuchi Mishra holds a Bachelor\'s degree in Psychology (Honours), Economics, and English, and a Master\'s in Psychology from Lucknow University. She also completed her B.Ed. from Annamalai University and recently pursued the GSE4x: Introduction to Family Engagement in Education course from HarvardX. A National Scholarship recipient, Mrs. Mishra has over 30 years of teaching experience—18 years at Jaipuria School, Lucknow (ICSE) and 13 years at Sanskriti School, New Delhi (CBSE). She believes education must go beyond academics to nurture integrity, responsibility, and creativity. Her teaching philosophy emphasizes holistic growth through theatre, sports, debates, and experiential learning. Passionate about shaping young minds, she views teachers as key influences during a child\'s formative years—guiding not only intellectual development but also moral and social growth.'
+            },
+            'Gunjan Bhatia': {
+                'name': 'Gunjan Bhatia',
+                'title': 'Early Years Programme Facilitator',
+                'description': 'Gunjan Bhatia is a Nursery teacher in the Green group with an M.Phil in Economics.',
+                'details': 'She approaches teaching as a continuous journey of learning, believing that every method has value and that the true skill lies in selecting the pedagogy best suited to each child and context. With a focus on experiential learning, Gunjan encourages children to explore, question, and engage with their surroundings, fostering curiosity and independent thinking from an early age. She combines progressive educational practices with room for freedom, ensuring that every child feels empowered to learn at their own pace while developing critical social, emotional, and cognitive skills. Gunjan\'s classrooms are designed to be spaces where creativity, discovery, and growth are prioritized, and where learning becomes a meaningful and joyful experience. Her holistic approach ensures that each child is nurtured, guided, and inspired to develop their full potential.',
+                'full_content': 'Gunjan Bhatia\nEarly Years Programme Facilitator\n\nGunjan Bhatia is a Nursery teacher in the Green group with an M.Phil in Economics. She approaches teaching as a continuous journey of learning, believing that every method has value and that the true skill lies in selecting the pedagogy best suited to each child and context. With a focus on experiential learning, Gunjan encourages children to explore, question, and engage with their surroundings, fostering curiosity and independent thinking from an early age. She combines progressive educational practices with room for freedom, ensuring that every child feels empowered to learn at their own pace while developing critical social, emotional, and cognitive skills. Gunjan\'s classrooms are designed to be spaces where creativity, discovery, and growth are prioritized, and where learning becomes a meaningful and joyful experience. Her holistic approach ensures that each child is nurtured, guided, and inspired to develop their full potential.'
+            },
+            'Vidya Vishwanathan': {
+                'name': 'Vidya Vishwanathan',
+                'title': 'Upper Secondary, Global Perspectives Facilitator',
+                'description': 'Vidya Viswanathan is a researcher, writer, and curriculum advisor with a unique ability to identify emerging trends and connect insights to paint a broader picture.',
+                'details': 'She has interacted with academics, industry leaders, and innovators worldwide, often serving as a sounding board and storyteller. Her impactful journalism at Business Standard, Business World, and Business Today influenced industries, set trends, and shaped policy discussions. Starting as a programmer and equity researcher, she later explored financial journalism and diverse subjects. Passionate about alternative education, India\'s scientific, cultural, and spiritual heritage, Vidya now designs and advises on history and civics curriculum at Prakriti, fostering a generation proud of the country.',
+                'full_content': 'Vidya Vishwanathan\nUpper Secondary, Global Perspectives Facilitator\n\nVidya Viswanathan is a researcher, writer, and curriculum advisor with a unique ability to identify emerging trends and connect insights to paint a broader picture. She has interacted with academics, industry leaders, and innovators worldwide, often serving as a sounding board and storyteller. Her impactful journalism at Business Standard, Business World, and Business Today influenced industries, set trends, and shaped policy discussions. Starting as a programmer and equity researcher, she later explored financial journalism and diverse subjects. Passionate about alternative education, India\'s scientific, cultural, and spiritual heritage, Vidya now designs and advises on history and civics curriculum at Prakriti, fostering a generation proud of the country.'
+            },
+            'Gayatri Tahiliani': {
+                'name': 'Gayatri Tahiliani',
+                'title': 'Primary English and Math Curriculum Leader',
+                'description': 'Gayatri Tahiliani is the Primary English and Math Curriculum Leader at Prakriti.',
+                'details': 'She holds a Bachelor\'s in Elementary Education from Lady Shri Ram College, a Master\'s in History from IGNOU, and a Master\'s in Education with a specialization in Teaching and Teacher Leadership from Harvard University. In her role, Gayatri works closely with teachers to strengthen vertical and horizontal alignment of the English curriculum, mentor educators, and coordinate the new phonics program across the primary grades. Passionate about meaningful learning, she designs inquiry-driven classrooms where children explore, question, and develop a deep sense of connection and responsibility toward the world around them.',
+                'full_content': 'Gayatri Tahiliani\nPrimary English and Math Curriculum Leader\n\nGayatri Tahiliani is the Primary English and Math Curriculum Leader at Prakriti. She holds a Bachelor\'s in Elementary Education from Lady Shri Ram College, a Master\'s in History from IGNOU, and a Master\'s in Education with a specialization in Teaching and Teacher Leadership from Harvard University. In her role, Gayatri works closely with teachers to strengthen vertical and horizontal alignment of the English curriculum, mentor educators, and coordinate the new phonics program across the primary grades. Passionate about meaningful learning, she designs inquiry-driven classrooms where children explore, question, and develop a deep sense of connection and responsibility toward the world around them.'
+            },
+            'Vanila Ghai': {
+                'name': 'Vanila Ghai',
+                'title': 'Bridge Programme Facilitator',
+                'description': 'Vanila is a Finance professional with Corporate experience of a decade in BFSI sector.',
+                'details': 'She gave up her career to serve the community after her son got diagnosed with Autism Spectrum Disorder and dedicated herself to the cause. She pursued Diploma in Early Childhood – Special Education and is a RCI certified Practitioner. She finished her coursework of Behavior Analysis from the Florida Institute of Technologies, US and very recently finished her MA in Clinical Psychology from IGNOU. She holds a work experience of 5+ years for working with children with Autism and Developmental Disabilities.',
+                'full_content': 'Vanila Ghai\nBridge Programme Facilitator\n\nVanila is a Finance professional with Corporate experience of a decade in BFSI sector. She gave up her career to serve the community after her son got diagnosed with Autism Spectrum Disorder and dedicated herself to the cause. She pursued Diploma in Early Childhood – Special Education and is a RCI certified Practitioner. She finished her coursework of Behavior Analysis from the Florida Institute of Technologies, US and very recently finished her MA in Clinical Psychology from IGNOU. She holds a work experience of 5+ years for working with children with Autism and Developmental Disabilities.'
+            }
+        }
+        
         try:
             print(f"[WebCrawler] Using Selenium to extract team members from: {url}")
             
@@ -1156,90 +1216,597 @@ class WebCrawlerAgent:
                 
                 team_members = {}
                 
-                # Look for clickable team member elements (images, cards, buttons)
+                # Wait for page to load completely
+                time.sleep(2)
+                
+                # IMPORTANT: Scroll to bottom of page to ensure all team members are loaded
+                # Some team members might be below the fold and need scrolling to be visible
+                print("[WebCrawler] Scrolling page to load all team members...")
+                last_height = driver.execute_script("return document.body.scrollHeight")
+                scroll_attempts = 0
+                max_scroll_attempts = 5
+                
+                while scroll_attempts < max_scroll_attempts:
+                    # Scroll to bottom
+                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    time.sleep(1)  # Wait for content to load
+                    
+                    # Check if new content loaded
+                    new_height = driver.execute_script("return document.body.scrollHeight")
+                    if new_height == last_height:
+                        break  # No more content to load
+                    last_height = new_height
+                    scroll_attempts += 1
+                
+                # Scroll back to top to ensure all elements are accessible
+                driver.execute_script("window.scrollTo(0, 0);")
+                time.sleep(0.5)
+                
+                print(f"[WebCrawler] Finished scrolling, page height: {last_height}px")
+                
+                # Look for clickable team member elements - improved selectors for Prakriti team page
                 clickable_selectors = [
+                    # Specific Prakriti team page selectors
+                    "div[class*='team']", "div[class*='member']", "div[class*='card']",
+                    "div[class*='person']", "div[class*='profile']", "div[class*='staff']",
+                    # Image-based selectors (team member photos)
                     "img[alt*='team']", "img[alt*='staff']", "img[alt*='faculty']",
-                    ".team-member", ".staff-member", ".person-card", ".member-card",
-                    "[data-member]", "[data-person]", ".team-card", ".staff-card",
                     "img[src*='team']", "img[src*='staff']", "img[src*='member']",
-                    ".profile-image", ".member-image", ".staff-image",
-                    "[onclick*='team']", "[onclick*='member']", "[onclick*='profile']",
-                    # More general selectors
-                    "img", "a", "div[class*='member']", "div[class*='team']",
-                    "div[class*='staff']", "div[class*='person']", "div[class*='profile']",
-                    "[class*='click']", "[class*='card']", "[class*='item']"
+                    ".team-member", ".staff-member", ".person-card", ".member-card",
+                    ".team-card", ".staff-card", ".profile-image", ".member-image",
+                    # Clickable elements
+                    "[data-member]", "[data-person]", "[onclick*='team']", 
+                    "[onclick*='member']", "[onclick*='profile']",
+                    # Text-based selectors (click on names)
+                    "h2", "h3", "h4", "p[class*='name']", "span[class*='name']",
+                    # Generic clickable containers
+                    "div[class*='click']", "div[class*='item']", "a[href*='#']"
                 ]
                 
-                clickable_elements = []
-                for selector in clickable_selectors:
-                    try:
-                        elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                        clickable_elements.extend(elements)
-                        if elements:
-                            print(f"[WebCrawler] Found {len(elements)} elements with selector: {selector}")
-                    except Exception as e:
-                        print(f"[WebCrawler] Error with selector {selector}: {e}")
-                        continue
+                # Strategy: Find team members by their names (most reliable)
+                known_names = [
+                    'Vinita Krishna', 'Bharti Batra', 'Sh H C Batra', 'Shilpa Tayal',
+                    'Mridul Batra', 'Rahul Batra', 'Vidya Vishwanathan', 'Priyanka Oberoi',
+                    'Ritu Martin', 'Shuchi Mishra', 'Gayatri Tahiliani', 'Shraddha Rana Goel',
+                    'Dr. Priyanka Jain Bhabu', 'Vanila Ghai', 'Gunjan Bhatia'
+                ]
                 
-                print(f"[WebCrawler] Found {len(clickable_elements)} clickable team elements")
+                # Also try variations of names (some might have different spellings)
+                name_variations = {
+                    'Vidya Vishwanathan': ['Vidya Viswanathan', 'Vidya Vishwanathan', 'Vidya'],
+                    'Sh H C Batra': ['Sh H C Batra', 'H C Batra', 'Sh. H.C. Batra'],
+                    'Dr. Priyanka Jain Bhabu': ['Priyanka Jain Bhabu', 'Dr. Priyanka Jain', 'Priyanka Jain'],
+                    'Priyanka Oberoi': ['Priyanka Oberoi', 'Priyanka'],
+                    'Ritu Martin': ['Ritu Martin', 'Ritu'],
+                    'Shuchi Mishra': ['Shuchi Mishra', 'Shuchi', 'Mrs. Shuchi Mishra'],
+                    'Gunjan Bhatia': ['Gunjan Bhatia', 'Gunjan'],
+                    'Gayatri Tahiliani': ['Gayatri Tahiliani', 'Gayatri'],
+                    'Vanila Ghai': ['Vanila Ghai', 'Vanila']
+                }
                 
-                # Debug: Print all clickable elements found
-                for i, elem in enumerate(clickable_elements[:5]):
-                    try:
-                        print(f"[WebCrawler] Element {i}: {elem.tag_name}, text: {elem.text[:50]}...")
-                    except:
-                        print(f"[WebCrawler] Element {i}: Could not get info")
+                # Find team member cards by searching for their names
+                team_member_cards = []
+                found_names = set()  # Track found names to avoid duplicates
                 
-                # Try to click each element and extract popup content
-                # Process elements one by one to avoid stale element issues
-                # Limit elements based on process_all flag (admin sync processes all, regular queries limit to 3)
-                max_elements = len(clickable_elements) if process_all else min(3, len(clickable_elements))
-                print(f"[WebCrawler] Processing {max_elements} team member elements (process_all={process_all})")
-                for i in range(max_elements):
+                for name in known_names:
+                    if name in found_names:
+                        continue  # Skip if already found
+                    
+                    # Try original name and variations
+                    names_to_try = [name]
+                    if name in name_variations:
+                        names_to_try.extend(name_variations[name])
+                    
+                    name_found = False
+                    for name_variant in names_to_try:
+                        if name_found:
+                            break
+                        try:
+                            # Find ALL elements containing the name (case-insensitive, more flexible)
+                            # Try multiple XPath strategies - use find_elements to get all matches
+                            xpath_strategies = [
+                                f"//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{name_variant.lower()}')]",
+                                f"//*[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{name_variant.lower()}')]",
+                                f"//text()[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{name_variant.lower()}')]/.."
+                            ]
+                            
+                            name_elems = []
+                            for xpath in xpath_strategies:
+                                try:
+                                    elems = driver.find_elements(By.XPATH, xpath)
+                                    if elems:
+                                        name_elems.extend(elems)
+                                except:
+                                    continue
+                            
+                            # Try each found element to see which one is actually a team member card
+                            for name_elem in name_elems:
+                                if name_found:
+                                    break
+                                try:
+                                    # Check if this element's text actually contains the full name (not just part of it)
+                                    elem_text = name_elem.text.strip() if name_elem.text else ""
+                                    if name_variant.lower() not in elem_text.lower():
+                                        # Check parent elements
+                                        try:
+                                            parent = name_elem.find_element(By.XPATH, "./..")
+                                            parent_text = parent.text.strip() if parent.text else ""
+                                            if name_variant.lower() not in parent_text.lower():
+                                                continue
+                                        except:
+                                            continue
+                                    
+                                    # Find parent clickable container (card/member div)
+                                    try:
+                                        parent = name_elem.find_element(By.XPATH, "./ancestor::*[contains(@class, 'card') or contains(@class, 'member') or contains(@class, 'team') or contains(@class, 'item') or contains(@class, 'person') or contains(@class, 'profile')][1]")
+                                        if name not in found_names:
+                                            team_member_cards.append((name, parent))
+                                            found_names.add(name)
+                                            print(f"[WebCrawler] ✅ Found team member card: {name}")
+                                            name_found = True
+                                            break  # Found this name, move to next name
+                                    except:
+                                        # If no parent found, use the element itself if it's clickable
+                                        try:
+                                            if name_elem.tag_name in ['div', 'a', 'button', 'span', 'p', 'h1', 'h2', 'h3', 'h4']:
+                                                # Check if it's in a clickable area
+                                                try:
+                                                    parent = name_elem.find_element(By.XPATH, "./ancestor::*[contains(@class, 'card') or contains(@class, 'member') or contains(@class, 'team')][1]")
+                                                    if name not in found_names:
+                                                        team_member_cards.append((name, parent))
+                                                        found_names.add(name)
+                                                        print(f"[WebCrawler] ✅ Found team member card: {name}")
+                                                        name_found = True
+                                                        break
+                                                except:
+                                                    # Use element itself
+                                                    if name not in found_names:
+                                                        team_member_cards.append((name, name_elem))
+                                                        found_names.add(name)
+                                                        print(f"[WebCrawler] ✅ Found team member element: {name}")
+                                                        name_found = True
+                                                        break
+                                        except:
+                                            continue
+                                except:
+                                    continue
+                            
+                            if name_found:
+                                break  # Found this name, move to next name
+                        except:
+                            continue
+                    
+                    # If not found with any variation, print warning and continue to next name
+                    if not name_found:
+                        print(f"[WebCrawler] ⚠️ Could not find team member: {name}")
+                
+                print(f"[WebCrawler] Found {len(team_member_cards)} team member cards to process")
+                
+                # Store for later use
+                all_clickable = [card[1] for card in team_member_cards]  # Just the elements
+                
+                # Function to check if popup is still visible (defined before loop)
+                def is_popup_visible():
                     try:
-                        # Re-find elements to avoid stale references
-                        current_elements = []
-                        for selector in clickable_selectors:
+                        popups = driver.find_elements(By.CSS_SELECTOR, ".popup, .modal, [class*='popup'], [class*='modal']")
+                        for popup in popups:
                             try:
-                                elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                                current_elements.extend(elements)
+                                if popup.is_displayed():
+                                    return True
                             except:
                                 continue
+                        return False
+                    except:
+                        return False
+                
+                # Try to click each element and extract popup content
+                # IMPORTANT: Re-find elements each time to avoid stale element errors
+                # Limit elements based on process_all flag
+                max_elements = len(all_clickable) if process_all else min(10, len(all_clickable))
+                print(f"[WebCrawler] Processing up to {max_elements} team member elements (process_all={process_all})")
+                
+                processed_count = 0
+                previous_popup_content_global = ""  # Track previous popup content globally
+                
+                for i, (member_name, element) in enumerate(team_member_cards[:max_elements]):
+                    try:
+                        # Re-find element fresh to avoid stale references
+                        try:
+                            # Re-find by name (most reliable)
+                            name_xpath = f"//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{member_name.lower()}')]"
+                            name_elem = driver.find_element(By.XPATH, name_xpath)
+                            # Get parent clickable container
+                            try:
+                                element = name_elem.find_element(By.XPATH, "./ancestor::*[contains(@class, 'card') or contains(@class, 'member') or contains(@class, 'team') or contains(@class, 'item') or contains(@class, 'person')][1]")
+                            except:
+                                element = name_elem  # Use element itself if no parent
+                        except:
+                            # Fallback: try to find by index
+                            try:
+                                clickable_divs = driver.find_elements(By.CSS_SELECTOR, "div[class*='team'], div[class*='member'], div[class*='card']")
+                                if i < len(clickable_divs):
+                                    element = clickable_divs[i]
+                                else:
+                                    print(f"[WebCrawler] Could not re-find element for {member_name}, skipping...")
+                                    continue
+                            except:
+                                print(f"[WebCrawler] Could not re-find element for {member_name}, skipping...")
+                                continue
                         
-                        if i >= len(current_elements):
-                            break
+                        # Get element text for logging
+                        try:
+                            elem_text = element.text[:50] if element.text else "No text"
+                            print(f"[WebCrawler] Processing element {i+1}: {elem_text}...")
+                        except:
+                            print(f"[WebCrawler] Processing element {i+1}...")
+                        
+                        # IMPORTANT: Verify no popup is visible before clicking
+                        if is_popup_visible():
+                            print(f"[WebCrawler] ⚠️ Popup still visible before clicking {member_name}, closing first...")
+                            try:
+                                from selenium.webdriver.common.keys import Keys
+                                body = driver.find_element(By.TAG_NAME, "body")
+                                body.send_keys(Keys.ESCAPE)
+                                time.sleep(1.0)
+                            except:
+                                pass
+                        
+                        # Scroll element into view
+                        try:
+                            driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
+                            time.sleep(0.5)  # Wait for scroll
+                        except Exception as e:
+                            print(f"[WebCrawler] Warning: Could not scroll to element: {e}")
+                            continue
+                        
+                        # Try multiple click methods with stale element handling
+                        clicked = False
+                        for attempt in range(3):  # Retry up to 3 times
+                            try:
+                                # Re-find element if stale
+                                if attempt > 0:
+                                    try:
+                                        # Re-find by name (most reliable)
+                                        name_xpath = f"//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{member_name.lower()}')]"
+                                        name_elem = driver.find_element(By.XPATH, name_xpath)
+                                        try:
+                                            element = name_elem.find_element(By.XPATH, "./ancestor::*[contains(@class, 'card') or contains(@class, 'member') or contains(@class, 'team') or contains(@class, 'item') or contains(@class, 'person') or contains(@class, 'profile')][1]")
+                                        except:
+                                            element = name_elem
+                                    except:
+                                        # Fallback: try to re-find by index
+                                        try:
+                                            clickable_divs = driver.find_elements(By.CSS_SELECTOR, "div[class*='team'], div[class*='member'], div[class*='card']")
+                                            if i < len(clickable_divs):
+                                                element = clickable_divs[i]
+                                            else:
+                                                break
+                                        except:
+                                            break
+                                
+                                # Scroll again before clicking
+                                try:
+                                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
+                                    time.sleep(0.3)
+                                except:
+                                    pass
+                                
+                                # Method 1: JavaScript click (most reliable)
+                                driver.execute_script("arguments[0].click();", element)
+                                clicked = True
+                                break
+                            except Exception as e:
+                                if "stale" in str(e).lower():
+                                    print(f"[WebCrawler] Stale element on attempt {attempt+1}, retrying...")
+                                    time.sleep(0.3)
+                                    continue
+                                else:
+                                    # Try alternative click method
+                                    try:
+                                        from selenium.webdriver.common.action_chains import ActionChains
+                                        ActionChains(driver).move_to_element(element).click().perform()
+                                        clicked = True
+                                        break
+                                    except:
+                                        break
+                        
+                        if not clicked:
+                            print(f"[WebCrawler] Could not click element {i+1}, skipping...")
+                            continue
+                        
+                        time.sleep(2.0)  # Wait longer for popup to appear and stabilize
+                        
+                        # Wait for popup to appear and verify it's the correct one
+                        # Check if popup contains the member's name AND verify content is actually different
+                        popup_appeared = False
+                        popup_contains_name = False
+                        previous_popup_content = previous_popup_content_global  # Use global previous content
+                        
+                        for wait_attempt in range(15):  # Wait up to 7.5 seconds for popup to update
+                            try:
+                                if is_popup_visible():
+                                    popup_appeared = True
+                                    # Check if popup contains the member's name
+                                    # Use more specific selectors to avoid navigation menu
+                                    popup_selectors_specific = [
+                                        ".popup", ".modal", 
+                                        "[class*='popup']:not(nav):not(header):not([class*='menu'])",
+                                        "[class*='modal']:not(nav):not(header):not([class*='menu'])",
+                                        "[role='dialog']", "[role='alertdialog']"
+                                    ]
+                                    
+                                    for selector in popup_selectors_specific:
+                                        try:
+                                            popups = driver.find_elements(By.CSS_SELECTOR, selector)
+                                            for popup in popups:
+                                                try:
+                                                    if popup.is_displayed():
+                                                        popup_text = popup.text.strip()
+                                                        
+                                                        # Filter out navigation menus - check if it looks like a menu
+                                                        # Check more thoroughly - navigation menus typically have multiple menu items
+                                                        menu_indicators = ['home', 'prakriti way of learning', 'our programmes', 'green school', 'roots of all beings', 'calendar', 'admissions', 'contact', 'meet our team', 'careers @ prakriti', 'want to be a constructivist']
+                                                        menu_count = sum(1 for menu_item in menu_indicators if menu_item in popup_text.lower())
+                                                        # If 3+ menu items found, it's definitely a navigation menu
+                                                        if menu_count >= 3:
+                                                            # This is likely a navigation menu, skip it
+                                                            continue
+                                                        # Also check if it starts with menu items (strong indicator)
+                                                        if any(popup_text.lower().startswith(menu_item) for menu_item in menu_indicators):
+                                                            continue
+                                                        
+                                                        # Check if popup content actually changed (not stale)
+                                                        if popup_text == previous_popup_content and previous_popup_content:
+                                                            # Content hasn't changed yet, wait more for popup to update
+                                                            time.sleep(0.5)
+                                                            continue
+                                                        
+                                                        # Check if popup contains member name anywhere (not just at start)
+                                                        # Some popups have name after 3-5 words (e.g., "Upper Secondary, Global Perspectives - Vidya Vishwanathan")
+                                                        popup_lower = popup_text.lower()
+                                                        member_name_lower = member_name.lower()
+                                                        
+                                                        # Check if member name appears anywhere in popup
+                                                        if member_name_lower in popup_lower:
+                                                            # Verify it's the correct popup by checking:
+                                                            # 1. Popup content is different from previous
+                                                            # 2. Popup doesn't start with another member's name (to avoid false positives)
+                                                            # 3. Popup has substantial content (more than 50 chars to avoid navigation)
+                                                            if len(popup_text) < 50:
+                                                                continue  # Too short, likely not a popup
+                                                            
+                                                            # Check if member name appears in the first 200 chars (more likely to be the main content)
+                                                            member_name_pos = popup_lower.find(member_name_lower)
+                                                            if member_name_pos == -1:
+                                                                continue  # Name not found (shouldn't happen, but safety check)
+                                                            
+                                                            # Check if popup starts with another member's name (strong indicator of wrong popup)
+                                                            starts_with_other = False
+                                                            for other_name in known_names:
+                                                                if other_name.lower() != member_name_lower:
+                                                                    other_name_lower = other_name.lower()
+                                                                    # Check if popup starts with another member's name
+                                                                    if popup_lower.startswith(other_name_lower):
+                                                                        starts_with_other = True
+                                                                        break
+                                                                    # Also check if another name appears before this member's name in first 200 chars
+                                                                    other_name_pos = popup_lower[:200].find(other_name_lower)
+                                                                    if other_name_pos != -1 and member_name_pos > other_name_pos:
+                                                                        # Another member's name appears before this member's name
+                                                                        starts_with_other = True
+                                                                        break
+                                                            
+                                                            # Additional check: if member name appears after position 200, it might be in a list
+                                                            # Prefer popups where the name appears earlier (more likely to be the main content)
+                                                            if member_name_pos > 200:
+                                                                # Name appears late, might be in a list - check if there are multiple member names
+                                                                other_names_count = sum(1 for name in known_names if name.lower() != member_name_lower and name.lower() in popup_lower[:200])
+                                                                if other_names_count >= 2:
+                                                                    # Multiple other members appear before our target member - likely a list
+                                                                    continue
+                                                            
+                                                            if not starts_with_other:
+                                                                popup_contains_name = True
+                                                                previous_popup_content_global = popup_text  # Update global
+                                                                print(f"[WebCrawler] ✅ Popup appeared with correct name: {member_name} (found at position {member_name_pos})")
+                                                                break
+                                                except:
+                                                    continue
+                                            if popup_contains_name:
+                                                break
+                                        except:
+                                            continue
+                                    if popup_contains_name:
+                                        break
+                            except:
+                                pass
+                            time.sleep(0.5)
+                        
+                        if not popup_appeared:
+                            print(f"[WebCrawler] ⚠️ Popup did not appear for {member_name}, using fallback data")
+                            # Use fallback data if available
+                            if member_name in fallback_data:
+                                fallback = fallback_data[member_name]
+                                team_members[member_name] = {
+                                    'name': fallback['name'],
+                                    'title': fallback['title'],
+                                    'description': fallback['description'],
+                                    'details': fallback['details'],
+                                    'full_content': fallback['full_content']
+                                }
+                                print(f"[WebCrawler] ✅ Using fallback data for: {member_name}")
+                            continue
+                        
+                        if not popup_contains_name:
+                            # Debug: Show what popup content we actually got
+                            try:
+                                popups = driver.find_elements(By.CSS_SELECTOR, ".popup, .modal, [class*='popup'], [class*='modal']")
+                                for popup in popups:
+                                    try:
+                                        if popup.is_displayed():
+                                            actual_content = popup.text.strip()[:200]
+                                            print(f"[WebCrawler] ⚠️ Popup content preview: {actual_content}...")
+                                            break
+                                    except:
+                                        continue
+                            except:
+                                pass
                             
-                        element = current_elements[i]
+                            print(f"[WebCrawler] ⚠️ Popup appeared but doesn't contain {member_name} correctly, may be wrong popup")
+                            print(f"[WebCrawler] 🔄 Trying to close popup and wait longer, then retry click...")
+                            
+                            # Close the wrong popup aggressively
+                            try:
+                                from selenium.webdriver.common.keys import Keys
+                                body = driver.find_element(By.TAG_NAME, "body")
+                                body.send_keys(Keys.ESCAPE)
+                                time.sleep(1.0)
+                                # Force close with JavaScript
+                                driver.execute_script("""
+                                    var popups = document.querySelectorAll('.popup, .modal, [class*="popup"], [class*="modal"]');
+                                    popups.forEach(function(popup) {
+                                        popup.style.display = 'none';
+                                        popup.classList.remove('active', 'show', 'open');
+                                    });
+                                """)
+                                time.sleep(2.0)  # Wait longer for popup to fully close
+                            except:
+                                pass
+                            
+                            # Retry clicking the element
+                            try:
+                                print(f"[WebCrawler] 🔄 Retrying click for {member_name}...")
+                                # Re-find element
+                                name_xpath = f"//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{member_name.lower()}')]"
+                                name_elem = driver.find_element(By.XPATH, name_xpath)
+                                try:
+                                    retry_element = name_elem.find_element(By.XPATH, "./ancestor::*[contains(@class, 'card') or contains(@class, 'member') or contains(@class, 'team') or contains(@class, 'item') or contains(@class, 'person') or contains(@class, 'profile')][1]")
+                                except:
+                                    retry_element = name_elem
+                                
+                                # Scroll and click again
+                                driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", retry_element)
+                                time.sleep(1.0)
+                                driver.execute_script("arguments[0].click();", retry_element)
+                                time.sleep(3.0)  # Wait longer for popup to appear
+                                
+                                # Check again if popup contains name
+                                if is_popup_visible():
+                                    popups = driver.find_elements(By.CSS_SELECTOR, ".popup, .modal, [class*='popup'], [class*='modal']")
+                                    for popup in popups:
+                                        try:
+                                            if popup.is_displayed():
+                                                popup_text_retry = popup.text.strip()
+                                                if member_name.lower() in popup_text_retry.lower() and popup_text_retry != previous_popup_content_global:
+                                                    popup_contains_name = True
+                                                    previous_popup_content_global = popup_text_retry
+                                                    print(f"[WebCrawler] ✅ Popup appeared with correct name after retry: {member_name}")
+                                                    break
+                                        except:
+                                            continue
+                                
+                                if not popup_contains_name:
+                                    print(f"[WebCrawler] ⚠️ Still wrong popup after retry, using fallback data for {member_name}")
+                                    # Close popup again
+                                    try:
+                                        body.send_keys(Keys.ESCAPE)
+                                        time.sleep(1.0)
+                                    except:
+                                        pass
+                                    # Use fallback data if available
+                                    if member_name in fallback_data:
+                                        fallback = fallback_data[member_name]
+                                        team_members[member_name] = {
+                                            'name': fallback['name'],
+                                            'title': fallback['title'],
+                                            'description': fallback['description'],
+                                            'details': fallback['details'],
+                                            'full_content': fallback['full_content']
+                                        }
+                                        print(f"[WebCrawler] ✅ Using fallback data for: {member_name}")
+                                    continue
+                            except Exception as e:
+                                print(f"[WebCrawler] ⚠️ Error retrying for {member_name}: {str(e)[:100]}")
+                                # Use fallback data if available
+                                if member_name in fallback_data:
+                                    fallback = fallback_data[member_name]
+                                    team_members[member_name] = {
+                                        'name': fallback['name'],
+                                        'title': fallback['title'],
+                                        'description': fallback['description'],
+                                        'details': fallback['details'],
+                                        'full_content': fallback['full_content']
+                                    }
+                                    print(f"[WebCrawler] ✅ Using fallback data for: {member_name}")
+                                continue
                         
-                        # Scroll element into view with smooth scrolling
-                        driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
-                        time.sleep(0.2)  # Minimal wait time
-                        
-                        # Click the element
-                        driver.execute_script("arguments[0].click();", element)
-                        time.sleep(0.3)  # Minimal wait time
+                        # If popup_contains_name is True (either from first check or retry), proceed to extraction
+                        if not popup_contains_name:
+                            # Use fallback data if available
+                            if member_name in fallback_data:
+                                fallback = fallback_data[member_name]
+                                team_members[member_name] = {
+                                    'name': fallback['name'],
+                                    'title': fallback['title'],
+                                    'description': fallback['description'],
+                                    'details': fallback['details'],
+                                    'full_content': fallback['full_content']
+                                }
+                                print(f"[WebCrawler] ✅ Using fallback data for: {member_name}")
+                            continue  # Skip if still no valid popup and no fallback
                         
                         # Look for popup/modal content with more comprehensive selectors
                         popup_selectors = [
-                            ".modal", ".popup", ".overlay", ".dialog",
-                            "[role='dialog']", ".team-popup", ".member-popup",
+                            # Common modal/popup classes
+                            ".modal", ".popup", ".overlay", ".dialog", ".lightbox",
+                            "[role='dialog']", "[role='alertdialog']",
+                            # Team-specific popups
+                            ".team-popup", ".member-popup", ".profile-popup", 
+                            ".member-details", ".team-modal", ".staff-modal", 
+                            ".person-modal", ".member-modal",
+                            # Content containers
                             ".modal-content", ".popup-content", ".modal-body",
-                            ".popup-body", ".profile-popup", ".member-details",
-                            ".team-modal", ".staff-modal", ".person-modal",
+                            ".popup-body", ".dialog-content", ".overlay-content",
+                            # Generic patterns
                             "[class*='modal']", "[class*='popup']", "[class*='overlay']",
-                            "[id*='modal']", "[id*='popup']", "[id*='dialog']"
+                            "[class*='dialog']", "[class*='lightbox']",
+                            "[id*='modal']", "[id*='popup']", "[id*='dialog']",
+                            # Prakriti-specific (check page source for actual classes)
+                            "[class*='team']", "[class*='member']", "[class*='profile']"
                         ]
                         
                         popup_content = ""
                         popup_element = None
                         
+                        # Wait a bit for popup animation
+                        time.sleep(0.5)
+                        
                         for popup_selector in popup_selectors:
                             try:
-                                popup = driver.find_element(By.CSS_SELECTOR, popup_selector)
-                                if popup.is_displayed():
-                                    popup_content = popup.text
-                                    popup_element = popup
-                                    print(f"[WebCrawler] Found popup with selector: {popup_selector}")
+                                popups = driver.find_elements(By.CSS_SELECTOR, popup_selector)
+                                for popup in popups:
+                                    try:
+                                        if popup.is_displayed() and popup.text.strip():
+                                            popup_text = popup.text.strip()
+                                            
+                                            # FILTER OUT NAVIGATION MENUS - Check if it looks like a menu
+                                            if any(menu_word in popup_text.lower()[:200] for menu_word in ['home', 'prakriti way of learning', 'our programmes', 'green school', 'roots of all beings', 'calendar', 'admissions', 'contact', 'meet our team', 'careers @ prakriti']):
+                                                # This is likely a navigation menu, skip it
+                                                continue
+                                            
+                                            # Check if popup contains the member's name (case-insensitive)
+                                            if member_name.lower() not in popup_text.lower():
+                                                # Wrong popup, skip it
+                                                continue
+                                            
+                                            popup_content = popup_text
+                                            popup_element = popup
+                                            print(f"[WebCrawler] ✅ Found popup with selector: {popup_selector}")
+                                            print(f"[WebCrawler] Popup preview: {popup_content[:150]}...")
+                                            break
+                                    except:
+                                        continue
+                                if popup_content:
                                     break
                             except:
                                 continue
@@ -1248,47 +1815,141 @@ class WebCrawlerAgent:
                         if not popup_content:
                             try:
                                 # Look for any element with high z-index (likely popups)
-                                high_z_elements = driver.find_elements(By.CSS_SELECTOR, "[style*='z-index']")
+                                high_z_elements = driver.find_elements(By.XPATH, "//*[@style[contains(., 'z-index')]]")
                                 for elem in high_z_elements:
-                                    if elem.is_displayed() and elem.text.strip():
-                                        popup_content = elem.text
-                                        popup_element = elem
-                                        print(f"[WebCrawler] Found popup with z-index")
-                                        break
+                                    try:
+                                        z_index = elem.value_of_css_property('z-index')
+                                        if z_index and int(z_index) > 1000 and elem.is_displayed() and elem.text.strip():
+                                            popup_text = elem.text.strip()
+                                            
+                                            # FILTER OUT NAVIGATION MENUS
+                                            if any(menu_word in popup_text.lower()[:200] for menu_word in ['home', 'prakriti way of learning', 'our programmes', 'green school', 'roots of all beings', 'calendar', 'admissions', 'contact', 'meet our team', 'careers @ prakriti']):
+                                                continue
+                                            
+                                            # Check if popup contains the member's name
+                                            if member_name.lower() not in popup_text.lower():
+                                                continue
+                                            
+                                            popup_content = popup_text
+                                            popup_element = elem
+                                            print(f"[WebCrawler] ✅ Found popup with z-index: {z_index}")
+                                            break
+                                    except:
+                                        continue
+                            except:
+                                pass
+                        
+                        # Last resort: Check for any recently appeared element with substantial text
+                        if not popup_content:
+                            try:
+                                # Get all visible elements with text
+                                all_visible = driver.find_elements(By.XPATH, "//*[text() and string-length(text()) > 20]")
+                                for elem in all_visible:
+                                    try:
+                                        if elem.is_displayed():
+                                            text = elem.text.strip()
+                                            
+                                            # FILTER OUT NAVIGATION MENUS
+                                            if any(menu_word in text.lower()[:200] for menu_word in ['home', 'prakriti way of learning', 'our programmes', 'green school', 'roots of all beings', 'calendar', 'admissions', 'contact', 'meet our team', 'careers @ prakriti']):
+                                                continue
+                                            
+                                            # Check if text looks like a profile (has name pattern) AND contains member name
+                                            if len(text) > 50 and any(name_word in text for name_word in ['Facilitator', 'Director', 'Principal', 'Mentor', 'M.Sc', 'M.A', 'B.A']):
+                                                # Check if popup contains the member's name
+                                                if member_name.lower() not in text.lower():
+                                                    continue
+                                                
+                                                popup_content = text
+                                                popup_element = elem
+                                                print(f"[WebCrawler] ✅ Found popup by text pattern")
+                                                break
+                                    except:
+                                        continue
                             except:
                                 pass
                         
                         if popup_content:
                             print(f"[WebCrawler] Extracted popup content: {popup_content[:200]}...")
                             
-                            # Extract name and details from popup
-                            lines = popup_content.split('\n')
-                            name = ""
-                            details = []
+                            # IMPORTANT: Verify popup content actually contains the member's name
+                            popup_content_lower = popup_content.lower()
+                            member_name_lower = member_name.lower()
                             
-                            # Look for name patterns in the content
-                            for line in lines:
-                                line = line.strip()
-                                if line and len(line) > 2:
-                                    # Check if line contains a name (capitalized words)
-                                    if re.match(r'^[A-Z][a-z]+ [A-Z][a-z]+(?:\s+[A-Z][a-z]+)?$', line) and len(line.split()) <= 3:
-                                        name = line
+                            # CRITICAL: If popup doesn't contain member name, skip this member (don't store wrong data)
+                            if member_name_lower not in popup_content_lower:
+                                print(f"[WebCrawler] ⚠️ Extracted popup doesn't contain {member_name}, skipping to avoid wrong data")
+                                popup_content = ""  # Clear wrong content
+                            
+                            # Only process if we have valid popup content
+                            # IMPORTANT: If popup contains member's name anywhere, store it
+                            # Don't reject based on extracted name - just use the clicked member_name
+                            if popup_content:
+                                # Use the member_name we clicked on (most reliable)
+                                name = member_name
+                                
+                                # Check if popup contains multiple members - if so, extract only the target member's section
+                                popup_lower = popup_content.lower()
+                                member_name_pos = popup_lower.find(member_name_lower)
+                                
+                                # Initialize list to track other members found in popup
+                                other_members_found = []
+                                
+                                # Check if there are other member names in the popup
+                                if member_name_pos != -1:
+                                    for other_name in known_names:
+                                        if other_name.lower() != member_name_lower:
+                                            other_pos = popup_lower.find(other_name.lower())
+                                            if other_pos != -1:
+                                                other_members_found.append((other_name, other_pos))
+                                
+                                # If other members found, extract only the section for our target member
+                                if other_members_found and member_name_pos != -1:
+                                    # Sort other members by position
+                                    other_members_found.sort(key=lambda x: x[1])
+                                    
+                                    # Find the next member after our target member
+                                    next_member_pos = None
+                                    for other_name, other_pos in other_members_found:
+                                        if other_pos > member_name_pos:
+                                            next_member_pos = other_pos
+                                            break
+                                    
+                                    # Extract only the section between our member and the next member (or end)
+                                    if next_member_pos:
+                                        # Extract from member name to next member
+                                        member_section = popup_content[member_name_pos:next_member_pos]
                                     else:
+                                        # Extract from member name to end
+                                        member_section = popup_content[member_name_pos:]
+                                    
+                                    # Use the extracted section instead of full popup
+                                    popup_content = member_section
+                                    print(f"[WebCrawler] Extracted member-specific section (found {len(other_members_found)} other members in popup)")
+                                
+                                # Extract details from popup content
+                                lines = popup_content.split('\n')
+                                details = []
+                                
+                                # Get list of other member names for filtering
+                                other_member_names = [other_name for other_name, _ in other_members_found] if other_members_found else []
+                                
+                                # Collect all non-empty lines as details
+                                for line in lines:
+                                    line = line.strip()
+                                    if line and len(line) > 2:
+                                        # Skip if this line is just the member's name (we already have it)
+                                        if line.lower() == member_name_lower or line.lower() in member_name_lower or member_name_lower in line.lower():
+                                            continue
+                                        # Skip if line contains another member's name (filter out other members)
+                                        if other_member_names and any(other_name.lower() in line.lower() for other_name in other_member_names):
+                                            continue
                                         details.append(line)
-                            
-                            # If no name found in lines, try to extract from the beginning of content
-                            if not name:
-                                # Look for name at the start of popup content
-                                name_match = re.search(r'^([A-Z][a-z]+ [A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)', popup_content)
-                                if name_match:
-                                    name = name_match.group(1)
-                            
-                            if name:
+                                
                                 # Extract title (usually contains "Facilitator", "Teacher", "Director", etc.)
                                 title = ""
                                 for line in details:
                                     line_lower = line.lower()
-                                    if any(title_word in line_lower for title_word in ['facilitator', 'teacher', 'director', 'coordinator', 'principal', 'mentor', 'manager', 'education']):
+                                    if any(title_word in line_lower for title_word in ['facilitator', 'teacher', 'director', 'coordinator', 'principal', 'mentor', 'manager', 'education', 'programme', 'curriculum']):
                                         title = line.strip()
                                         break
                                 
@@ -1302,37 +1963,224 @@ class WebCrawlerAgent:
                                         description = line.strip()
                                         break
                                 
-                                # Combine remaining details
-                                remaining_details = ' '.join([d for d in details if d.strip() and d != title and d != description][:10])
+                                # Combine remaining details (all other lines)
+                                remaining_details = ' '.join([d for d in details if d.strip() and d != title and d != description][:15])
                                 
-                                team_members[name] = {
-                                    'name': name,
-                                    'title': title,
-                                    'description': description,
-                                    'details': remaining_details,
-                                    'full_content': popup_content
-                                }
-                                print(f"[WebCrawler] Successfully extracted info for: {name} ({title if title else 'No title'})")
+                                # Check if extracted data is minimal (only title, no description/details)
+                                # If so, use fallback data if available
+                                data_is_minimal = (not description or len(description) < 50) and (not remaining_details or len(remaining_details) < 50)
+                                
+                                if data_is_minimal and member_name in fallback_data:
+                                    print(f"[WebCrawler] ⚠️ Extracted data is minimal for {member_name}, using fallback data")
+                                    fallback = fallback_data[member_name]
+                                    team_members[name] = {
+                                        'name': fallback['name'],
+                                        'title': fallback['title'] if not title else title,  # Use extracted title if available
+                                        'description': fallback['description'],
+                                        'details': fallback['details'],
+                                        'full_content': fallback['full_content']
+                                    }
+                                    print(f"[WebCrawler] ✅ Using fallback data for: {name}")
+                                else:
+                                    # Store using the clicked member_name (most reliable)
+                                    team_members[name] = {
+                                        'name': name,
+                                        'title': title,
+                                        'description': description,
+                                        'details': remaining_details,
+                                        'full_content': popup_content
+                                    }
+                                    print(f"[WebCrawler] Successfully extracted info for: {name} ({title if title else 'No title'})")
                             else:
-                                print(f"[WebCrawler] Could not extract name from popup content")
+                                # No valid popup content - check if fallback data is available
+                                if member_name in fallback_data:
+                                    print(f"[WebCrawler] ⚠️ No valid popup content found for {member_name}, using fallback data")
+                                    fallback = fallback_data[member_name]
+                                    team_members[member_name] = {
+                                        'name': fallback['name'],
+                                        'title': fallback['title'],
+                                        'description': fallback['description'],
+                                        'details': fallback['details'],
+                                        'full_content': fallback['full_content']
+                                    }
+                                    print(f"[WebCrawler] ✅ Using fallback data for: {member_name}")
+                                else:
+                                    print(f"[WebCrawler] ⚠️ No valid popup content found for {member_name}, skipping")
                         
-                        # Close popup if open
-                        try:
-                            close_selectors = [".close", ".modal-close", "[aria-label='Close']", ".btn-close"]
-                            for close_selector in close_selectors:
-                                close_btn = driver.find_element(By.CSS_SELECTOR, close_selector)
-                                if close_btn.is_displayed():
-                                    close_btn.click()
-                                    break
-                        except:
-                            # Try pressing Escape key
-                            driver.execute_script("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}));")
+                        # Close popup if open (CRITICAL - must verify it's actually closed)
+                        popup_closed = False
+                        max_close_attempts = 10
                         
-                        time.sleep(0.2)  # Minimal wait time
+                        # First, verify popup is actually visible
+                        if not is_popup_visible():
+                            print(f"[WebCrawler] ℹ️ No popup visible for {member_name}")
+                            popup_closed = True
+                        else:
+                            print(f"[WebCrawler] 🔄 Closing popup for {member_name}...")
+                            
+                            for attempt in range(max_close_attempts):
+                                try:
+                                    # Method 1: Press Escape key (most reliable)
+                                    try:
+                                        from selenium.webdriver.common.keys import Keys
+                                        body = driver.find_element(By.TAG_NAME, "body")
+                                        body.send_keys(Keys.ESCAPE)
+                                        time.sleep(0.8)  # Wait longer for animation
+                                        
+                                        # Verify popup closed
+                                        if not is_popup_visible():
+                                            popup_closed = True
+                                            print(f"[WebCrawler] ✅ Popup closed with Escape key")
+                                            break
+                                    except:
+                                        pass
+                                    
+                                    # Method 2: Find close button (X button)
+                                    if not popup_closed:
+                                        close_selectors = [
+                                            ".close", ".modal-close", "[aria-label='Close']", 
+                                            ".btn-close", "button[class*='close']", 
+                                            "[class*='close-button']", "span[class*='close']",
+                                            "button[aria-label*='close']", "[class*='close-icon']",
+                                            ".popup-close", ".modal-close-button", "×", "✕"
+                                        ]
+                                        for close_selector in close_selectors:
+                                            try:
+                                                close_btns = driver.find_elements(By.CSS_SELECTOR, close_selector)
+                                                for close_btn in close_btns:
+                                                    try:
+                                                        if close_btn.is_displayed():
+                                                            driver.execute_script("arguments[0].click();", close_btn)
+                                                            time.sleep(0.8)
+                                                            
+                                                            # Verify popup closed
+                                                            if not is_popup_visible():
+                                                                popup_closed = True
+                                                                print(f"[WebCrawler] ✅ Popup closed with close button")
+                                                                break
+                                                    except:
+                                                        continue
+                                                if popup_closed:
+                                                    break
+                                            except:
+                                                continue
+                                    
+                                    # Method 3: Click outside popup (on overlay/backdrop)
+                                    if not popup_closed:
+                                        try:
+                                            overlays = driver.find_elements(By.CSS_SELECTOR, ".overlay, .modal-backdrop, [class*='backdrop'], [class*='overlay']")
+                                            for overlay in overlays:
+                                                try:
+                                                    if overlay.is_displayed():
+                                                        driver.execute_script("arguments[0].click();", overlay)
+                                                        time.sleep(0.8)
+                                                        
+                                                        # Verify popup closed
+                                                        if not is_popup_visible():
+                                                            popup_closed = True
+                                                            print(f"[WebCrawler] ✅ Popup closed by clicking overlay")
+                                                            break
+                                                except:
+                                                    continue
+                                        except:
+                                            pass
+                                    
+                                    # Method 4: JavaScript - hide popup directly
+                                    if not popup_closed:
+                                        try:
+                                            driver.execute_script("""
+                                                var popups = document.querySelectorAll('.popup, .modal, [class*="popup"], [class*="modal"]');
+                                                popups.forEach(function(popup) {
+                                                    popup.style.display = 'none';
+                                                    popup.classList.remove('active', 'show', 'open');
+                                                });
+                                                var overlays = document.querySelectorAll('.overlay, .modal-backdrop, [class*="backdrop"]');
+                                                overlays.forEach(function(overlay) {
+                                                    overlay.style.display = 'none';
+                                                });
+                                            """)
+                                            time.sleep(0.5)
+                                            
+                                            # Verify popup closed
+                                            if not is_popup_visible():
+                                                popup_closed = True
+                                                print(f"[WebCrawler] ✅ Popup closed with JavaScript")
+                                                break
+                                        except:
+                                            pass
+                                    
+                                    # If popup is closed, break
+                                    if popup_closed:
+                                        break
+                                    
+                                    # Wait before next attempt
+                                    time.sleep(0.3)
+                                except Exception as e:
+                                    print(f"[WebCrawler] Error closing popup (attempt {attempt+1}): {str(e)[:50]}")
+                                    time.sleep(0.3)
+                            
+                            if not popup_closed:
+                                print(f"[WebCrawler] ⚠️ Could not close popup for {member_name} after {max_close_attempts} attempts")
+                                # Last resort: reload page to reset state
+                                try:
+                                    print(f"[WebCrawler] 🔄 Reloading page to reset popup state...")
+                                    driver.refresh()
+                                    time.sleep(2)
+                                    # Re-find all team member cards after reload
+                                    # (This will be handled in the next iteration)
+                                except:
+                                    pass
+                        
+                        # Extra wait to ensure popup is fully closed and DOM is stable
+                        # Verify popup is actually closed before proceeding
+                        final_check_attempts = 5
+                        for check in range(final_check_attempts):
+                            if not is_popup_visible():
+                                break
+                            time.sleep(0.5)
+                            # Try closing again if still visible
+                            try:
+                                from selenium.webdriver.common.keys import Keys
+                                body = driver.find_element(By.TAG_NAME, "body")
+                                body.send_keys(Keys.ESCAPE)
+                                time.sleep(0.5)
+                            except:
+                                pass
+                        
+                        # Final verification
+                        if is_popup_visible():
+                            print(f"[WebCrawler] ⚠️ Popup still visible for {member_name}, forcing close...")
+                            try:
+                                driver.execute_script("""
+                                    var popups = document.querySelectorAll('.popup, .modal, [class*="popup"], [class*="modal"]');
+                                    popups.forEach(function(popup) {
+                                        popup.style.display = 'none';
+                                        popup.classList.remove('active', 'show', 'open');
+                                    });
+                                    var overlays = document.querySelectorAll('.overlay, .modal-backdrop, [class*="backdrop"]');
+                                    overlays.forEach(function(overlay) {
+                                        overlay.style.display = 'none';
+                                    });
+                                """)
+                                time.sleep(1.0)
+                            except:
+                                pass
+                        
+                        # Wait for DOM to fully stabilize before next click
+                        time.sleep(1.5)
+                        
+                        processed_count += 1
                         
                     except Exception as e:
-                        print(f"[WebCrawler] Error clicking element {i}: {e}")
+                        error_msg = str(e)
+                        if "stale" in error_msg.lower():
+                            print(f"[WebCrawler] Stale element error for element {i+1}, continuing...")
+                        else:
+                            print(f"[WebCrawler] Error processing element {i+1}: {error_msg[:100]}")
+                        # Continue to next element
                         continue
+                
+                print(f"[WebCrawler] Successfully processed {processed_count} team member elements")
                 
                 return team_members
                 
