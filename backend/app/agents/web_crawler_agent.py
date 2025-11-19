@@ -84,7 +84,76 @@ class WebCrawlerAgent:
         self.content_cache = {}
         self.cache_duration = 3600  # 1 hour cache
         
-        # No cached team member data - always crawl website for fresh information
+        # Fallback data for team members (used when database doesn't have them or extraction fails)
+        # Consistent team page URL for all entries
+        TEAM_PAGE_URL = 'https://prakriti.edu.in/team/'
+        
+        self.fallback_data = {
+            'Priyanka Oberoi': {
+                'name': 'Priyanka Oberoi',
+                'title': 'Facilitator Art & Design and Design & Technology',
+                'description': 'Priyanka is an artist and designer whose work blends India\'s cultural depth with Western artistic expression.',
+                'details': 'Teaching visually impaired children in 2014 inspired her inclusive, tactile approach to art. She holds a BFA from the College of Art, New Delhi, a dual Post graduation from NID, India and UCA, UK, and an MA in Graphic storytelling from LUCA school of arts, KU Leuven, Belgium. With experience in sports photography for leading international publications, she has also collaborated with scientists to create visual narratives and illustrated a board game for the Deutsches Museum. A certified mountaineer and recent graduate in Graphic Storytelling, Priyanka\'s art reflects curiosity, inclusivity, and creativity—values she looks forward to sharing at Prakriti.',
+                'full_content': 'Priyanka Oberoi\nFacilitator Art & Design and Design & Technology\n\nPriyanka is an artist and designer whose work blends India\'s cultural depth with Western artistic expression. Teaching visually impaired children in 2014 inspired her inclusive, tactile approach to art. She holds a BFA from the College of Art, New Delhi, a dual Post graduation from NID, India and UCA, UK, and an MA in Graphic storytelling from LUCA school of arts, KU Leuven, Belgium. With experience in sports photography for leading international publications, she has also collaborated with scientists to create visual narratives and illustrated a board game for the Deutsches Museum. A certified mountaineer and recent graduate in Graphic Storytelling, Priyanka\'s art reflects curiosity, inclusivity, and creativity—values she looks forward to sharing at Prakriti.',
+                'source_url': TEAM_PAGE_URL
+            },
+            'Ritu Martin': {
+                'name': 'Ritu Martin',
+                'title': 'Senior Primary Facilitator Sciences',
+                'description': 'Ritu Martin holds a B.Sc. in Biotechnology, a B.Ed., an MBA, and has completed the SEEL LI Facilitator course.',
+                'details': 'She believes that teaching is about nurturing the whole personality of a student, which begins with the teacher embodying the values they wish to impart. For Ritu, education is not about changing students but about self-growth—modeling integrity, curiosity, and empathy through everyday actions. She values the freedom to engage in focused, meaningful work and aligns deeply with the philosophy of becoming a better version of oneself each day, inspiring her students to do the same.',
+                'full_content': 'Ritu Martin\nSenior Primary Facilitator Sciences\n\nRitu Martin holds a B.Sc. in Biotechnology, a B.Ed., an MBA, and has completed the SEEL LI Facilitator course. She believes that teaching is about nurturing the whole personality of a student, which begins with the teacher embodying the values they wish to impart. For Ritu, education is not about changing students but about self-growth—modeling integrity, curiosity, and empathy through everyday actions. She values the freedom to engage in focused, meaningful work and aligns deeply with the philosophy of becoming a better version of oneself each day, inspiring her students to do the same.',
+                'source_url': TEAM_PAGE_URL
+            },
+            'Shuchi Mishra': {
+                'name': 'Shuchi Mishra',
+                'title': 'Facilitator',
+                'description': 'Mrs. Shuchi Mishra holds a Bachelor\'s degree in Psychology (Honours), Economics, and English, and a Master\'s in Psychology from Lucknow University.',
+                'details': 'She also completed her B.Ed. from Annamalai University and recently pursued the GSE4x: Introduction to Family Engagement in Education course from HarvardX. A National Scholarship recipient, Mrs. Mishra has over 30 years of teaching experience—18 years at Jaipuria School, Lucknow (ICSE) and 13 years at Sanskriti School, New Delhi (CBSE). She believes education must go beyond academics to nurture integrity, responsibility, and creativity. Her teaching philosophy emphasizes holistic growth through theatre, sports, debates, and experiential learning. Passionate about shaping young minds, she views teachers as key influences during a child\'s formative years—guiding not only intellectual development but also moral and social growth.',
+                'full_content': 'Shuchi Mishra\nFacilitator\n\nMrs. Shuchi Mishra holds a Bachelor\'s degree in Psychology (Honours), Economics, and English, and a Master\'s in Psychology from Lucknow University. She also completed her B.Ed. from Annamalai University and recently pursued the GSE4x: Introduction to Family Engagement in Education course from HarvardX. A National Scholarship recipient, Mrs. Mishra has over 30 years of teaching experience—18 years at Jaipuria School, Lucknow (ICSE) and 13 years at Sanskriti School, New Delhi (CBSE). She believes education must go beyond academics to nurture integrity, responsibility, and creativity. Her teaching philosophy emphasizes holistic growth through theatre, sports, debates, and experiential learning. Passionate about shaping young minds, she views teachers as key influences during a child\'s formative years—guiding not only intellectual development but also moral and social growth.',
+                'source_url': TEAM_PAGE_URL
+            },
+            'Gunjan Bhatia': {
+                'name': 'Gunjan Bhatia',
+                'title': 'Early Years Programme Facilitator',
+                'description': 'Gunjan Bhatia is a Nursery teacher in the Green group with an M.Phil in Economics.',
+                'details': 'She approaches teaching as a continuous journey of learning, believing that every method has value and that the true skill lies in selecting the pedagogy best suited to each child and context. With a focus on experiential learning, Gunjan encourages children to explore, question, and engage with their surroundings, fostering curiosity and independent thinking from an early age. She combines progressive educational practices with room for freedom, ensuring that every child feels empowered to learn at their own pace while developing critical social, emotional, and cognitive skills. Gunjan\'s classrooms are designed to be spaces where creativity, discovery, and growth are prioritized, and where learning becomes a meaningful and joyful experience. Her holistic approach ensures that each child is nurtured, guided, and inspired to develop their full potential.',
+                'full_content': 'Gunjan Bhatia\nEarly Years Programme Facilitator\n\nGunjan Bhatia is a Nursery teacher in the Green group with an M.Phil in Economics. She approaches teaching as a continuous journey of learning, believing that every method has value and that the true skill lies in selecting the pedagogy best suited to each child and context. With a focus on experiential learning, Gunjan encourages children to explore, question, and engage with their surroundings, fostering curiosity and independent thinking from an early age. She combines progressive educational practices with room for freedom, ensuring that every child feels empowered to learn at their own pace while developing critical social, emotional, and cognitive skills. Gunjan\'s classrooms are designed to be spaces where creativity, discovery, and growth are prioritized, and where learning becomes a meaningful and joyful experience. Her holistic approach ensures that each child is nurtured, guided, and inspired to develop their full potential.',
+                'source_url': TEAM_PAGE_URL
+            },
+            'Vidya Vishwanathan': {
+                'name': 'Vidya Vishwanathan',
+                'title': 'Upper Secondary, Global Perspectives Facilitator',
+                'description': 'Vidya Viswanathan is a researcher, writer, and curriculum advisor with a unique ability to identify emerging trends and connect insights to paint a broader picture.',
+                'details': 'She has interacted with academics, industry leaders, and innovators worldwide, often serving as a sounding board and storyteller. Her impactful journalism at Business Standard, Business World, and Business Today influenced industries, set trends, and shaped policy discussions. Starting as a programmer and equity researcher, she later explored financial journalism and diverse subjects. Passionate about alternative education, India\'s scientific, cultural, and spiritual heritage, Vidya now designs and advises on history and civics curriculum at Prakriti, fostering a generation proud of the country.',
+                'full_content': 'Vidya Vishwanathan\nUpper Secondary, Global Perspectives Facilitator\n\nVidya Viswanathan is a researcher, writer, and curriculum advisor with a unique ability to identify emerging trends and connect insights to paint a broader picture. She has interacted with academics, industry leaders, and innovators worldwide, often serving as a sounding board and storyteller. Her impactful journalism at Business Standard, Business World, and Business Today influenced industries, set trends, and shaped policy discussions. Starting as a programmer and equity researcher, she later explored financial journalism and diverse subjects. Passionate about alternative education, India\'s scientific, cultural, and spiritual heritage, Vidya now designs and advises on history and civics curriculum at Prakriti, fostering a generation proud of the country.',
+                'source_url': TEAM_PAGE_URL
+            },
+            'Gayatri Tahiliani': {
+                'name': 'Gayatri Tahiliani',
+                'title': 'Primary English and Math Curriculum Leader',
+                'description': 'Gayatri Tahiliani is the Primary English and Math Curriculum Leader at Prakriti.',
+                'details': 'She holds a Bachelor\'s in Elementary Education from Lady Shri Ram College, a Master\'s in History from IGNOU, and a Master\'s in Education with a specialization in Teaching and Teacher Leadership from Harvard University. In her role, Gayatri works closely with teachers to strengthen vertical and horizontal alignment of the English curriculum, mentor educators, and coordinate the new phonics program across the primary grades. Passionate about meaningful learning, she designs inquiry-driven classrooms where children explore, question, and develop a deep sense of connection and responsibility toward the world around them.',
+                'full_content': 'Gayatri Tahiliani\nPrimary English and Math Curriculum Leader\n\nGayatri Tahiliani is the Primary English and Math Curriculum Leader at Prakriti. She holds a Bachelor\'s in Elementary Education from Lady Shri Ram College, a Master\'s in History from IGNOU, and a Master\'s in Education with a specialization in Teaching and Teacher Leadership from Harvard University. In her role, Gayatri works closely with teachers to strengthen vertical and horizontal alignment of the English curriculum, mentor educators, and coordinate the new phonics program across the primary grades. Passionate about meaningful learning, she designs inquiry-driven classrooms where children explore, question, and develop a deep sense of connection and responsibility toward the world around them.',
+                'source_url': TEAM_PAGE_URL
+            },
+            'Vanila Ghai': {
+                'name': 'Vanila Ghai',
+                'title': 'Bridge Programme Facilitator',
+                'description': 'Vanila is a Finance professional with Corporate experience of a decade in BFSI sector.',
+                'details': 'She gave up her career to serve the community after her son got diagnosed with Autism Spectrum Disorder and dedicated herself to the cause. She pursued Diploma in Early Childhood – Special Education and is a RCI certified Practitioner. She finished her coursework of Behavior Analysis from the Florida Institute of Technologies, US and very recently finished her MA in Clinical Psychology from IGNOU. She holds a work experience of 5+ years for working with children with Autism and Developmental Disabilities.',
+                'full_content': 'Vanila Ghai\nBridge Programme Facilitator\n\nVanila is a Finance professional with Corporate experience of a decade in BFSI sector. She gave up her career to serve the community after her son got diagnosed with Autism Spectrum Disorder and dedicated herself to the cause. She pursued Diploma in Early Childhood – Special Education and is a RCI certified Practitioner. She finished her coursework of Behavior Analysis from the Florida Institute of Technologies, US and very recently finished her MA in Clinical Psychology from IGNOU. She holds a work experience of 5+ years for working with children with Autism and Developmental Disabilities.',
+                'source_url': TEAM_PAGE_URL
+            },
+            'Shraddha Rana Goel': {
+                'name': 'Shraddha Rana Goel',
+                'title': 'French Facilitator',
+                'description': 'Shraddha Rana Goel is the French Facilitator at Prakriti School.',
+                'details': 'Shraddha Rana Goel serves as the French Facilitator at Prakriti School, helping students learn and engage with the French language and culture.',
+                'full_content': 'Shraddha Rana Goel\nFrench Facilitator\n\nShraddha Rana Goel is the French Facilitator at Prakriti School, helping students learn and engage with the French language and culture.',
+                'source_url': TEAM_PAGE_URL
+            }
+        }
         
     def is_prakriti_related(self, query: str) -> bool:
         """Check if the query is related to PrakritSchool"""
@@ -147,43 +216,267 @@ class WebCrawlerAgent:
         query_lower = query.lower()
         return any(keyword in query_lower for keyword in team_keywords)
     
-    def is_specific_person_query(self, query: str) -> bool:
-        """Check if the query is asking about a specific person by name"""
+    def is_role_based_query(self, query: str) -> bool:
+        """Check if the query is asking about a role/specialization (e.g., 'French facilitator', 'Math teacher')"""
         query_lower = query.lower()
         
-        # First, check if the query contains a potential person name (2+ capitalized words)
-        import re
-        # Look for 2-word names specifically (First Last)
-        two_word_pattern = r'\b[a-zA-Z]+\s+[a-zA-Z]+\b'
-        potential_names = re.findall(two_word_pattern, query_lower)
+        # Normalize typos in query first (before checking keywords)
+        typo_corrections = {
+            'founde': 'founder',  # "co founde" -> "co founder"
+            'foundr': 'founder',
+            'founder': 'founder',
+            'co-founde': 'co-founder',
+            'cofounde': 'cofounder',
+            'facilatator': 'facilitator',
+            'facilator': 'facilitator',
+            'facilitater': 'facilitator',
+            'facilattor': 'facilitator',
+            'faciitator': 'facilitator',  # Handle "faciitator" typo (double 'i')
+            'faciitators': 'facilitators',  # Handle "faciitators" typo (double 'i')
+            'faclitators': 'facilitators',  # Handle "faclitators" typo
+            'faclitator': 'facilitator',  # Handle "faclitator" typo
+            'facilitators': 'facilitators',  # Plural form
+            'techer': 'teacher',
+            'teachr': 'teacher',
+            'coordinater': 'coordinator',
+            'coordinatr': 'coordinator',
+            'directer': 'director',
+            'principle': 'principal',
+            'princile': 'principal',  # Handle "princile" typo (missing 'a')
+            'principl': 'principal',  # Handle "principl" typo (missing 'e')
+            'princpal': 'principal',  # Handle "princpal" typo (missing 'i')
+            'menter': 'mentor'
+        }
         
-        # If still no potential names found, it's not a person query
-        if not potential_names:
+        # Apply typo corrections to query
+        normalized_query = query_lower
+        for typo, correct in typo_corrections.items():
+            normalized_query = normalized_query.replace(typo, correct)
+        
+        # Role/specialization keywords (subject/domain)
+        subject_keywords = [
+            'french', 'english', 'math', 'mathematics', 'science', 'physics', 'chemistry',
+            'biology', 'history', 'art', 'music', 'sports', 'pe', 'physical education',
+            'computer', 'it', 'technology', 'design', 'drama', 'theatre', 'dance',
+            'primary', 'secondary', 'upper', 'lower', 'early years', 'nursery', 'kindergarten'
+        ]
+        
+        # Role type keywords (with common misspellings)
+        role_type_keywords = [
+            'facilitator', 'facilitators', 'facilator', 'facilitater', 'facilattor', 'faclitator', 'faclitators',  # Handle misspellings
+            'teacher', 'techer', 'teachr',
+            'coordinator', 'coordinater', 'coordinatr',
+            'director', 'directer',
+            'principal', 'principle', 'princile', 'principl', 'princpal',  # Handle principal misspellings
+            'mentor', 'menter', 'chief mentor', 'chief',  # Add chief mentor
+            'faculty', 'faculties',  # Add faculty as role type
+            'founder', 'co-founder', 'cofounder', 'founding',  # Add founder roles
+            'chairperson', 'chair person', 'chairman', 'chairwoman'
+        ]
+        
+        # Check both original and normalized query
+        query_to_check = normalized_query
+        
+        # Check if query contains both a subject keyword AND a role type keyword
+        # Check both original and normalized query for typos
+        has_subject = any(keyword in query_to_check for keyword in subject_keywords)
+        has_role_type = any(keyword in query_to_check for keyword in role_type_keywords)
+        
+        # Debug logging
+        if has_subject or has_role_type:
+            matched_subjects = [kw for kw in subject_keywords if kw in query_to_check]
+            matched_roles = [kw for kw in role_type_keywords if kw in query_to_check]
+            if normalized_query != query_lower:
+                print(f"[WebCrawler] Typo detected: '{query_lower}' -> normalized: '{normalized_query}'")
+            print(f"[WebCrawler] Role-based query check: has_subject={has_subject} ({matched_subjects}), has_role_type={has_role_type} ({matched_roles})")
+        
+        # If it has both subject and role type, it's definitely a role-based query
+        if has_subject and has_role_type:
+            print(f"[WebCrawler] ✅ Confirmed role-based query (has both subject and role type)")
+            return True
+        
+        # Also check for role-only queries (without subject) like "who is the founder", "who is the principal"
+        # These are leadership/administrative roles that don't need a subject
+        leadership_roles = ['founder', 'co-founder', 'cofounder', 'founding', 'principal', 'director', 
+                           'chairperson', 'chair person', 'chairman', 'chairwoman', 'chief mentor', 'chief']
+        has_leadership_role = any(role in query_to_check for role in leadership_roles)
+        # Check for patterns like "who is the [role]" or "[role] of [organization]"
+        # Use normalized query to catch typos
+        if has_leadership_role:
+            leadership_patterns = [
+                r'who is the .+?\s+(?:founder|co-founder|cofounder|founding|principal|director|chairperson|chief mentor|chief)',
+                r'who is the (?:founder|co-founder|cofounder|founding|principal|director|chairperson|chief mentor|chief)',
+                r'(?:founder|co-founder|cofounder|founding|principal|director|chairperson|chief mentor|chief)\s+of',
+                r'the\s+(?:founder|co-founder|cofounder|founding|principal|director|chairperson|chief mentor|chief)',
+                r'co\s+(?:founder|founde|foundr)',  # Handle "co founde", "co founder", etc.
+                r'chief\s+mentor'  # Handle "chief mentor"
+            ]
+            import re
+            if any(re.search(pattern, query_to_check) for pattern in leadership_patterns):
+                print(f"[WebCrawler] ✅ Confirmed leadership role query (founder/principal/director/chief mentor)")
+                return True
+        
+        # Also check for patterns like "who is the [subject] [role]" or "[role] of [subject]"
+        # Make patterns more flexible to handle misspellings and additional text
+        import re
+        role_patterns = [
+            r'who is the .+?\s+(?:facilitator|facilitators|facilator|facilitater|facilattor|faclitator|faclitators|teacher|coordinator|faculty)',
+            r'who is the .+?\s+(?:facilitator|facilitators|facilator|facilitater|facilattor|faclitator|faclitators|teacher|coordinator|faculty)\s+',
+            r'.+?\s+(?:facilitator|facilitators|facilator|facilitater|facilattor|faclitator|faclitators|teacher|coordinator|faculty)',
+            r'(?:facilitator|facilitators|facilator|facilitater|facilattor|faclitator|faclitators|teacher|coordinator|faculty)\s+of',
+            r'(?:facilitator|facilitators|facilator|facilitater|facilattor|faclitator|faclitators|teacher|coordinator|faculty)\s+for',
+            r'the\s+.+?\s+(?:facilitator|facilitators|facilator|facilitater|facilattor|faclitator|faclitators|teacher|coordinator|faculty)',
+            r'who is the .+?\s+faculty',  # Pattern for "who is the art and design faculty"
+            r'.+?\s+(?:facilitator|facilitators|facilator|facilitater|facilattor|faclitator|faclitators)\s+in'  # "art and design facilitators in schools"
+        ]
+        
+        # Use normalized query for pattern matching to catch typos
+        has_role_pattern = any(re.search(pattern, query_to_check) for pattern in role_patterns)
+        
+        # If it has a role type keyword and matches a pattern, it's a role-based query
+        if has_role_type and has_role_pattern:
+            return True
+        
+        # Also check if query has subject + "faculty" (common pattern)
+        # Use normalized query to catch typos
+        if has_subject and 'faculty' in query_to_check:
+            return True
+        
+        return False
+    
+    def is_specific_person_query(self, query: str) -> bool:
+        """Check if the query is asking about a specific person by name"""
+        import re
+        
+        # CRITICAL: Remove punctuation first for better matching
+        query_clean = re.sub(r'[?!.,;:]+', '', query)
+        query_lower = query_clean.lower()
+        
+        # CRITICAL: FIRST check if this is a role-based query - if so, it's NOT a person query
+        # Role-based queries like "who is the Chief Mentor", "who is the chairperson" should be handled as roles
+        if self.is_role_based_query(query):
+            print(f"[WebCrawler] Excluding role-based query from person query detection: '{query}'")
             return False
         
-        # Check if the potential name is actually a person name (not common words)
-        # Exclude educational/academic terms, scientific concepts, and common phrases
-        common_words = ['little', 'bit', 'about', 'tell', 'me', 'who', 'is', 'information', 'details', 'cooking', 'recipes', 'admission', 'fees', 'school', 'program', 'course', 'prakriti', 'prakrit', 'roots', 'philosophy', 'article', 'articles', 'blog', 'news', 'calendar', 'event', 'admission', 'fee', 'curriculum', 'learning', 'learn', 'teaching', 'approach', 'want', 'newton', 'einstein', 'darwin', 'law', 'laws', 'theory', 'theorem', 'formula', 'concept', 'concepts', 'example', 'examples', 'explain', 'understand', 'help', 'solve', 'study', 'physics', 'chemistry', 'biology', 'math', 'mathematics', 'algebra', 'calculus']
+        # CRITICAL: Check for role titles that might be mistaken for person names
+        role_titles = ['chief mentor', 'chief', 'mentor', 'chairperson', 'chairman', 'chairwoman', 
+                      'director', 'principal', 'founder', 'co-founder', 'coordinator', 'facilitator',
+                      'teacher', 'faculty', 'head', 'leader', 'manager', 'administrator', 'admin']
+        query_words = query_lower.split()
+        # Check if query contains only role titles (not a person name)
+        if len(query_words) <= 3:  # Short queries are likely roles
+            if any(role in query_lower for role in role_titles):
+                # Check if it's a pattern like "who is the [role]" or "who is [role]"
+                if 'who is' in query_lower or 'tell me about' in query_lower:
+                    remaining = query_lower.replace('who is the', '').replace('who is', '').replace('tell me about', '').strip()
+                    if remaining and any(role in remaining for role in role_titles):
+                        print(f"[WebCrawler] Excluding role title query from person query detection: '{query}'")
+                        return False
         
-        # Also check for known person name patterns
-        person_name_patterns = ['mishra', 'batra', 'rana', 'goel', 'krishna', 'tayal', 'john', 'doe', 'smith', 'jones']
+        # CRITICAL: Check for "tell me about" pattern FIRST - this is ALWAYS a person query if it has a name
+        if 'tell me about' in query_lower:
+            # Extract potential name after "tell me about"
+            potential_name = query_lower.replace('tell me about', '').strip()
+            # CRITICAL: Exclude "vanilla" (flavor) - only "vanila" (person) should match
+            if potential_name.lower() == 'vanilla':
+                print(f"[WebCrawler] Excluding 'vanilla' (flavor) from person query detection")
+                return False
+            # Check if it looks like a name (1+ words, not all common words)
+            words = potential_name.split()
+            if len(words) >= 1:  # Changed from 2 to 1 to handle single names
+                # Check if it matches known team member names
+                known_names = ['priyanka', 'oberoi', 'shuchi', 'mishra', 'ritu', 'martin', 'gunjan', 'bhatia',
+                             'gayatri', 'tahiliani', 'vanila', 'ghai', 'vidya', 'vishwanathan', 'vinita', 'krishna',
+                             'bharti', 'batra', 'shraddha', 'rana', 'goel', 'shilpa', 'tayal', 'mridul', 'rahul']
+                if any(word in known_names for word in words):
+                    print(f"[WebCrawler] 'Tell me about' query detected with known name: {potential_name}")
+                    return True
+                # Even if not in known names, if it's 1-3 words, treat as person query
+                if 1 <= len(words) <= 3:
+                    print(f"[WebCrawler] 'Tell me about' query detected with potential name: {potential_name}")
+                    return True
+        
+        # Check for "who is" pattern with potential name
+        if 'who is' in query_lower or 'who is the' in query_lower:
+            # Extract potential name after "who is" or "who is the"
+            potential_name = query_lower.replace('who is the', '').replace('who is', '').strip()
+            # CRITICAL: Exclude "vanilla" (flavor) - only "vanila" (person) should match
+            if potential_name.lower() == 'vanilla':
+                print(f"[WebCrawler] Excluding 'vanilla' (flavor) from person query detection")
+                return False
+            words = potential_name.split()
+            if len(words) >= 1:  # Changed from 2 to 1
+                # Check if it matches known team member names
+                known_names = ['priyanka', 'oberoi', 'shuchi', 'mishra', 'ritu', 'martin', 'gunjan', 'bhatia',
+                             'gayatri', 'tahiliani', 'vanila', 'ghai', 'vidya', 'vishwanathan', 'vinita', 'krishna',
+                             'bharti', 'batra', 'shraddha', 'rana', 'goel', 'shilpa', 'tayal', 'mridul', 'rahul']
+                if any(word in known_names for word in words):
+                    print(f"[WebCrawler] 'Who is' query detected with known name: {potential_name}")
+                    return True
+                # If it's 1-3 words and not a role keyword, treat as person query
+                role_keywords = ['facilitator', 'teacher', 'principal', 'director', 'founder', 'coordinator',
+                              'mentor', 'chief', 'chairperson', 'chairman', 'chairwoman', 'head', 'leader']
+                if 1 <= len(words) <= 3 and not any(role in potential_name for role in role_keywords):
+                    print(f"[WebCrawler] 'Who is' query detected with potential name: {potential_name}")
+                    return True
+        
+        # Check if the query contains a potential person name (1+ words)
+        # Look for 1-3 word names (First, First Last, or First Middle Last)
+        name_pattern = r'\b[a-zA-Z]+(?:\s+[a-zA-Z]+){0,2}\b'
+        potential_names = re.findall(name_pattern, query_lower)
+        
+        # Filter out common words and check for known names
+        # CRITICAL: Exclude "vanilla" (flavor) - only "vanila" (person name) should match
+        common_words = ['little', 'bit', 'about', 'tell', 'me', 'who', 'is', 'information', 'details', 'cooking', 'recipes', 'admission', 'fees', 'school', 'program', 'course', 'prakriti', 'prakrit', 'roots', 'philosophy', 'article', 'articles', 'blog', 'news', 'calendar', 'event', 'admission', 'fee', 'curriculum', 'learning', 'learn', 'teaching', 'approach', 'want', 'newton', 'einstein', 'darwin', 'law', 'laws', 'theory', 'theorem', 'formula', 'concept', 'concepts', 'example', 'examples', 'explain', 'understand', 'help', 'solve', 'study', 'physics', 'chemistry', 'biology', 'math', 'mathematics', 'algebra', 'calculus', 'french', 'english', 'facilitator', 'teacher', 'coordinator',
+                       'founder', 'founde', 'foundr', 'co-founder', 'cofounder', 'founding', 'director', 'principal', 
+                       'chairperson', 'chairman', 'chairwoman', 'mentor', 'faculty', 'co', 'founde', 'the', 'vanilla']
+        
+        # Known person name patterns (first and last names)
+        known_first_names = ['priyanka', 'shuchi', 'ritu', 'gunjan', 'gayatri', 'vanila', 'vidya', 
+                           'vinita', 'bharti', 'shraddha', 'shilpa', 'mridul', 'rahul']
+        known_last_names = ['oberoi', 'mishra', 'martin', 'bhatia', 'tahiliani', 'ghai', 'vishwanathan',
+                          'krishna', 'batra', 'rana', 'goel', 'tayal']
+        person_name_patterns = known_first_names + known_last_names
         
         for name in potential_names:
-            name_lower = name.lower()
+            name_lower = name.lower().strip()
+            # Skip if empty or too short
+            if not name_lower or len(name_lower) < 3:
+                continue
+                
             # Check if the name itself contains common words (not just the original query)
             name_words = name_lower.split()
             contains_common_words = any(word in common_words for word in name_words)
             
+            # Check if it contains known person name patterns
+            contains_known_name = any(pattern in name_lower for pattern in person_name_patterns)
+            
             # Check if it's NOT a common word AND either looks like a person name OR contains known person name patterns
-            if (not contains_common_words and 
-                (len(name.split()) >= 2 or any(pattern in name_lower for pattern in person_name_patterns))):
+            if not contains_common_words and (len(name_words) >= 1 or contains_known_name):
+                # Additional check: if it's a single word, it should be a known first or last name
+                if len(name_words) == 1:
+                    if name_lower in known_first_names or name_lower in known_last_names:
+                        print(f"[WebCrawler] Single word name match: '{name_lower}'")
+                        return True
+                else:
+                    # Multiple words - check if any word is a known name
+                    if any(word in known_first_names or word in known_last_names for word in name_words):
+                        print(f"[WebCrawler] Multi-word name match: '{name_lower}'")
+                        return True
+                    # Or if it's 2-3 words and doesn't contain common words, treat as person query
+                    if 2 <= len(name_words) <= 3:
+                        print(f"[WebCrawler] Potential name pattern: '{name_lower}'")
                 return True
         
         return False
     
     def extract_person_name(self, query: str) -> str:
         """Extract potential person name from query"""
-        query_lower = query.lower()
+        import re
+        
+        # CRITICAL: Remove punctuation first (question marks, exclamation marks, etc.)
+        query_clean = re.sub(r'[?!.,;:]+', '', query)
+        query_lower = query_clean.lower()
         
         # Remove common question words and patterns
         cleaned_query = query_lower
@@ -202,22 +495,25 @@ class WebCrawlerAgent:
             cleaned_query = cleaned_query.replace(pattern, '').strip()
         
         # Remove individual common words that might interfere
-        common_words = ['little', 'bit', 'about', 'of', 'the', 'a', 'an', 'and', 'or', 'but', 'give', 'me', 'information', 'details', 'litle', 'info', 'check', 'for', 'this', 'that', 'these', 'those', 'with', 'introduction', 'detail', 'what', 'facilaor', 'facilitator']
+        # Also exclude role-related terms that might be mistaken for names
+        common_words = ['little', 'bit', 'about', 'of', 'the', 'a', 'an', 'and', 'or', 'but', 'give', 'me', 'information', 'details', 'litle', 'info', 'check', 'for', 'this', 'that', 'these', 'those', 'with', 'introduction', 'detail', 'what', 'facilaor', 'facilitator', 
+                       'founder', 'founde', 'foundr', 'co-founder', 'cofounder', 'founding', 'director', 'principal', 
+                       'chairperson', 'chairman', 'chairwoman', 'coordinator', 'mentor', 'chief', 'teacher', 'faculty',
+                       'head', 'leader', 'manager', 'administrator', 'admin']
         words = cleaned_query.split()
         cleaned_words = [word for word in words if word.lower() not in common_words]
         cleaned_query = ' '.join(cleaned_words)
         
         # Remove team context words
-        team_words = ['team', 'staff', 'faculty', 'teacher', 'member', 'of prakriti', 'at prakriti']
+        team_words = ['team', 'staff', 'faculty', 'teacher', 'member', 'of prakriti', 'at prakriti', 'prakriti', 'school']
         for word in team_words:
             cleaned_query = cleaned_query.replace(word, '').strip()
         
-        # Clean up extra spaces and common words
-        cleaned_query = cleaned_query.replace('  ', ' ').strip()
+        # Clean up extra spaces
+        cleaned_query = re.sub(r'\s+', ' ', cleaned_query).strip()
         
         # Extract name using regex pattern (First Last or First Middle Last)
-        import re
-        name_pattern = r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}\b'
+        name_pattern = r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\b'  # Changed to allow 1-3 words (0-2 additional words)
         matches = re.findall(name_pattern, cleaned_query.title())
         
         if matches:
@@ -228,38 +524,172 @@ class WebCrawlerAgent:
             if not any(word in longest_match.lower() for word in common_words):
                 return longest_match
         
-        # Fallback: If we have a reasonable length name (2+ words), return it
+        # Fallback: If we have a reasonable length name (1+ words), return it
+        # But first check if it looks like a name (not all common words)
         words = cleaned_query.split()
-        if len(words) >= 2:
-            return ' '.join(words).title()
+        if len(words) >= 1:  # Changed from 2 to 1 to handle single names like "vanila"
+            # Check if any word matches known team member names
+            known_first_names = ['priyanka', 'shuchi', 'ritu', 'gunjan', 'gayatri', 'vanila', 'vidya', 
+                               'vinita', 'bharti', 'shraddha', 'shilpa', 'mridul', 'rahul']
+            known_last_names = ['oberoi', 'mishra', 'martin', 'bhatia', 'tahiliani', 'ghai', 'vishwanathan',
+                              'krishna', 'batra', 'rana', 'goel', 'tayal']
+            
+            # If any word matches known names, it's likely a person name
+            if any(word.lower() in known_first_names or word.lower() in known_last_names for word in words):
+                extracted_name = ' '.join(words).title()
+                print(f"[WebCrawler] Extracted name from known names: '{extracted_name}'")
+                return extracted_name
+            
+            # Also check if it matches a known full name pattern (even partial)
+            full_name_lower = ' '.join(words).lower()
+            known_full_names = ['priyanka oberoi', 'shuchi mishra', 'ritu martin', 'gunjan bhatia',
+                              'gayatri tahiliani', 'vanila ghai', 'vidya vishwanathan', 'vinita krishna',
+                              'bharti batra', 'shraddha rana goel', 'shilpa tayal', 'mridul batra', 'rahul batra']
+            for known_name in known_full_names:
+                # Check if query matches known name or contains parts of it
+                if full_name_lower == known_name or (words[0].lower() in known_name and (len(words) == 1 or words[-1].lower() in known_name)):
+                    extracted_name = ' '.join(word.capitalize() for word in known_name.split())
+                    print(f"[WebCrawler] Matched known full name: '{extracted_name}'")
+                    return extracted_name
+            
+            # If single word matches a known first name, try to find full name
+            if len(words) == 1 and words[0].lower() in known_first_names:
+                # Find the full name for this first name
+                for known_name in known_full_names:
+                    if known_name.startswith(words[0].lower()):
+                        extracted_name = ' '.join(word.capitalize() for word in known_name.split())
+                        print(f"[WebCrawler] Matched first name to full name: '{extracted_name}'")
+                        return extracted_name
+            
+            # Otherwise, return it if it's 1-3 words (likely a name)
+            if 1 <= len(words) <= 3:
+                return ' '.join(words).title()
         
         return cleaned_query.title() if cleaned_query else ""
+    
+    def normalize_person_name(self, person_name: str, preserve_single_name: bool = False) -> str:
+        """Normalize person name to handle common misspellings and punctuation
+        
+        Args:
+            person_name: The name to normalize
+            preserve_single_name: If True, don't expand single names to full names (for multiple-match checks)
+        """
+        if not person_name:
+            return person_name
+        
+        # CRITICAL: Remove punctuation first (question marks, exclamation marks, etc.)
+        import re
+        person_name = re.sub(r'[?!.,;:]+', '', person_name).strip()
+        
+        person_name_lower = person_name.lower()
+        
+        # Common misspellings mapping (partial matches)
+        name_corrections = {
+            'mishara': 'mishra',
+            'misahra': 'mishra',  # Handle "Misahra" vs "Mishra"
+            'vishvanathan': 'vishwanathan',
+            'viswanathan': 'vishwanathan',
+            'shradha': 'shraddha',  # Handle "Shradha" vs "Shraddha"
+        }
+        
+        # Known team member names for fuzzy matching
+        known_team_members = [
+            'shuchi mishra', 'priyanka oberoi', 'ritu martin', 'gunjan bhatia',
+            'gayatri tahiliani', 'vanila ghai', 'vidya vishwanathan',
+            'vinita krishna', 'bharti batra', 'sh h c batra', 'shilpa tayal',
+            'mridul batra', 'rahul batra', 'shraddha rana goel', 'dr. priyanka jain bhabu'
+        ]
+        
+        # Try to correct common misspellings
+        corrected_name = person_name
+        for misspelling, correct in name_corrections.items():
+            if misspelling in person_name_lower:
+                # Replace the misspelled part
+                corrected_name = person_name_lower.replace(misspelling, correct)
+                # Capitalize properly
+                corrected_name = ' '.join(word.capitalize() for word in corrected_name.split())
+                print(f"[WebCrawler] Corrected name: '{person_name}' -> '{corrected_name}'")
+                break
+        
+        # If no correction found, try fuzzy matching with known team members
+        # BUT: If preserve_single_name is True and it's a single name, don't expand it
+        if corrected_name == person_name:
+            person_words = person_name_lower.split()
+            
+            # CRITICAL: If preserve_single_name is True and it's a single name, don't expand
+            if preserve_single_name and len(person_words) == 1:
+                # Just capitalize the first letter, don't expand to full name
+                corrected_name = person_name.capitalize()
+                print(f"[WebCrawler] Preserving single name (no expansion): '{person_name}' -> '{corrected_name}'")
+                return corrected_name
+            
+            # If single word (like "vanila"), try to match to full name
+            if len(person_words) == 1:
+                for known_name in known_team_members:
+                    known_words = known_name.split()
+                    if len(known_words) >= 1 and person_words[0] == known_words[0]:
+                        corrected_name = ' '.join(word.capitalize() for word in known_name.split())
+                        print(f"[WebCrawler] Matched single name to full name: '{person_name}' -> '{corrected_name}'")
+                        break
+            
+            # If multiple words, try fuzzy matching
+            if len(person_words) >= 1:
+                for known_name in known_team_members:
+                    known_words = known_name.split()
+                    
+                    # Check if first name matches
+                    if len(known_words) >= 1 and person_words[0] == known_words[0]:
+                        # If only one word in person_name, match to full known name
+                        if len(person_words) == 1:
+                            corrected_name = ' '.join(word.capitalize() for word in known_name.split())
+                            print(f"[WebCrawler] Matched first name to full name: '{person_name}' -> '{corrected_name}'")
+                            break
+                        # If multiple words, check if last name matches
+                        elif len(person_words) >= 2 and len(known_words) >= 2:
+                            person_last = person_words[-1]
+                            known_last = known_words[-1]
+                            
+                            # Simple fuzzy match: check if one contains the other or they're very similar
+                            if (person_last in known_last or known_last in person_last or 
+                                abs(len(person_last) - len(known_last)) <= 2):
+                                corrected_name = ' '.join(word.capitalize() for word in known_name.split())
+                                print(f"[WebCrawler] Fuzzy matched name: '{person_name}' -> '{corrected_name}'")
+                                break
+        
+        return corrected_name
     
     def search_specific_person(self, person_name: str, content_list: List[Dict[str, str]]) -> Dict[str, str]:
         """Search for specific person details in crawled content"""
         if not person_name:
             return {}
         
-        person_name_lower = person_name.lower()
+        # Normalize the name to handle misspellings
+        normalized_name = self.normalize_person_name(person_name)
+        person_name_lower = normalized_name.lower()
+        original_name_lower = person_name.lower()
         
         # FIRST: Check team_member_data table (fastest, most accurate for popup data)
         if SUPABASE_AVAILABLE:
             try:
                 supabase = get_supabase_client()
                 # Search for person in team_member_data (case-insensitive)
-                team_result = supabase.table('team_member_data').select('*').eq('is_active', True).ilike('name', f'%{person_name}%').limit(1).execute()
+                # Try both original and normalized name
+                search_terms = [normalized_name, person_name] if normalized_name != person_name else [person_name]
                 
-                if team_result.data and len(team_result.data) > 0:
-                    member = team_result.data[0]
-                    print(f"[WebCrawler] ✅ Found {person_name} in team_member_data table")
-                    return {
-                        'found': True,
-                        'name': member.get('name', person_name),
-                        'title': member.get('title', ''),
-                        'description': member.get('description', ''),
-                        'content': member.get('details', '') or member.get('full_content', ''),
-                        'url': member.get('source_url', 'https://prakriti.edu.in/team/')
-                    }
+                for search_term in search_terms:
+                    team_result = supabase.table('team_member_data').select('*').eq('is_active', True).ilike('name', f'%{search_term}%').limit(1).execute()
+                    
+                    if team_result.data and len(team_result.data) > 0:
+                        member = team_result.data[0]
+                        print(f"[WebCrawler] ✅ Found {search_term} in team_member_data table")
+                        return {
+                            'found': True,
+                            'name': member.get('name', normalized_name),
+                            'title': member.get('title', ''),
+                            'description': member.get('description', ''),
+                            'content': member.get('details', '') or member.get('full_content', ''),
+                            'url': member.get('source_url', 'https://prakriti.edu.in/team/')
+                        }
             except Exception as e:
                 print(f"[WebCrawler] Error checking team_member_data: {e}")
         
@@ -267,15 +697,19 @@ class WebCrawlerAgent:
         if not content_list:
             return {}
         
+        # Search terms: try both normalized and original name
+        search_terms = [normalized_name.lower(), original_name_lower] if normalized_name.lower() != original_name_lower else [person_name_lower]
+        
         # First, try to find the person in regular content
         for content in content_list:
             # Search in title
             if content.get('title'):
                 title_lower = content['title'].lower()
-                if person_name_lower in title_lower:
+                # Check if any search term matches
+                if any(term in title_lower for term in search_terms):
                     return {
                         'found': True,
-                        'name': person_name,
+                        'name': normalized_name,  # Use normalized name
                         'title': content['title'],
                         'description': content.get('description', ''),
                         'content': content.get('main_content', ''),
@@ -287,22 +721,29 @@ class WebCrawlerAgent:
                 main_content = content['main_content']
                 main_content_lower = main_content.lower()
                 
-                # Check if person name appears in content
-                if person_name_lower in main_content_lower:
+                # Check if any search term appears in content
+                matched_term = None
+                for term in search_terms:
+                    if term in main_content_lower:
+                        matched_term = term
+                        break
+                
+                if matched_term:
                     # Extract sentences around the person's name
                     sentences = main_content.split('.')
                     relevant_sentences = []
                     
                     for sentence in sentences:
                         sentence_lower = sentence.lower()
-                        if person_name_lower in sentence_lower:
+                        # Check if any search term is in the sentence
+                        if any(term in sentence_lower for term in search_terms):
                             relevant_sentences.append(sentence.strip())
                     
                     if relevant_sentences:
                         return {
                             'found': True,
-                            'name': person_name,
-                            'title': content.get('title', f'Information about {person_name}'),
+                            'name': normalized_name,  # Use normalized name
+                            'title': content.get('title', f'Information about {normalized_name}'),
                             'description': content.get('description', ''),
                             'content': '. '.join(relevant_sentences[:3]),
                             'url': content.get('url', '')
@@ -312,26 +753,28 @@ class WebCrawlerAgent:
         team_urls = [content.get('url') for content in content_list if 'team' in content.get('url', '').lower()]
         
         if team_urls:
-            print(f"[WebCrawler] Trying Selenium extraction for {person_name} from team page")
+            print(f"[WebCrawler] Trying Selenium extraction for {normalized_name} from team page")
             team_members = self.extract_team_members_with_selenium(team_urls[0])
             
-            # Check if the person is in the Selenium results
+            # Check if the person is in the Selenium results (try both normalized and original name)
             for member_name, member_info in team_members.items():
-                if person_name_lower in member_name.lower():
+                member_name_lower = member_name.lower()
+                # Check if any search term matches
+                if any(term in member_name_lower for term in search_terms):
                     return {
                         'found': True,
-                        'name': person_name,
-                        'title': f'Team Member - {member_name}',
-                        'description': member_info.get('details', ''),
-                        'content': member_info.get('full_content', ''),
+                        'name': member_name,  # Use the actual member name from database
+                        'title': member_info.get('title', f'Team Member - {member_name}'),
+                        'description': member_info.get('description', ''),
+                        'content': member_info.get('details', '') or member_info.get('full_content', ''),
                         'url': team_urls[0]
                     }
         
         # No cached data - return not found message
         return {
             'found': False,
-            'name': person_name,
-            'message': f"Information about {person_name} is not currently available on our team page. We're continuously updating our team profiles, so please check back later or contact us directly for more information."
+            'name': normalized_name,  # Use normalized name
+            'message': f"Information about {normalized_name} is not currently available on our team page. We're continuously updating our team profiles, so please check back later or contact us directly for more information."
         }
     
     def is_article_related(self, query: str) -> bool:
@@ -1134,58 +1577,8 @@ class WebCrawlerAgent:
             url: Team page URL to crawl
             process_all: If True, process all team members. If False, limit to 3 for speed (default).
         """
-        # Fallback data for team members that fail extraction or have minimal data
-        fallback_data = {
-            'Priyanka Oberoi': {
-                'name': 'Priyanka Oberoi',
-                'title': 'Facilitator Art & Design and Design & Technology',
-                'description': 'Priyanka is an artist and designer whose work blends India\'s cultural depth with Western artistic expression.',
-                'details': 'Teaching visually impaired children in 2014 inspired her inclusive, tactile approach to art. She holds a BFA from the College of Art, New Delhi, a dual Post graduation from NID, India and UCA, UK, and an MA in Graphic storytelling from LUCA school of arts, KU Leuven, Belgium. With experience in sports photography for leading international publications, she has also collaborated with scientists to create visual narratives and illustrated a board game for the Deutsches Museum. A certified mountaineer and recent graduate in Graphic Storytelling, Priyanka\'s art reflects curiosity, inclusivity, and creativity—values she looks forward to sharing at Prakriti.',
-                'full_content': 'Priyanka Oberoi\nFacilitator Art & Design and Design & Technology\n\nPriyanka is an artist and designer whose work blends India\'s cultural depth with Western artistic expression. Teaching visually impaired children in 2014 inspired her inclusive, tactile approach to art. She holds a BFA from the College of Art, New Delhi, a dual Post graduation from NID, India and UCA, UK, and an MA in Graphic storytelling from LUCA school of arts, KU Leuven, Belgium. With experience in sports photography for leading international publications, she has also collaborated with scientists to create visual narratives and illustrated a board game for the Deutsches Museum. A certified mountaineer and recent graduate in Graphic Storytelling, Priyanka\'s art reflects curiosity, inclusivity, and creativity—values she looks forward to sharing at Prakriti.'
-            },
-            'Ritu Martin': {
-                'name': 'Ritu Martin',
-                'title': 'Senior Primary Facilitator Sciences',
-                'description': 'Ritu Martin holds a B.Sc. in Biotechnology, a B.Ed., an MBA, and has completed the SEEL LI Facilitator course.',
-                'details': 'She believes that teaching is about nurturing the whole personality of a student, which begins with the teacher embodying the values they wish to impart. For Ritu, education is not about changing students but about self-growth—modeling integrity, curiosity, and empathy through everyday actions. She values the freedom to engage in focused, meaningful work and aligns deeply with the philosophy of becoming a better version of oneself each day, inspiring her students to do the same.',
-                'full_content': 'Ritu Martin\nSenior Primary Facilitator Sciences\n\nRitu Martin holds a B.Sc. in Biotechnology, a B.Ed., an MBA, and has completed the SEEL LI Facilitator course. She believes that teaching is about nurturing the whole personality of a student, which begins with the teacher embodying the values they wish to impart. For Ritu, education is not about changing students but about self-growth—modeling integrity, curiosity, and empathy through everyday actions. She values the freedom to engage in focused, meaningful work and aligns deeply with the philosophy of becoming a better version of oneself each day, inspiring her students to do the same.'
-            },
-            'Shuchi Mishra': {
-                'name': 'Shuchi Mishra',
-                'title': 'Facilitator',
-                'description': 'Mrs. Shuchi Mishra holds a Bachelor\'s degree in Psychology (Honours), Economics, and English, and a Master\'s in Psychology from Lucknow University.',
-                'details': 'She also completed her B.Ed. from Annamalai University and recently pursued the GSE4x: Introduction to Family Engagement in Education course from HarvardX. A National Scholarship recipient, Mrs. Mishra has over 30 years of teaching experience—18 years at Jaipuria School, Lucknow (ICSE) and 13 years at Sanskriti School, New Delhi (CBSE). She believes education must go beyond academics to nurture integrity, responsibility, and creativity. Her teaching philosophy emphasizes holistic growth through theatre, sports, debates, and experiential learning. Passionate about shaping young minds, she views teachers as key influences during a child\'s formative years—guiding not only intellectual development but also moral and social growth.',
-                'full_content': 'Shuchi Mishra\nFacilitator\n\nMrs. Shuchi Mishra holds a Bachelor\'s degree in Psychology (Honours), Economics, and English, and a Master\'s in Psychology from Lucknow University. She also completed her B.Ed. from Annamalai University and recently pursued the GSE4x: Introduction to Family Engagement in Education course from HarvardX. A National Scholarship recipient, Mrs. Mishra has over 30 years of teaching experience—18 years at Jaipuria School, Lucknow (ICSE) and 13 years at Sanskriti School, New Delhi (CBSE). She believes education must go beyond academics to nurture integrity, responsibility, and creativity. Her teaching philosophy emphasizes holistic growth through theatre, sports, debates, and experiential learning. Passionate about shaping young minds, she views teachers as key influences during a child\'s formative years—guiding not only intellectual development but also moral and social growth.'
-            },
-            'Gunjan Bhatia': {
-                'name': 'Gunjan Bhatia',
-                'title': 'Early Years Programme Facilitator',
-                'description': 'Gunjan Bhatia is a Nursery teacher in the Green group with an M.Phil in Economics.',
-                'details': 'She approaches teaching as a continuous journey of learning, believing that every method has value and that the true skill lies in selecting the pedagogy best suited to each child and context. With a focus on experiential learning, Gunjan encourages children to explore, question, and engage with their surroundings, fostering curiosity and independent thinking from an early age. She combines progressive educational practices with room for freedom, ensuring that every child feels empowered to learn at their own pace while developing critical social, emotional, and cognitive skills. Gunjan\'s classrooms are designed to be spaces where creativity, discovery, and growth are prioritized, and where learning becomes a meaningful and joyful experience. Her holistic approach ensures that each child is nurtured, guided, and inspired to develop their full potential.',
-                'full_content': 'Gunjan Bhatia\nEarly Years Programme Facilitator\n\nGunjan Bhatia is a Nursery teacher in the Green group with an M.Phil in Economics. She approaches teaching as a continuous journey of learning, believing that every method has value and that the true skill lies in selecting the pedagogy best suited to each child and context. With a focus on experiential learning, Gunjan encourages children to explore, question, and engage with their surroundings, fostering curiosity and independent thinking from an early age. She combines progressive educational practices with room for freedom, ensuring that every child feels empowered to learn at their own pace while developing critical social, emotional, and cognitive skills. Gunjan\'s classrooms are designed to be spaces where creativity, discovery, and growth are prioritized, and where learning becomes a meaningful and joyful experience. Her holistic approach ensures that each child is nurtured, guided, and inspired to develop their full potential.'
-            },
-            'Vidya Vishwanathan': {
-                'name': 'Vidya Vishwanathan',
-                'title': 'Upper Secondary, Global Perspectives Facilitator',
-                'description': 'Vidya Viswanathan is a researcher, writer, and curriculum advisor with a unique ability to identify emerging trends and connect insights to paint a broader picture.',
-                'details': 'She has interacted with academics, industry leaders, and innovators worldwide, often serving as a sounding board and storyteller. Her impactful journalism at Business Standard, Business World, and Business Today influenced industries, set trends, and shaped policy discussions. Starting as a programmer and equity researcher, she later explored financial journalism and diverse subjects. Passionate about alternative education, India\'s scientific, cultural, and spiritual heritage, Vidya now designs and advises on history and civics curriculum at Prakriti, fostering a generation proud of the country.',
-                'full_content': 'Vidya Vishwanathan\nUpper Secondary, Global Perspectives Facilitator\n\nVidya Viswanathan is a researcher, writer, and curriculum advisor with a unique ability to identify emerging trends and connect insights to paint a broader picture. She has interacted with academics, industry leaders, and innovators worldwide, often serving as a sounding board and storyteller. Her impactful journalism at Business Standard, Business World, and Business Today influenced industries, set trends, and shaped policy discussions. Starting as a programmer and equity researcher, she later explored financial journalism and diverse subjects. Passionate about alternative education, India\'s scientific, cultural, and spiritual heritage, Vidya now designs and advises on history and civics curriculum at Prakriti, fostering a generation proud of the country.'
-            },
-            'Gayatri Tahiliani': {
-                'name': 'Gayatri Tahiliani',
-                'title': 'Primary English and Math Curriculum Leader',
-                'description': 'Gayatri Tahiliani is the Primary English and Math Curriculum Leader at Prakriti.',
-                'details': 'She holds a Bachelor\'s in Elementary Education from Lady Shri Ram College, a Master\'s in History from IGNOU, and a Master\'s in Education with a specialization in Teaching and Teacher Leadership from Harvard University. In her role, Gayatri works closely with teachers to strengthen vertical and horizontal alignment of the English curriculum, mentor educators, and coordinate the new phonics program across the primary grades. Passionate about meaningful learning, she designs inquiry-driven classrooms where children explore, question, and develop a deep sense of connection and responsibility toward the world around them.',
-                'full_content': 'Gayatri Tahiliani\nPrimary English and Math Curriculum Leader\n\nGayatri Tahiliani is the Primary English and Math Curriculum Leader at Prakriti. She holds a Bachelor\'s in Elementary Education from Lady Shri Ram College, a Master\'s in History from IGNOU, and a Master\'s in Education with a specialization in Teaching and Teacher Leadership from Harvard University. In her role, Gayatri works closely with teachers to strengthen vertical and horizontal alignment of the English curriculum, mentor educators, and coordinate the new phonics program across the primary grades. Passionate about meaningful learning, she designs inquiry-driven classrooms where children explore, question, and develop a deep sense of connection and responsibility toward the world around them.'
-            },
-            'Vanila Ghai': {
-                'name': 'Vanila Ghai',
-                'title': 'Bridge Programme Facilitator',
-                'description': 'Vanila is a Finance professional with Corporate experience of a decade in BFSI sector.',
-                'details': 'She gave up her career to serve the community after her son got diagnosed with Autism Spectrum Disorder and dedicated herself to the cause. She pursued Diploma in Early Childhood – Special Education and is a RCI certified Practitioner. She finished her coursework of Behavior Analysis from the Florida Institute of Technologies, US and very recently finished her MA in Clinical Psychology from IGNOU. She holds a work experience of 5+ years for working with children with Autism and Developmental Disabilities.',
-                'full_content': 'Vanila Ghai\nBridge Programme Facilitator\n\nVanila is a Finance professional with Corporate experience of a decade in BFSI sector. She gave up her career to serve the community after her son got diagnosed with Autism Spectrum Disorder and dedicated herself to the cause. She pursued Diploma in Early Childhood – Special Education and is a RCI certified Practitioner. She finished her coursework of Behavior Analysis from the Florida Institute of Technologies, US and very recently finished her MA in Clinical Psychology from IGNOU. She holds a work experience of 5+ years for working with children with Autism and Developmental Disabilities.'
-            }
-        }
+        # Use class-level fallback_data
+        fallback_data = self.fallback_data
         
         try:
             print(f"[WebCrawler] Using Selenium to extract team members from: {url}")
@@ -2627,7 +3020,1410 @@ class WebCrawlerAgent:
     def get_enhanced_response(self, query: str) -> str:
         """Get enhanced response with web crawling for PrakritSchool queries"""
         print(f"[WebCrawler] Getting enhanced response for: {query}")
-        print(f"[WebCrawler] 🔍 Cache check priority: 1) web_crawler_data table → 2) search_cache table → 3) Web crawl")
+        print(f"[WebCrawler] 🔍 Cache check priority: 1) team_member_data (for person queries) → 2) web_crawler_data table → 3) search_cache table → 4) Web crawl")
+        
+        query_lower = query.lower()
+        
+        # PRIORITY 0: Check if this is a role-based query (e.g., "French facilitator", "Math teacher")
+        # This should be checked BEFORE person queries
+        if self.is_role_based_query(query):
+            print(f"[WebCrawler] Detected role-based query: {query}")
+            
+            # Normalize typos in query first
+            typo_corrections = {
+                'founde': 'founder', 'foundr': 'founder', 'co-founde': 'co-founder',
+                'cofounde': 'cofounder', 'facilatator': 'facilitator', 'facilator': 'facilitator',
+                'facilitater': 'facilitator', 'facilattor': 'facilitator', 'faciitator': 'facilitator',
+                'faciitators': 'facilitators', 'faclitator': 'facilitator', 'faclitators': 'facilitators',
+                'techer': 'teacher', 'teachr': 'teacher',
+                'coordinater': 'coordinator', 'coordinatr': 'coordinator',
+                'directer': 'director', 'principle': 'principal', 'princile': 'principal',
+                'principl': 'principal', 'princpal': 'principal', 'menter': 'mentor'
+            }
+            normalized_query_lower = query_lower
+            for typo, correct in typo_corrections.items():
+                normalized_query_lower = normalized_query_lower.replace(typo, correct)
+            
+            # Extract role keywords from normalized query
+            role_keywords = []
+            query_lower_full = normalized_query_lower  # Use normalized query for phrase matching
+            
+            # Check for leadership roles first (founder, co-founder, principal, director, chief mentor, chairperson)
+            # Use normalized query to catch typos
+            leadership_roles = ['founder', 'co-founder', 'cofounder', 'founding', 'principal', 'director', 
+                              'chairperson', 'chair person', 'chairman', 'chairwoman', 'chief mentor', 'chief', 'mentor']
+            has_leadership_role = any(role in normalized_query_lower for role in leadership_roles)
+            
+            # Check for multi-word phrases first
+            multi_word_phrases = ['early years', 'physical education', 'prakriti school', 'prakrit school', 'art and design', 'art & design']
+            for phrase in multi_word_phrases:
+                if phrase in query_lower_full:
+                    # Extract individual words from phrase
+                    for word in phrase.split():
+                        # Skip common words like "and", "&"
+                        if word not in ['and', '&', 'the', 'of', 'for'] and word not in role_keywords:
+                            role_keywords.append(word)
+            
+            query_words = normalized_query_lower.split()  # Use normalized query
+            role_indicators = ['french', 'english', 'math', 'mathematics', 'science', 'physics', 'chemistry', 
+                             'biology', 'history', 'art', 'music', 'sports', 'pe', 'computer', 'it', 
+                             'technology', 'design', 'drama', 'theatre', 'dance', 'primary', 'secondary',
+                             'upper', 'lower', 'early', 'years', 'nursery', 'kindergarten']
+            
+            # Role type mapping (misspelling -> correct spelling)
+            role_type_mapping = {
+                'facilator': 'facilitator',
+                'facilitater': 'facilitator',
+                'facilattor': 'facilitator',  # Handle double 't' misspelling
+                'facilitator': 'facilitator',
+                'techer': 'teacher',
+                'teachr': 'teacher',
+                'teacher': 'teacher',
+                'coordinater': 'coordinator',
+                'coordinatr': 'coordinator',
+                'coordinator': 'coordinator',
+                'directer': 'director',
+                'director': 'director',
+                'principle': 'principal',
+                'principal': 'principal',
+                'menter': 'mentor',
+                'mentor': 'mentor',
+                'faculty': 'facilitator',  # Map "faculty" to "facilitator" for search
+                'faculties': 'facilitator',
+                'facilitators': 'facilitator',  # Plural form
+                'faclitator': 'facilitator',  # Handle typo
+                'faclitators': 'facilitator',  # Handle typo (plural)
+                'founder': 'founder',
+                'co-founder': 'founder',
+                'cofounder': 'founder',
+                'founding': 'founder',
+                'chairperson': 'chairperson',
+                'chair person': 'chairperson',
+                'chairman': 'chairperson',
+                'chairwoman': 'chairperson'
+            }
+            
+            for word in query_words:
+                # Check if it's a role indicator
+                if word in role_indicators and word not in role_keywords:
+                    role_keywords.append(word)
+                # Check if it's a role type (handle misspellings)
+                elif word in role_type_mapping:
+                    # Normalize to correct spelling
+                    normalized_role = role_type_mapping[word]
+                    if normalized_role not in role_keywords:
+                        role_keywords.append(normalized_role)
+                # Also check if word contains role type (for typos like "faclitators")
+                else:
+                    for typo, correct in typo_corrections.items():
+                        if typo in word:
+                            normalized_word = word.replace(typo, correct)
+                            if normalized_word in role_type_mapping:
+                                normalized_role = role_type_mapping[normalized_word]
+                                if normalized_role not in role_keywords:
+                                    role_keywords.append(normalized_role)
+                                    break
+            
+            print(f"[WebCrawler] Extracted role keywords: {role_keywords}")
+            
+            # Initialize variables for database and fallback matches
+            database_best_match = None
+            database_best_score = 0
+            
+            # Search in team_member_data by title/description
+            if SUPABASE_AVAILABLE:
+                try:
+                    supabase = get_supabase_client()
+                    
+                    # SPECIAL HANDLING: For leadership roles (founder, co-founder, principal, director)
+                    # Search directly by role/title without needing subject keywords
+                    if has_leadership_role:
+                        # Extract the leadership role keyword (use normalized query)
+                        leadership_role_found = None
+                        for role in leadership_roles:
+                            if role in normalized_query_lower:
+                                leadership_role_found = role
+                                break
+                        
+                        if leadership_role_found:
+                            # Normalize role for search
+                            search_role = role_type_mapping.get(leadership_role_found, leadership_role_found)
+                            
+                            # Prioritize search terms based on query - "co-founder" should prioritize "founding" and "co-founder"
+                            # Use normalized query to catch typos
+                            if 'co-founder' in normalized_query_lower or 'cofounder' in normalized_query_lower:
+                                # For co-founder queries, prioritize: founding director, co-founder, founding
+                                search_terms_priority = ['founding director', 'co-founder', 'founding', 'founder']
+                            elif 'founder' in normalized_query_lower or 'founding' in normalized_query_lower:
+                                # For founder queries, prioritize: founding director, founder, founding
+                                search_terms_priority = ['founding director', 'founder', 'founding']
+                            elif 'chief mentor' in normalized_query_lower or ('chief' in normalized_query_lower and 'mentor' in normalized_query_lower):
+                                # For chief mentor queries, prioritize: chief mentor, mentor, chief
+                                search_terms_priority = ['chief mentor', 'mentor', 'chief']
+                            elif 'chairperson' in normalized_query_lower or 'chair person' in normalized_query_lower or 'chairman' in normalized_query_lower or 'chairwoman' in normalized_query_lower:
+                                # For chairperson queries, prioritize: chairperson, chairman, chairwoman, director
+                                search_terms_priority = ['chairperson', 'chair person', 'chairman', 'chairwoman', 'director']
+                            elif 'principal' in normalized_query_lower:
+                                # For principal queries, ONLY search for principal (not director)
+                                search_terms_priority = ['principal']
+                            elif 'director' in normalized_query_lower:
+                                # For director queries, search for director and related terms
+                                search_terms_priority = ['director', 'founding director', 'school director']
+                            else:
+                                # For other roles, use role-specific terms only
+                                search_terms_priority = [search_role]
+                            
+                            print(f"[WebCrawler] Searching for leadership role: {search_role} (priority terms: {search_terms_priority})")
+                            
+                            # Get all potential matches first, then score them
+                            all_matches = []
+                            seen_ids = set()  # Track seen member IDs to avoid duplicates
+                            
+                            # Search in both title and description for better matching
+                            for search_term in search_terms_priority:
+                                # Search in title
+                                title_result = supabase.table('team_member_data').select('*').eq('is_active', True).ilike('title', f'%{search_term}%').limit(20).execute()
+                                if title_result.data:
+                                    for member in title_result.data:
+                                        member_id = member.get('id') or member.get('name', '')
+                                        if member_id and member_id not in seen_ids:
+                                            seen_ids.add(member_id)
+                                            all_matches.append(member)
+                                
+                                # Also search in description for better context
+                                desc_result = supabase.table('team_member_data').select('*').eq('is_active', True).ilike('description', f'%{search_term}%').limit(20).execute()
+                                if desc_result.data:
+                                    for member in desc_result.data:
+                                        member_id = member.get('id') or member.get('name', '')
+                                        if member_id and member_id not in seen_ids:
+                                            seen_ids.add(member_id)
+                                            all_matches.append(member)
+                            
+                            # CRITICAL: If database search found matches but they have incomplete data (missing title/description),
+                            # we should still check fallback_data to ensure we have complete information
+                            database_has_complete_data = False
+                            if all_matches:
+                                # Score matches based on relevance
+                                scored_matches = []
+                                for member in all_matches:
+                                    title_lower = (member.get('title', '') or '').lower()
+                                    desc_lower = (member.get('description', '') or '').lower()
+                                    details_lower = (member.get('details', '') or member.get('full_content', '') or '').lower()
+                                    
+                                    score = 0
+                                    
+                                    # CRITICAL: Check if the EXACT requested role is in the title (highest priority)
+                                    # For "principal" queries, only match titles with "principal", not "director"
+                                    requested_role_lower = leadership_role_found.lower() if leadership_role_found else search_role.lower()
+                                    
+                                    # Check if title contains the exact requested role (not just any role from priority list)
+                                    if requested_role_lower in title_lower:
+                                        # Exact match gets highest score
+                                        score += 200
+                                    else:
+                                        # Fallback: check priority terms (for cases where exact role isn't found)
+                                        for i, term in enumerate(search_terms_priority):
+                                            term_lower = term.lower()
+                                            if term_lower in title_lower:
+                                                # First term gets high score (100), subsequent terms get lower scores
+                                                score += (100 - i * 10)
+                                                break
+                                    
+                                    # Bonus for "founding director" when query is "co-founder" (use normalized query)
+                                    if ('co-founder' in normalized_query_lower or 'cofounder' in normalized_query_lower) and 'founding' in title_lower and 'director' in title_lower:
+                                        score += 50
+                                    
+                                    # Check description for role context
+                                    if 'founder' in desc_lower or 'founding' in desc_lower or 'co-founder' in desc_lower:
+                                        score += 20
+                                    
+                                    # Check details/full_content for role context
+                                    if 'founder' in details_lower or 'founding' in details_lower or 'co-founder' in details_lower:
+                                        score += 10
+                                    
+                                    if score > 0:
+                                        scored_matches.append((member, score))
+                                
+                                # CRITICAL: Filter to prioritize exact role matches
+                                # If we have exact matches (score >= 200), only use those
+                                exact_matches = [(m, s) for m, s in scored_matches if s >= 200]
+                                if exact_matches:
+                                    scored_matches = exact_matches
+                                    print(f"[WebCrawler] Filtered to {len(exact_matches)} exact role matches (score >= 200)")
+                                
+                                # Sort by score and get best match
+                                if scored_matches:
+                                    scored_matches.sort(key=lambda x: x[1], reverse=True)
+                                    best_match = scored_matches[0][0]
+                                    best_score = scored_matches[0][1]
+                                    
+                                    print(f"[WebCrawler] ✅ Found leadership role match: {best_match.get('name', 'Unknown')} - {best_match.get('title', '')} (score: {best_score})")
+                                    
+                                    # Format response
+                                    name = best_match.get('name', '')
+                                    title = best_match.get('title', '')
+                                    description = best_match.get('description', '')
+                                    details = best_match.get('details', '') or best_match.get('full_content', '')
+                                    url = best_match.get('source_url', 'https://prakriti.edu.in/team/')
+                                    
+                                    response_parts = [f"## {title or 'Team Member Information'}"]
+                                    if name:
+                                        response_parts.append(f"\n**Name**: {name}")
+                                    if title:
+                                        response_parts.append(f"\n**Title**: {title}")
+                                    if description:
+                                        response_parts.append(f"\n**Description**: {description}")
+                                    if details:
+                                        details_text = details[:800] + "..." if len(details) > 800 else details
+                                        response_parts.append(f"\n**Details**: {details_text}")
+                                    response_parts.append(f"\n*Source: [{url}]({url})*")
+                                    
+                                    # Check if we have complete data (title and description)
+                                    if title and description and len(description) > 50:
+                                        database_has_complete_data = True
+                                        return "\n".join(response_parts)
+                                    else:
+                                        print(f"[WebCrawler] ⚠️ Database match has incomplete data (title: {bool(title)}, description length: {len(description) if description else 0}) - will check fallback_data")
+                                        database_best_match = best_match
+                                        database_best_score = best_score
+                                        database_has_complete_data = False
+                            else:
+                                print(f"[WebCrawler] ⚠️ No leadership role matches found in database - will check fallback_data")
+                            
+                            # CRITICAL: If database doesn't have complete data or no matches, check fallback_data
+                            # This ensures we return accurate information even when database is incomplete
+                            if not database_has_complete_data:
+                                print(f"[WebCrawler] 🔍 Checking fallback_data for leadership role: {search_role}")
+                                best_fallback_match = None
+                                best_fallback_score = 0
+                                
+                                for key, member_data in self.fallback_data.items():
+                                    title_lower = (member_data.get('title', '') or '').lower()
+                                    desc_lower = (member_data.get('description', '') or '').lower()
+                                    details_lower = (member_data.get('details', '') or member_data.get('full_content', '') or '').lower()
+                                    
+                                    score = 0
+                                    
+                                    # Score based on role match in title/description
+                                    for i, term in enumerate(search_terms_priority):
+                                        term_lower = term.lower()
+                                        if term_lower in title_lower:
+                                            score += (100 - i * 10)
+                                            break
+                                        elif term_lower in desc_lower or term_lower in details_lower:
+                                            score += (50 - i * 5)
+                                    
+                                    if score > best_fallback_score:
+                                        best_fallback_score = score
+                                        best_fallback_match = member_data
+                                
+                                # Use fallback_data if it has a better match or database has incomplete data
+                                if best_fallback_match and best_fallback_score > 0:
+                                    if not database_best_match or best_fallback_score > database_best_score:
+                                        print(f"[WebCrawler] ✅ Using fallback_data match for leadership role (score: {best_fallback_score})")
+                                        name = best_fallback_match.get('name', 'Unknown')
+                                        title = best_fallback_match.get('title', 'Team Member')
+                                        description = best_fallback_match.get('description', '')
+                                        details = best_fallback_match.get('details', '') or best_fallback_match.get('full_content', '')
+                                        url = best_fallback_match.get('source_url', 'https://prakriti.edu.in/team/')
+                                        
+                                        # Return structured data for LLM to format naturally
+                                        structured_info = f"""TEAM MEMBER INFORMATION:
+Name: {name}
+Title: {title}
+Description: {description}
+Details: {details[:1000] if details else 'No additional details available'}
+Source: {url}"""
+                                        
+                                        return structured_info
+                                
+                                # If we have database match but incomplete, still return it (better than nothing)
+                                if database_best_match:
+                                    name = database_best_match.get('name', '')
+                                    title = database_best_match.get('title', '')
+                                    description = database_best_match.get('description', '')
+                                    details = database_best_match.get('details', '') or database_best_match.get('full_content', '')
+                                    url = database_best_match.get('source_url', 'https://prakriti.edu.in/team/')
+                                    
+                                    # Return structured data for LLM to format naturally
+                                    structured_info = f"""TEAM MEMBER INFORMATION:
+Name: {name}
+Title: {title}
+Description: {description}
+Details: {details[:1000] if details else 'No additional details available'}
+Source: {url}"""
+                                    
+                                    return structured_info
+                    
+                    # Search in title and description fields for subject-based roles
+                    if role_keywords:
+                        # Prioritize subject keywords (like "french") over role type keywords (like "facilitator")
+                        subject_keywords_list = ['french', 'english', 'math', 'mathematics', 'science', 'physics', 'chemistry', 
+                                                'biology', 'history', 'art', 'music', 'sports', 'pe', 'computer', 'it', 
+                                                'technology', 'design', 'drama', 'theatre', 'dance', 'primary', 'secondary',
+                                                'upper', 'lower', 'early', 'years', 'nursery', 'kindergarten']
+                        
+                        # Find the best search keyword (prefer subject keywords)
+                        search_keyword = None
+                        subject_keywords_found = []
+                        for keyword in role_keywords:
+                            if keyword in subject_keywords_list:
+                                subject_keywords_found.append(keyword)
+                                if not search_keyword:  # Use first subject keyword for initial search
+                                    search_keyword = keyword
+                        
+                        # If no subject keyword found, use first keyword
+                        if not search_keyword:
+                            search_keyword = role_keywords[0]
+                        
+                        # Initialize team_result to avoid UnboundLocalError
+                        team_result = type('obj', (object,), {'data': []})()
+                        team_result.data = []
+                        
+                        # For multi-word subjects like "art and design", search for records containing ALL keywords
+                        # This ensures we get the most relevant matches
+                        if len(subject_keywords_found) > 1:
+                            # Search for records containing ALL subject keywords in title (more specific)
+                            # Build a search that requires all keywords
+                            all_keywords_present = True
+                            # First, try searching with first keyword
+                            team_result = supabase.table('team_member_data').select('*').eq('is_active', True).ilike('title', f'%{subject_keywords_found[0]}%').limit(50).execute()
+                            
+                            # Then filter to only include records with ALL keywords
+                            if team_result.data:
+                                filtered_results = []
+                                for member in team_result.data:
+                                    title_lower = (member.get('title', '') or '').lower()
+                                    # Check if ALL subject keywords are present
+                                    if all(kw in title_lower for kw in subject_keywords_found):
+                                        filtered_results.append(member)
+                                team_result.data = filtered_results[:20]  # Limit to 20
+                            
+                            # DO NOT fall back to description search - TITLE ONLY for role queries
+                            # This ensures accuracy - only match if keywords are in title
+                            if not team_result.data or len(team_result.data) == 0:
+                                print(f"[WebCrawler] ⚠️ No results found with all keywords in title - will check fallback_data")
+                        else:
+                            # Single keyword search - CRITICAL: For role queries, ONLY search in title
+                            # Description searches are unreliable for role-based queries
+                            # Use word boundary matching to avoid partial matches (e.g., "art" matching "part", "start")
+                            # Search for exact word match in title
+                            team_result = supabase.table('team_member_data').select('*').eq('is_active', True).ilike('title', f'%{search_keyword}%').limit(20).execute()
+                            
+                            # DO NOT fall back to description search for role queries
+                            # This prevents false matches (e.g., "art" in description matching wrong person)
+                            
+                            # Additional filtering: Ensure the keyword appears as a whole word, not as part of another word
+                            # ALSO ensure that if we're searching for a role (like "facilitator"), it must be in the title too
+                            if team_result.data:
+                                filtered_results = []
+                                import re
+                                word_pattern = r'\b' + re.escape(search_keyword.lower()) + r'\b'
+                                initial_count = len(team_result.data)
+                                
+                                # Also check if we need "facilitator" in the title (if query contains facilitator-related keywords)
+                                role_keywords_lower = [kw.lower() for kw in role_keywords]
+                                needs_facilitator = any(kw in role_keywords_lower for kw in ['facilitator', 'facilator', 'facilitators', 'faclitator', 'faclitators'])
+                                
+                                for member in team_result.data:
+                                    title_lower = (member.get('title', '') or '').lower()
+                                    member_name = member.get('name', 'Unknown')
+                                    
+                                    # Check if keyword appears as a whole word (not part of another word)
+                                    # Also handle plural forms (e.g., "science" matches "sciences")
+                                    keyword_matched = False
+                                    if re.search(word_pattern, title_lower):
+                                        keyword_matched = True
+                                    else:
+                                        # Try plural form (add 's' or 'es')
+                                        plural_patterns = [
+                                            r'\b' + re.escape(search_keyword.lower()) + r's\b',  # science -> sciences
+                                            r'\b' + re.escape(search_keyword.lower()) + r'es\b',  # class -> classes
+                                        ]
+                                        # Also try removing 's' from keyword if it ends with 's' (sciences -> science)
+                                        if search_keyword.lower().endswith('s'):
+                                            singular_keyword = search_keyword.lower()[:-1]
+                                            plural_patterns.append(r'\b' + re.escape(singular_keyword) + r'\b')
+                                        
+                                        for plural_pattern in plural_patterns:
+                                            if re.search(plural_pattern, title_lower):
+                                                keyword_matched = True
+                                                break
+                                    
+                                    if not keyword_matched:
+                                        print(f"[WebCrawler] ⚠️ Filtered out {member_name} - '{search_keyword}' not found as whole word (or plural) in title: '{title_lower}'")
+                                        continue
+                                    
+                                    # CRITICAL: If query is about "art facilitator", ensure BOTH "art" AND "facilitator" are in title
+                                    if needs_facilitator and search_keyword != 'facilitator':
+                                        # Check if "facilitator" (or variations) is in title
+                                        facilitator_in_title = any(re.search(r'\b' + re.escape(kw) + r'\b', title_lower) for kw in ['facilitator', 'facilator', 'facilitators'])
+                                        if not facilitator_in_title:
+                                            print(f"[WebCrawler] ⚠️ Filtered out {member_name} - 'facilitator' not found in title (query requires facilitator role): '{title_lower}'")
+                                            continue
+                                    
+                                    filtered_results.append(member)
+                                
+                                team_result.data = filtered_results
+                                if len(filtered_results) == 0:
+                                    print(f"[WebCrawler] ⚠️ Word-boundary filtering removed all {initial_count} results - will check fallback_data")
+                                else:
+                                    print(f"[WebCrawler] After word-boundary filtering: {len(filtered_results)} results remain (from {initial_count} initial results)")
+                    else:
+                        # Default search for facilitator
+                        team_result = supabase.table('team_member_data').select('*').eq('is_active', True).ilike('title', '%facilitator%').limit(20).execute()
+                    
+                    if team_result.data and len(team_result.data) > 0:
+                        print(f"[WebCrawler] Found {len(team_result.data)} results from database, filtering for best match...")
+                        # Filter results to find best match
+                        best_matches = []
+                        # Separate subject keywords from role type keywords
+                        subject_keywords_list = ['french', 'english', 'math', 'mathematics', 'science', 'physics', 'chemistry', 
+                                                'biology', 'history', 'art', 'music', 'sports', 'pe', 'computer', 'it', 
+                                                'technology', 'design', 'drama', 'theatre', 'dance', 'primary', 'secondary',
+                                                'upper', 'lower', 'early', 'years', 'nursery', 'kindergarten']
+                        subject_keywords_in_query = [kw for kw in role_keywords if kw in subject_keywords_list]
+                        role_type_keywords_in_query = [kw for kw in role_keywords if kw not in subject_keywords_list]
+                        
+                        print(f"[WebCrawler] Subject keywords: {subject_keywords_in_query}, Role keywords: {role_type_keywords_in_query}")
+                        
+                        for member in team_result.data:
+                            title_lower = (member.get('title', '') or '').lower()
+                            desc_lower = (member.get('description', '') or '').lower()
+                            full_content_lower = (member.get('full_content', '') or '').lower()
+                            member_name = member.get('name', 'Unknown')
+                            
+                            # CRITICAL: For role-based queries, require subject keyword in TITLE (not just description)
+                            # This ensures we get the actual facilitator for that subject, not someone mentioned in description
+                            if subject_keywords_in_query:
+                                # Check if at least one subject keyword is in title as a WHOLE WORD (REQUIRED)
+                                # Use word boundaries to prevent partial matches (e.g., "art" matching "part", "start")
+                                # Also handle plural forms (e.g., "science" matches "sciences")
+                                import re
+                                subject_in_title = False
+                                for kw in subject_keywords_in_query:
+                                    word_pattern = r'\b' + re.escape(kw.lower()) + r'\b'
+                                    if re.search(word_pattern, title_lower):
+                                        subject_in_title = True
+                                        break
+                                    else:
+                                        # Try plural forms
+                                        plural_patterns = [
+                                            r'\b' + re.escape(kw.lower()) + r's\b',  # science -> sciences
+                                            r'\b' + re.escape(kw.lower()) + r'es\b',  # class -> classes
+                                        ]
+                                        if kw.lower().endswith('s'):
+                                            singular_kw = kw.lower()[:-1]
+                                            plural_patterns.append(r'\b' + re.escape(singular_kw) + r'\b')
+                                        
+                                        for plural_pattern in plural_patterns:
+                                            if re.search(plural_pattern, title_lower):
+                                                subject_in_title = True
+                                                break
+                                        if subject_in_title:
+                                            break
+                                
+                                if not subject_in_title:
+                                    # Skip if no subject keyword in title (description matches are not reliable for role queries)
+                                    print(f"[WebCrawler] ⚠️ Skipping {member_name} - subject keyword '{subject_keywords_in_query}' not found as whole word (or plural) in title: '{title_lower}'")
+                                    continue
+                                
+                                # CRITICAL: Also require role type keyword (like "facilitator") in title for role queries
+                                # This ensures we don't match people who just happen to have the subject in their title
+                                if role_type_keywords_in_query:
+                                    role_in_title = False
+                                    for kw in role_type_keywords_in_query:
+                                        word_pattern = r'\b' + re.escape(kw.lower()) + r'\b'
+                                        if re.search(word_pattern, title_lower):
+                                            role_in_title = True
+                                            break
+                                    if not role_in_title:
+                                        print(f"[WebCrawler] ⚠️ Skipping {member_name} - role type keyword '{role_type_keywords_in_query}' not found as whole word in title: '{title_lower}'")
+                                        continue
+                                
+                                print(f"[WebCrawler] ✅ {member_name} has both subject and role keywords in title: '{title_lower}'")
+                            
+                            # Score matches
+                            score = 0
+                            
+                            # For multi-word subjects like "art and design", check if ALL keywords are present (handle plural forms)
+                            all_subjects_match_in_title = False
+                            all_subjects_match_anywhere = False
+                            if len(subject_keywords_in_query) > 1:
+                                # Check each keyword with plural handling
+                                all_match = True
+                                for kw in subject_keywords_in_query:
+                                    kw_lower = kw.lower()
+                                    # Check exact match or plural form
+                                    if kw_lower not in title_lower:
+                                        # Try plural forms
+                                        if kw_lower + 's' not in title_lower and kw_lower + 'es' not in title_lower:
+                                            # Try singular if keyword ends with 's'
+                                            if kw_lower.endswith('s') and kw_lower[:-1] not in title_lower:
+                                                all_match = False
+                                                break
+                                all_subjects_match_in_title = all_match
+                                all_subjects_match_anywhere = all(kw in title_lower or kw + 's' in title_lower or kw + 'es' in title_lower or kw in desc_lower or kw in full_content_lower for kw in subject_keywords_in_query)
+                            else:
+                                # Single subject keyword - check if it's in title (with plural handling)
+                                if subject_keywords_in_query:
+                                    kw = subject_keywords_in_query[0].lower()
+                                    all_subjects_match_in_title = (kw in title_lower or kw + 's' in title_lower or kw + 'es' in title_lower or (kw.endswith('s') and kw[:-1] in title_lower))
+                                else:
+                                    all_subjects_match_in_title = False
+                            
+                            # MUCH Higher score for subject keyword matches in TITLE ONLY (TITLE FIRST PRIORITY - NO DESCRIPTION MATCHING)
+                            for keyword in subject_keywords_in_query:
+                                # Use word boundaries to ensure whole word match (including plural forms)
+                                import re
+                                word_pattern = r'\b' + re.escape(keyword.lower()) + r'\b'
+                                keyword_found = False
+                                if re.search(word_pattern, title_lower):
+                                    keyword_found = True
+                                else:
+                                    # Try plural forms
+                                    plural_patterns = [
+                                        r'\b' + re.escape(keyword.lower()) + r's\b',  # science -> sciences
+                                        r'\b' + re.escape(keyword.lower()) + r'es\b',  # class -> classes
+                                    ]
+                                    if keyword.lower().endswith('s'):
+                                        singular_kw = keyword.lower()[:-1]
+                                        plural_patterns.append(r'\b' + re.escape(singular_kw) + r'\b')
+                                    
+                                    for plural_pattern in plural_patterns:
+                                        if re.search(plural_pattern, title_lower):
+                                            keyword_found = True
+                                            break
+                                
+                                if keyword_found:
+                                    score += 50  # Subject in title = highest priority
+                                # DO NOT check description or full_content - TITLE ONLY
+                            
+                            # Big bonus if ALL subject keywords match in TITLE (especially important for "art and design")
+                            if all_subjects_match_in_title:
+                                score += 100  # Big bonus for complete match in title (increased from 30)
+                            elif all_subjects_match_anywhere:
+                                score += 20  # Smaller bonus if all match but not all in title
+                            
+                            # Check if role type keyword is in title (REQUIRED for accurate role matching)
+                            role_in_title = any(kw in title_lower for kw in role_type_keywords_in_query)
+                            
+                            # Higher score for role type keyword matches in TITLE ONLY (TITLE FIRST PRIORITY - NO DESCRIPTION)
+                            for keyword in role_type_keywords_in_query:
+                                # Use word boundaries to ensure whole word match
+                                import re
+                                word_pattern = r'\b' + re.escape(keyword.lower()) + r'\b'
+                                if re.search(word_pattern, title_lower):
+                                    score += 30  # Role type in title = high priority
+                                # DO NOT check description or full_content - TITLE ONLY
+                            
+                            # MASSIVE bonus for exact match in title (all keywords in title)
+                            # This ensures "Art Facilitator" matches "Facilitator Art & Design" perfectly
+                            if subject_keywords_in_query and role_type_keywords_in_query:
+                                all_in_title = all(kw in title_lower for kw in subject_keywords_in_query) and all(kw in title_lower for kw in role_type_keywords_in_query)
+                                if all_in_title:
+                                    score += 200  # MASSIVE bonus for exact match (increased from 50)
+                            
+                            # Additional bonus if role type appears before subject in title (e.g., "Facilitator Art")
+                            # or if they appear together (e.g., "Art Facilitator")
+                            if role_in_title and subject_keywords_in_query:
+                                # Check if role and subject appear close together in title
+                                title_words = title_lower.split()
+                                role_indices = [i for i, word in enumerate(title_words) if any(kw in word for kw in role_type_keywords_in_query)]
+                                subject_indices = [i for i, word in enumerate(title_words) if any(kw in word for kw in subject_keywords_in_query)]
+                                if role_indices and subject_indices:
+                                    # If they're within 3 words of each other, bonus
+                                    min_distance = min(abs(r - s) for r in role_indices for s in subject_indices)
+                                    if min_distance <= 3:
+                                        score += 50  # Bonus for proximity
+                            
+                            # CRITICAL: Only add to best_matches if score > 0 AND has both keywords (for role queries)
+                            # This ensures we don't return partial matches like Rahul Batra for "art facilitator"
+                            if score > 0:
+                                # For role queries with both subject and role keywords, require BOTH in title
+                                if subject_keywords_in_query and role_type_keywords_in_query:
+                                    # Double-check that both are actually in title (word-boundary match)
+                                    import re
+                                    title_lower_check = (member.get('title', '') or '').lower()
+                                    has_subject = any(re.search(r'\b' + re.escape(kw.lower()) + r'\b', title_lower_check) for kw in subject_keywords_in_query)
+                                    has_role = any(re.search(r'\b' + re.escape(kw.lower()) + r'\b', title_lower_check) for kw in role_type_keywords_in_query)
+                                    if not (has_subject and has_role):
+                                        print(f"[WebCrawler] ⚠️ Rejecting {member_name} - missing required keywords in title (has_subject: {has_subject}, has_role: {has_role})")
+                                        continue  # Skip this member - doesn't have both keywords
+                                
+                                best_matches.append((member, score))
+                        
+                        # Sort by score and get best match
+                        if best_matches:
+                            best_matches.sort(key=lambda x: x[1], reverse=True)
+                            database_best_match = best_matches[0][0]
+                            database_best_score = best_matches[0][1]
+                            
+                            print(f"[WebCrawler] Found potential match in team_member_data: {database_best_match.get('name', 'Unknown')} (score: {database_best_score})")
+                        else:
+                            print(f"[WebCrawler] ⚠️ No valid matches after filtering (all results filtered out) - checking fallback_data...")
+                            database_best_match = None
+                            database_best_score = 0
+                except Exception as e:
+                    print(f"[WebCrawler] Error searching by role in team_member_data: {e}")
+                    import traceback
+                    traceback.print_exc()
+            
+            # ALWAYS check fallback_data (even if database search found nothing or all results were filtered)
+            # This ensures we use fallback_data when database doesn't have the person or filtering removed all matches
+            print(f"[WebCrawler] 🔍 Checking fallback_data for role query...")
+            # Separate subject keywords from role type keywords (same logic as database search)
+            subject_keywords_list = ['french', 'english', 'math', 'mathematics', 'science', 'physics', 'chemistry', 
+                                    'biology', 'history', 'art', 'music', 'sports', 'pe', 'computer', 'it', 
+                                    'technology', 'design', 'drama', 'theatre', 'dance', 'primary', 'secondary',
+                                    'upper', 'lower', 'early', 'years', 'nursery', 'kindergarten']
+            subject_keywords_in_query = [kw for kw in role_keywords if kw in subject_keywords_list]
+            role_type_keywords_in_query = [kw for kw in role_keywords if kw not in subject_keywords_list]
+            
+            # Score and find best match in fallback_data
+            best_fallback_match = None
+            best_fallback_score = 0
+            
+            for key, member_data in self.fallback_data.items():
+                title_lower = (member_data.get('title', '') or '').lower()
+                desc_lower = (member_data.get('description', '') or '').lower()
+                details_lower = (member_data.get('details', '') or '').lower()
+                full_content_lower = (member_data.get('full_content', '') or '').lower()
+                
+                # CRITICAL: For role-based queries, require subject keyword in TITLE as a WHOLE WORD (TITLE ONLY - NO DESCRIPTION)
+                # ALSO require role type keyword (like "facilitator") in title if query is about a specific role
+                import re
+                
+                if subject_keywords_in_query:
+                    # Use word boundaries to prevent partial matches (e.g., "art" matching "part", "start")
+                    # Also handle plural forms (e.g., "science" matches "sciences")
+                    subject_in_title = False
+                    for kw in subject_keywords_in_query:
+                        word_pattern = r'\b' + re.escape(kw.lower()) + r'\b'
+                        if re.search(word_pattern, title_lower):
+                            subject_in_title = True
+                            break
+                        else:
+                            # Try plural forms
+                            plural_patterns = [
+                                r'\b' + re.escape(kw.lower()) + r's\b',  # science -> sciences
+                                r'\b' + re.escape(kw.lower()) + r'es\b',  # class -> classes
+                            ]
+                            # Also try singular if keyword ends with 's'
+                            if kw.lower().endswith('s'):
+                                singular_kw = kw.lower()[:-1]
+                                plural_patterns.append(r'\b' + re.escape(singular_kw) + r'\b')
+                            
+                            for plural_pattern in plural_patterns:
+                                if re.search(plural_pattern, title_lower):
+                                    subject_in_title = True
+                                    break
+                            if subject_in_title:
+                                break
+                    if not subject_in_title:
+                        continue  # Skip if no subject keyword in title as whole word (or plural)
+                
+                # CRITICAL: If query is about "art facilitator", ensure BOTH "art" AND "facilitator" are in title
+                if subject_keywords_in_query and role_type_keywords_in_query:
+                    # Check if role type keyword (like "facilitator") is in title
+                    role_in_title = False
+                    for kw in role_type_keywords_in_query:
+                        word_pattern = r'\b' + re.escape(kw.lower()) + r'\b'
+                        if re.search(word_pattern, title_lower):
+                            role_in_title = True
+                            break
+                    if not role_in_title:
+                        # Skip if role type keyword not in title (e.g., "facilitator" not in title for "art facilitator" query)
+                        continue
+                
+                # Score matches (same logic as database search)
+                score = 0
+                
+                # Check if ALL subject keywords match in TITLE (handle plural forms)
+                all_subjects_match_in_title = False
+                all_subjects_match_anywhere = False
+                if len(subject_keywords_in_query) > 1:
+                    # Check each keyword with plural handling
+                    all_match = True
+                    for kw in subject_keywords_in_query:
+                        kw_lower = kw.lower()
+                        # Check exact match or plural form
+                        if kw_lower not in title_lower:
+                            # Try plural forms
+                            if kw_lower + 's' not in title_lower and kw_lower + 'es' not in title_lower:
+                                # Try singular if keyword ends with 's'
+                                if kw_lower.endswith('s') and kw_lower[:-1] not in title_lower:
+                                    all_match = False
+                                    break
+                    all_subjects_match_in_title = all_match
+                    all_subjects_match_anywhere = all(kw in title_lower or kw + 's' in title_lower or kw + 'es' in title_lower or kw in desc_lower or kw in details_lower or kw in full_content_lower for kw in subject_keywords_in_query)
+                else:
+                    if subject_keywords_in_query:
+                        kw = subject_keywords_in_query[0].lower()
+                        all_subjects_match_in_title = (kw in title_lower or kw + 's' in title_lower or kw + 'es' in title_lower or (kw.endswith('s') and kw[:-1] in title_lower))
+                    else:
+                        all_subjects_match_in_title = False
+                
+                # MUCH Higher score for subject keyword matches in TITLE ONLY (TITLE FIRST PRIORITY - NO DESCRIPTION)
+                import re
+                for keyword in subject_keywords_in_query:
+                    # Use word boundaries to ensure whole word match (including plural forms)
+                    word_pattern = r'\b' + re.escape(keyword.lower()) + r'\b'
+                    keyword_found = False
+                    if re.search(word_pattern, title_lower):
+                        keyword_found = True
+                    else:
+                        # Try plural forms
+                        plural_patterns = [
+                            r'\b' + re.escape(keyword.lower()) + r's\b',  # science -> sciences
+                            r'\b' + re.escape(keyword.lower()) + r'es\b',  # class -> classes
+                        ]
+                        if keyword.lower().endswith('s'):
+                            singular_kw = keyword.lower()[:-1]
+                            plural_patterns.append(r'\b' + re.escape(singular_kw) + r'\b')
+                        
+                        for plural_pattern in plural_patterns:
+                            if re.search(plural_pattern, title_lower):
+                                keyword_found = True
+                                break
+                    
+                    if keyword_found:
+                        score += 50  # Subject in title = highest priority
+                    # DO NOT check description, details, or full_content - TITLE ONLY
+                
+                # Big bonus if ALL subject keywords match in TITLE
+                if all_subjects_match_in_title:
+                    score += 100  # Big bonus for complete match in title
+                elif all_subjects_match_anywhere:
+                    score += 20  # Smaller bonus if all match but not all in title
+                
+                # Check if role type keyword is in title
+                role_in_title = any(kw in title_lower for kw in role_type_keywords_in_query)
+                
+                # Higher score for role type keyword matches in TITLE ONLY (TITLE FIRST PRIORITY - NO DESCRIPTION)
+                for keyword in role_type_keywords_in_query:
+                    # Use word boundaries to ensure whole word match
+                    word_pattern = r'\b' + re.escape(keyword.lower()) + r'\b'
+                    if re.search(word_pattern, title_lower):
+                        score += 30  # Role type in title = high priority
+                    # DO NOT check description, details, or full_content - TITLE ONLY
+                
+                # MASSIVE bonus for exact match in title (all keywords in title)
+                if subject_keywords_in_query and role_type_keywords_in_query:
+                    all_in_title = all(kw in title_lower for kw in subject_keywords_in_query) and all(kw in title_lower for kw in role_type_keywords_in_query)
+                    if all_in_title:
+                        score += 200  # MASSIVE bonus for exact match
+                
+                if score > best_fallback_score:
+                    best_fallback_score = score
+                    best_fallback_match = member_data
+            
+            # Compare database match vs fallback_data match - use the one with higher score
+            # CRITICAL: For queries like "art facilitator", fallback_data (Priyanka Oberoi) should win
+            # because she has both "art" AND "facilitator" in title, while database matches might not
+            final_match = None
+            final_score = 0
+            match_source = None
+            
+            # Initialize database_best_match and database_best_score if not already set
+            if 'database_best_match' not in locals():
+                database_best_match = None
+                database_best_score = 0
+            
+            print(f"[WebCrawler] Comparing matches - Database: {database_best_score if database_best_match else 0}, Fallback: {best_fallback_score}")
+            
+            # CRITICAL: For role queries with both subject and role keywords, ALWAYS prefer fallback_data
+            # This ensures we use fallback_data when it has the correct person (like Priyanka Oberoi)
+            # Database matches are often incomplete or incorrect for role queries
+            if best_fallback_match and best_fallback_score > 0:
+                # For role queries with both keywords, fallback_data is the source of truth
+                if subject_keywords_in_query and role_type_keywords_in_query:
+                    # ALWAYS prefer fallback_data for role queries - it has complete, accurate data
+                    final_match = best_fallback_match
+                    final_score = best_fallback_score
+                    match_source = "fallback_data"
+                    print(f"[WebCrawler] ✅ Using fallback_data match (preferred for role queries with both keywords, score: {best_fallback_score})")
+                    if database_best_match:
+                        print(f"[WebCrawler] ⚠️ Database match '{database_best_match.get('name', 'Unknown')}' (score: {database_best_score}) ignored - fallback_data preferred for role queries")
+                else:
+                    # For queries without both keywords, compare scores
+                    if database_best_match and database_best_score > 0:
+                        # Check if database match actually has both subject AND role in title (strict requirement)
+                        db_title_lower = (database_best_match.get('title', '') or '').lower()
+                        has_both_in_db = False
+                        if subject_keywords_in_query and role_type_keywords_in_query:
+                            import re
+                            has_subject = any(re.search(r'\b' + re.escape(kw.lower()) + r'\b', db_title_lower) for kw in subject_keywords_in_query)
+                            has_role = any(re.search(r'\b' + re.escape(kw.lower()) + r'\b', db_title_lower) for kw in role_type_keywords_in_query)
+                            has_both_in_db = has_subject and has_role
+                        
+                        # Use database match only if it has both keywords AND significantly higher score
+                        if has_both_in_db and database_best_score > best_fallback_score + 50:
+                            final_match = database_best_match
+                            final_score = database_best_score
+                            match_source = "team_member_data"
+                            print(f"[WebCrawler] Using database match (has both keywords, score: {database_best_score})")
+                        else:
+                            # Prefer fallback_data
+                            final_match = best_fallback_match
+                            final_score = best_fallback_score
+                            match_source = "fallback_data"
+                            print(f"[WebCrawler] Using fallback_data match (better match, score: {best_fallback_score})")
+                    else:
+                        # No database match, use fallback
+                        final_match = best_fallback_match
+                        final_score = best_fallback_score
+                        match_source = "fallback_data"
+                        print(f"[WebCrawler] Using fallback_data match (no database match, score: {best_fallback_score})")
+            elif database_best_match and database_best_score > 0:
+                # Only use database match if no fallback match
+                final_match = database_best_match
+                final_score = database_best_score
+                match_source = "team_member_data"
+                print(f"[WebCrawler] Using database match (no fallback match, score: {database_best_score})")
+            
+            if final_match and final_score > 0:
+                print(f"[WebCrawler] ✅ Found role match in {match_source}: {final_match.get('name', 'Unknown')} (score: {final_score})")
+                
+                # Return structured data for LLM to format naturally (not pre-formatted markdown)
+                # This allows the chatbot to create conversational responses
+                if match_source == "team_member_data":
+                    name = final_match.get('name', '')
+                    title = final_match.get('title', '')
+                    description = final_match.get('description', '')
+                    details = final_match.get('details', '') or final_match.get('full_content', '')
+                    url = final_match.get('source_url', 'https://prakriti.edu.in/team/')
+                    
+                    # Return structured information for LLM to format naturally
+                    structured_info = f"""TEAM MEMBER INFORMATION:
+Name: {name}
+Title: {title}
+Description: {description}
+Details: {details[:1000] if details else 'No additional details available'}
+Source: {url}"""
+                else:
+                    # Fallback data
+                    structured_info = f"""TEAM MEMBER INFORMATION:
+Name: {final_match.get('name', 'Unknown')}
+Title: {final_match.get('title', 'Team Member')}
+Description: {final_match.get('description', '')}
+Details: {(final_match.get('details', '') or '')[:1000] if final_match.get('details') else 'No additional details available'}
+Source: https://prakriti.edu.in/team"""
+                
+                return structured_info
+            
+            # If not found, return helpful message
+            # Check if it's a generic role query (no valid subject specified)
+            # Filter out generic terms like "it" that don't actually represent a subject
+            # Generic terms that appear in queries but don't help identify a specific facilitator
+            generic_terms = ['it']  # "it" is too generic and doesn't help identify a specific facilitator
+            valid_subject_keywords = [kw for kw in subject_keywords_in_query if kw not in generic_terms]
+            
+            # If we have no valid subject keywords (either none detected, or only generic terms like "it")
+            # and we have a role type keyword, this is a generic role query that needs a subject
+            if not valid_subject_keywords and role_type_keywords_in_query:
+                # Generic role query without valid subject - provide helpful guidance
+                role_type = role_type_keywords_in_query[0] if role_type_keywords_in_query else 'facilitator'
+                return f"""## Information Request
+
+I found that you're asking about a {role_type}, but you haven't specified which subject or area you're interested in.
+
+To help you better, please specify the subject, for example:
+- "Who is the French facilitator?"
+- "Who is the Math facilitator?"
+- "Who is the Art facilitator?"
+- "Who is the Science facilitator?"
+
+Or if you're asking about a leadership role, you can ask:
+- "Who is the Principal?"
+- "Who is the Director?"
+- "Who is the Founder?"
+
+*Source: [prakriti.edu.in/team](https://prakriti.edu.in/team)*"""
+            
+            return f"""## Information Not Available
+
+I'm sorry, but I couldn't find information about a {query_lower.replace('who is the', '').replace('who is', '').strip()} in our team database.
+
+We're continuously updating our team profiles, so please check back later or contact us directly for more information.
+
+*Source: [prakriti.edu.in/team](https://prakriti.edu.in/team)*"""
+        
+        # PRIORITY 0: Check if this is a specific person query FIRST (before other cache checks)
+        # This ensures we get complete person data from team_member_data table
+        if self.is_specific_person_query(query):
+            person_name = self.extract_person_name(query)
+            if person_name:
+                print(f"[WebCrawler] Detected specific person query: {person_name}")
+                
+                # CRITICAL: Check if this is a single name FIRST (before normalization)
+                # Normalization might convert "priyanka" to "Priyanka Oberoi", which would skip multiple-match check
+                original_parts = person_name.split()
+                is_single_name = len(original_parts) == 1
+                
+                # Normalize name to handle misspellings
+                # If it's a single name, preserve it (don't expand) so we can check for multiple matches
+                normalized_name = self.normalize_person_name(person_name, preserve_single_name=is_single_name)
+                
+                # Re-check if normalized name is still single (normalization might have expanded it)
+                normalized_parts = normalized_name.split()
+                # If normalization expanded single name to full name, we still need to check for multiple matches
+                # So keep is_single_name = True if original was single, even if normalized is now full
+                if is_single_name and len(normalized_parts) > 1:
+                    # Normalization expanded it - but we still want to check for multiple matches
+                    # Use the original first name for matching
+                    first_name_for_matching = original_parts[0].lower()
+                else:
+                    first_name_for_matching = normalized_parts[0].lower() if normalized_parts else normalized_name.lower()
+                
+                # CRITICAL: For single names, check BOTH database AND fallback_data to find ALL matches
+                # Then decide: if multiple matches, show list; if single match, show that person
+                if is_single_name:
+                    # Use first_name_for_matching (original first name, not normalized full name)
+                    first_name = first_name_for_matching
+                    all_matches = []
+                    
+                    print(f"[WebCrawler] Single name query detected: '{person_name}' -> checking for multiple matches with first name: '{first_name}'")
+                    
+                    # Step 1: Check database for all matches
+                    if SUPABASE_AVAILABLE:
+                        try:
+                            supabase = get_supabase_client()
+                            # Get ALL matches with this first name
+                            team_result = supabase.table('team_member_data').select('*').eq('is_active', True).ilike('name', f'%{first_name}%').limit(20).execute()
+                            
+                            if team_result.data and len(team_result.data) > 0:
+                                # Filter to only include records where first name matches exactly
+                                for member in team_result.data:
+                                    member_name_lower = (member.get('name', '') or '').lower()
+                                    member_parts = member_name_lower.split()
+                                    # Check if first name matches
+                                    if len(member_parts) >= 1 and member_parts[0] == first_name:
+                                        all_matches.append({
+                                            'name': member.get('name', 'Unknown'),
+                                            'title': member.get('title', 'Team Member'),
+                                            'source': 'database'
+                                        })
+                        except Exception as e:
+                            print(f"[WebCrawler] Error checking team_member_data for multiple matches: {e}")
+                    
+                    # Step 2: Check fallback_data for all matches
+                    matching_keys = []
+                    for key in self.fallback_data.keys():
+                        key_lower = key.lower().strip()
+                        key_parts = key_lower.split()
+                        # Check if first name matches
+                        if len(key_parts) >= 1 and key_parts[0] == first_name:
+                            matching_keys.append(key)
+                    
+                    # Add fallback_data matches (avoid duplicates)
+                    for key in matching_keys:
+                        person_data = self.fallback_data[key]
+                        person_name = person_data.get('name', key)
+                        # Check if not already in all_matches
+                        if not any(m['name'].lower() == person_name.lower() for m in all_matches):
+                            all_matches.append({
+                                'name': person_name,
+                                'title': person_data.get('title', 'Team Member'),
+                                'source': 'fallback'
+                            })
+                    
+                    # Step 3: If multiple matches found, return list
+                    if len(all_matches) > 1:
+                        print(f"[WebCrawler] ⚠️ Multiple matches found for '{normalized_name}': {len(all_matches)} people")
+                        
+                        # Return structured list for LLM to format
+                        list_info = f"""MULTIPLE PEOPLE FOUND:
+Query: "{normalized_name}" matches {len(all_matches)} people:
+
+"""
+                        for i, person in enumerate(all_matches, 1):
+                            list_info += f"{i}. {person['name']} - {person['title']}\n"
+                        
+                        list_info += f"""
+Please specify which person you'd like to know about by providing their full name (e.g., "{all_matches[0]['name']}" or "{all_matches[1]['name'] if len(all_matches) > 1 else ''}")."""
+                        
+                        return list_info
+                    elif len(all_matches) == 1:
+                        # Single match found - get full details for this person
+                        print(f"[WebCrawler] ✅ Single match found for '{normalized_name}': {all_matches[0]['name']}")
+                        matched_person = all_matches[0]
+                        
+                        # Try to get full details from database first
+                        if matched_person['source'] == 'database' and SUPABASE_AVAILABLE:
+                            try:
+                                supabase = get_supabase_client()
+                                full_result = supabase.table('team_member_data').select('*').eq('is_active', True).ilike('name', f"%{matched_person['name']}%").limit(1).execute()
+                                
+                                if full_result.data and len(full_result.data) > 0:
+                                    member = full_result.data[0]
+                                    name = member.get('name', matched_person['name'])
+                                    title = member.get('title', matched_person['title'])
+                                    description = member.get('description', '')
+                                    details = member.get('details', '') or member.get('full_content', '')
+                                    url = member.get('source_url', 'https://prakriti.edu.in/team/')
+                                    
+                                    # If we have minimal data, try to get more from full_content
+                                    if not description and not details and member.get('full_content'):
+                                        full_content = member.get('full_content', '')
+                                        sentences = full_content.split('.')
+                                        if sentences:
+                                            description = sentences[0].strip()
+                                        if len(sentences) > 1:
+                                            details = '. '.join(sentences[1:]).strip()[:600]
+                                    
+                                    structured_info = f"""TEAM MEMBER INFORMATION:
+Name: {name}
+Title: {title}
+Description: {description}
+Details: {details[:1000] if details else 'No additional details available'}
+Source: {url}"""
+                                    
+                                    return structured_info
+                            except Exception as e:
+                                print(f"[WebCrawler] Error getting full details from database: {e}")
+                        
+                        # If not from database or database failed, get from fallback_data
+                        if matched_person['source'] == 'fallback':
+                            for key in self.fallback_data.keys():
+                                if self.fallback_data[key].get('name', key).lower() == matched_person['name'].lower():
+                                    fallback = self.fallback_data[key]
+                                    structured_info = f"""TEAM MEMBER INFORMATION:
+Name: {fallback.get('name', matched_person['name'])}
+Title: {fallback.get('title', matched_person['title'])}
+Description: {fallback.get('description', '')}
+Details: {(fallback.get('details', '') or '')[:1000] if fallback.get('details') else 'No additional details available'}
+Source: {fallback.get('source_url', 'https://prakriti.edu.in/team/')}"""
+                                    
+                                    return structured_info
+                        
+                        # Fallback: return basic info
+                        structured_info = f"""TEAM MEMBER INFORMATION:
+Name: {matched_person['name']}
+Title: {matched_person['title']}
+Description: No additional details available
+Details: No additional details available
+Source: https://prakriti.edu.in/team/"""
+                        
+                        return structured_info
+                
+                # FIRST: Check team_member_data table directly (most accurate for person queries)
+                # Only for full name queries (not single names - those are handled above)
+                if not is_single_name and SUPABASE_AVAILABLE:
+                    try:
+                        supabase = get_supabase_client()
+                        # Try both original and normalized name
+                        search_terms = [normalized_name, person_name] if normalized_name != person_name else [person_name]
+                        
+                        for search_term in search_terms:
+                            # Try multiple search strategies for better matching
+                            # CRITICAL: For full names (2+ words), prioritize exact surname match
+                            name_parts = search_term.split()
+                            
+                            # Initialize team_result for this search_term
+                            team_result = type('obj', (object,), {'data': []})()
+                            team_result.data = []
+                            
+                            # Strategy 1: If full name (2+ words), search by surname first (most accurate)
+                            if len(name_parts) >= 2:
+                                first_name = name_parts[0]
+                                last_name = name_parts[-1]
+                                
+                                # CRITICAL: Search by surname first (exact match required)
+                                # This ensures "priyanka oberoi" matches "Priyanka Oberoi" not "Priyanka Jain"
+                                team_result = supabase.table('team_member_data').select('*').eq('is_active', True).ilike('name', f'%{last_name}%').limit(20).execute()
+                                
+                                if team_result.data and len(team_result.data) > 0:
+                                    # Find exact surname + first name match
+                                    best_match = None
+                                    search_term_lower = search_term.lower()
+                                    for member in team_result.data:
+                                        member_name_lower = (member.get('name', '') or '').lower()
+                                        member_parts = member_name_lower.split()
+                                        
+                                        # CRITICAL: Require exact surname match
+                                        if len(member_parts) >= 2 and member_parts[-1] == last_name.lower():
+                                            # Check if first name also matches
+                                            if member_parts[0] == first_name.lower():
+                                                # Perfect match - use this
+                                                best_match = member
+                                                print(f"[WebCrawler] ✅ Exact surname+first name match: '{member.get('name')}'")
+                                                break
+                                    
+                                    # If no perfect match, use first surname match
+                                    if not best_match:
+                                        for member in team_result.data:
+                                            member_name_lower = (member.get('name', '') or '').lower()
+                                            member_parts = member_name_lower.split()
+                                            if len(member_parts) >= 2 and member_parts[-1] == last_name.lower():
+                                                best_match = member
+                                                print(f"[WebCrawler] ✅ Exact surname match: '{member.get('name')}'")
+                                                break
+                                    
+                                    if best_match:
+                                        team_result.data = [best_match]
+                                    else:
+                                        team_result.data = []
+                            
+                            # Strategy 2: If no match yet, try full name match
+                            if not team_result.data or len(team_result.data) == 0:
+                                team_result = supabase.table('team_member_data').select('*').eq('is_active', True).ilike('name', f'%{search_term}%').limit(1).execute()
+                            
+                            # Strategy 3: If still no match and we have 2+ words, try first name only
+                            if (not team_result.data or len(team_result.data) == 0) and len(name_parts) >= 2:
+                                first_name = name_parts[0]
+                                team_result = supabase.table('team_member_data').select('*').eq('is_active', True).ilike('name', f'%{first_name}%').limit(5).execute()
+                                
+                                # Find the best match from results (prefer exact surname match)
+                                if team_result.data and len(team_result.data) > 0:
+                                    last_name = name_parts[-1]
+                                    best_match = None
+                                    for member in team_result.data:
+                                        member_name_lower = (member.get('name', '') or '').lower()
+                                        member_parts = member_name_lower.split()
+                                        # Prefer exact surname match
+                                        if len(member_parts) >= 2 and member_parts[-1] == last_name.lower():
+                                            best_match = member
+                                            break
+                                    # If no exact surname match, use first result
+                                    if not best_match:
+                                        best_match = team_result.data[0]
+                                    team_result.data = [best_match]
+                            
+                            # Strategy 4: Single name search (first name only) - already handled above
+                            # Skip this if we already processed single name matches
+                            if not is_single_name:
+                                if not team_result.data or len(team_result.data) == 0:
+                                    first_name = search_term.split()[0] if search_term.split() else search_term
+                                    team_result = supabase.table('team_member_data').select('*').eq('is_active', True).ilike('name', f'%{first_name}%').limit(5).execute()
+                                    
+                                    if team_result.data and len(team_result.data) > 0:
+                                        # For non-single names, just get first match
+                                        team_result.data = [team_result.data[0]]
+                            
+                            # Single match found - return that person's info
+                            if team_result.data and len(team_result.data) > 0:
+                                member = team_result.data[0]
+                                print(f"[WebCrawler] ✅ Found {search_term} in team_member_data table (direct lookup)")
+                                
+                                # Get member data
+                                name = member.get('name', normalized_name)
+                                title = member.get('title', '')
+                                description = member.get('description', '')
+                                details = member.get('details', '') or member.get('full_content', '')
+                                url = member.get('source_url', 'https://prakriti.edu.in/team/')
+                                
+                                # If we have minimal data, try to get more from full_content
+                                if not description and not details and member.get('full_content'):
+                                    full_content = member.get('full_content', '')
+                                    # Extract first sentence as description
+                                    sentences = full_content.split('.')
+                                    if sentences:
+                                        description = sentences[0].strip()
+                                    # Use remaining as details
+                                    if len(sentences) > 1:
+                                        details = '. '.join(sentences[1:]).strip()[:600]
+                                
+                                # Return structured data for LLM to format naturally
+                                structured_info = f"""TEAM MEMBER INFORMATION:
+Name: {name}
+Title: {title}
+Description: {description}
+Details: {details[:1000] if details else 'No additional details available'}
+Source: {url}"""
+                                
+                                return structured_info
+                    except Exception as e:
+                        print(f"[WebCrawler] Error checking team_member_data for person query: {e}")
+                
+                # If not found in team_member_data, check fallback_data
+                # Try to find in fallback_data using normalized name or variations
+                fallback_key = None
+                normalized_lower = normalized_name.lower().strip()
+                original_lower = person_name.lower().strip() if person_name else ""
+                
+                # Check if this is a single name (first name only) - might have multiple matches
+                normalized_parts = normalized_lower.split()
+                is_single_name = len(normalized_parts) == 1
+                
+                print(f"[WebCrawler] Searching fallback_data for: '{normalized_name}' (normalized: '{normalized_lower}', original: '{original_lower}')")
+                print(f"[WebCrawler] Available fallback_data keys: {list(self.fallback_data.keys())}")
+                
+                # CRITICAL: If single name, check for multiple matches first
+                if is_single_name:
+                    first_name = normalized_parts[0]
+                    matching_keys = []
+                    for key in self.fallback_data.keys():
+                        key_lower = key.lower().strip()
+                        key_parts = key_lower.split()
+                        # Check if first name matches
+                        if len(key_parts) >= 1 and key_parts[0] == first_name:
+                            matching_keys.append(key)
+                    
+                    # If multiple matches found, return list
+                    if len(matching_keys) > 1:
+                        print(f"[WebCrawler] ⚠️ Multiple matches found in fallback_data for '{normalized_name}': {len(matching_keys)} people")
+                        
+                        # Build list of matching people
+                        people_list = []
+                        for key in matching_keys:
+                            person_data = self.fallback_data[key]
+                            people_list.append({
+                                'name': person_data.get('name', key),
+                                'title': person_data.get('title', 'Team Member')
+                            })
+                        
+                        # Return structured list for LLM to format
+                        list_info = f"""MULTIPLE PEOPLE FOUND:
+Query: "{normalized_name}" matches {len(people_list)} people:
+
+"""
+                        for i, person in enumerate(people_list, 1):
+                            list_info += f"{i}. {person['name']} - {person['title']}\n"
+                        
+                        list_info += f"""
+Please specify which person you'd like to know about by providing their full name (e.g., "{people_list[0]['name']}" or "{people_list[1]['name'] if len(people_list) > 1 else ''}")."""
+                        
+                        return list_info
+                    elif len(matching_keys) == 1:
+                        # Single match found
+                        fallback_key = matching_keys[0]
+                        print(f"[WebCrawler] ✅ Single match found in fallback_data: '{fallback_key}'")
+                
+                # Check exact match first (try both normalized and original)
+                if not fallback_key:
+                    for key in self.fallback_data.keys():
+                        key_lower = key.lower().strip()
+                        if key_lower == normalized_lower or (original_lower and key_lower == original_lower):
+                            fallback_key = key
+                            print(f"[WebCrawler] ✅ Exact match found in fallback_data: '{key}'")
+                            break
+                        
+                        # Also try matching without case sensitivity and with extra spaces
+                        normalized_clean = normalized_lower.replace(' ', '').strip()
+                        key_clean = key_lower.replace(' ', '').strip()
+                        if normalized_clean == key_clean:
+                            fallback_key = key
+                            print(f"[WebCrawler] ✅ Exact match found (after space removal) in fallback_data: '{key}'")
+                            break
+                
+                # If no exact match, try partial match (e.g., "Shuchi Mishra" matches "shuchi mishra")
+                if not fallback_key:
+                    # CRITICAL: If query has 2+ words (full name), prioritize EXACT surname match
+                    normalized_parts = normalized_lower.split()
+                    if len(normalized_parts) >= 2:
+                        first_name = normalized_parts[0].strip()
+                        last_name = normalized_parts[-1].strip()
+                        print(f"[WebCrawler] Trying first+last name match with surname priority: first='{first_name}', last='{last_name}'")
+                        
+                        # First, try exact surname match (highest priority)
+                        exact_surname_matches = []
+                        for key in self.fallback_data.keys():
+                            key_lower = key.lower().strip()
+                            key_parts = key_lower.split()
+                            if len(key_parts) >= 2:
+                                key_first = key_parts[0].strip()
+                                key_last = key_parts[-1].strip()
+                                # CRITICAL: Exact surname match is required for full names
+                                if last_name == key_last:
+                                    # Check if first name also matches
+                                    if first_name == key_first:
+                                        # Perfect match - use this immediately
+                                        fallback_key = key
+                                        print(f"[WebCrawler] ✅ Perfect match (first+last): '{key}'")
+                                        break
+                                    else:
+                                        # Surname matches but first name doesn't - store for later
+                                        exact_surname_matches.append((key, key_first))
+                        
+                        # If perfect match found, use it
+                        if fallback_key:
+                            pass  # Already found
+                        elif exact_surname_matches:
+                            # Use the first surname match (even if first name differs slightly)
+                            # This handles cases like "priyanka oberoi" vs "priyanka jain" - prioritize exact surname
+                            fallback_key = exact_surname_matches[0][0]
+                            print(f"[WebCrawler] ✅ Exact surname match found: '{fallback_key}' (surname: '{last_name}')")
+                        else:
+                            # No exact surname match, try fuzzy matching
+                            for key in self.fallback_data.keys():
+                                key_lower = key.lower().strip()
+                                key_parts = key_lower.split()
+                                if len(key_parts) >= 2:
+                                    key_first = key_parts[0].strip()
+                                    key_last = key_parts[-1].strip()
+                                    # Check if first and last names match exactly
+                                    if first_name == key_first and last_name == key_last:
+                                        fallback_key = key
+                                        print(f"[WebCrawler] ✅ First+Last name match found: '{key}'")
+                                        break
+                                    # Also check if names are similar (fuzzy match)
+                                    elif (first_name in key_first or key_first in first_name) and \
+                                         (last_name in key_last or key_last in last_name):
+                                        fallback_key = key
+                                        print(f"[WebCrawler] ✅ Fuzzy name match found: '{key}'")
+                                        break
+                    
+                    # If still no match, try substring matching (including single word matches)
+                    if not fallback_key:
+                        print(f"[WebCrawler] Trying substring matching...")
+                        for key in self.fallback_data.keys():
+                            key_lower = key.lower().strip()
+                            key_parts = key_lower.split()
+                            
+                            # Check if normalized name contains key or key contains normalized name
+                            if normalized_lower in key_lower or key_lower in normalized_lower:
+                                fallback_key = key
+                                print(f"[WebCrawler] ✅ Substring match found: '{key}'")
+                                break
+                            
+                            # Check if first name matches (for single word queries like "vanila")
+                            if len(normalized_parts) == 1 and len(key_parts) >= 1:
+                                if normalized_parts[0] == key_parts[0]:
+                                    fallback_key = key
+                                    print(f"[WebCrawler] ✅ First name match found: '{key}'")
+                                    break
+                            
+                            # Also check last name match
+                            if len(normalized_parts) >= 1 and len(key_parts) >= 2:
+                                if normalized_parts[-1] == key_parts[-1]:
+                                    fallback_key = key
+                                    print(f"[WebCrawler] ✅ Last name match found: '{key}'")
+                                    break
+                            
+                            # Check if any part of normalized name matches any part of key
+                            if normalized_parts and key_parts:
+                                if any(n_part in key_lower for n_part in normalized_parts) or \
+                                   any(k_part in normalized_lower for k_part in key_parts):
+                                    fallback_key = key
+                                    print(f"[WebCrawler] ✅ Partial name match found: '{key}'")
+                                    break
+                
+                if fallback_key:
+                    print(f"[WebCrawler] ✅ Found {normalized_name} in fallback_data (key: {fallback_key})")
+                    fallback = self.fallback_data[fallback_key]
+                    
+                    # Return structured data for LLM to format naturally (not pre-formatted markdown)
+                    structured_info = f"""TEAM MEMBER INFORMATION:
+Name: {fallback.get('name', 'Unknown')}
+Title: {fallback.get('title', 'Team Member')}
+Description: {fallback.get('description', '')}
+Details: {(fallback.get('details', '') or '')[:1000] if fallback.get('details') else 'No additional details available'}
+Source: {fallback.get('source_url', 'https://prakriti.edu.in/team/')}"""
+                    
+                    return structured_info
+                
+                # If not found in fallback_data either, return "not found" message
+                # DO NOT trigger Selenium web crawling for person queries (too slow and unnecessary)
+                print(f"[WebCrawler] ⚠️ Person '{normalized_name}' not found in team_member_data table or fallback_data")
+                print(f"[WebCrawler] ℹ️ Skipping web crawling for person query - data should be in team_member_data table or fallback_data")
+                return f"""## Information Not Available
+
+I'm sorry, but information about {normalized_name} is not currently available in our team database.
+
+We're continuously updating our team profiles, so please check back later or contact us directly for more information about our staff members.
+
+*Source: [prakriti.edu.in/team](https://prakriti.edu.in/team)*"""
         
         # FIRST: Try to get filtered cached data from web_crawler_data table (FAST PATH)
         # This is faster than checking search_cache, then crawling
@@ -2801,41 +4597,7 @@ class WebCrawlerAgent:
         print(f"[WebCrawler] ⚠️ No cached data found in either cache table, starting web crawl (this may take 2-5 seconds)...")
         print(f"[WebCrawler] 📝 Crawled data will be cached in Supabase for faster future responses")
         
-        query_lower = query.lower()
-        
-        # Check if this is a specific person query
-        if self.is_specific_person_query(query):
-            person_name = self.extract_person_name(query)
-            if person_name:
-                print(f"[WebCrawler] Detected specific person query: {person_name}")
-                
-                # Search for PrakritSchool team content (only team page for efficiency)
-                prakriti_content = self.search_prakriti_content(query)
-                
-                # Search for specific person
-                person_info = self.search_specific_person(person_name, prakriti_content)
-                
-                if person_info.get('found'):
-                    print(f"[WebCrawler] Found information about {person_name}")
-                    return f"""## Information about {person_info['name']}
-
-**Title**: {person_info['title']}
-
-**Description**: {person_info['description']}
-
-**Details**: {person_info['content']}
-
-*Source: [{person_info['url']}]({person_info['url']})*"""
-                else:
-                    print(f"[WebCrawler] No specific information found for {person_name}")
-                    return f"""## Information Not Available
-
-I'm sorry, but information about {person_name} is not currently available on our team page.
-
-We're continuously updating our team profiles, so please check back later or contact us directly for more information about our staff members.
-
-*Source: [prakriti.edu.in/team](https://prakriti.edu.in/team)*"""
-        
+        # Note: Person queries are already handled at the beginning of this function
         # Search for PrakritSchool specific content
         prakriti_content = self.search_prakriti_content(query)
         
