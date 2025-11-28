@@ -18,3 +18,8 @@ html5lib
 sqlalchemy
 psycopg2-binary
 httpx 
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+APScheduler>=3.10.4
+google-auth-httplib2>=0.1.1
+google-api-python-client>=2.100.0 

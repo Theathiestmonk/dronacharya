@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sync History & Logs - DWD Admin Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #ffffff;
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 16px;
+        }
+
+        .filters {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            align-items: end;
+        }
+
+        .filter-group {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .filter-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .filter-group select,
+        .filter-group input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 2px solid #e5e7eb;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .filter-group select:focus,
+        .filter-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+
+        .btn-secondary {
+            background: #e5e7eb;
+            color: #374151;
+        }
+
+        .btn-secondary:hover {
+            background: #d1d5db;
+        }
+
+        .table-container {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: #f9fafb;
+        }
+
+        th {
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        td {
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            font-size: 14px;
+            color: #374151;
+        }
+
+        tr:hover {
+            background: #f9fafb;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-badge.success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-badge.error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .status-badge.in-progress {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .service-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            background: #e0e7ff;
+            color: #3730a3;
+        }
+
+        .service-badge.calendar {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .action-btn {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #667eea;
+            color: white;
+        }
+
+        .action-btn:hover {
+            background: #5568d3;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .pagination-info {
+            font-size: 14px;
+            color: #6b7280;
+        }
+
+        .pagination-controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .pagination-btn {
+            padding: 8px 16px;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            background: white;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        .pagination-btn:hover:not(:disabled) {
+            background: #f9fafb;
+            border-color: #667eea;
+        }
+
+        .pagination-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .pagination-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h3 {
+            font-size: 20px;
+            color: #1f2937;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #6b7280;
+        }
+
+        .log-details {
+            background: #f9fafb;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #9ca3af;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+
+        @media (max-width: 768px) {
+            .filters {
+                flex-direction: column;
+            }
+
+            .filter-group {
+                min-width: 100%;
+            }
+
+            table {
+                font-size: 12px;
+            }
+
+            th, td {
+                padding: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Sync History & Logs</h1>
+            <p>View and filter past sync operations</p>
+        </div>
+
+        <div class="filters">
+            <div class="filter-group">
+                <label>Date Range</label>
+                <input type="date" id="dateFrom" onchange="filterTable()">
+            </div>
+            <div class="filter-group">
+                <label>To</label>
+                <input type="date" id="dateTo" onchange="filterTable()">
+            </div>
+            <div class="filter-group">
+                <label>Service Type</label>
+                <select id="serviceFilter" onchange="filterTable()">
+                    <option value="">All Services</option>
+                    <option value="classroom">Google Classroom</option>
+                    <option value="calendar">Google Calendar</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Status</label>
+                <select id="statusFilter" onchange="filterTable()">
+                    <option value="">All Status</option>
+                    <option value="success">Success</option>
+                    <option value="error">Error</option>
+                    <option value="in-progress">In Progress</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>User Email</label>
+                <input type="text" id="userFilter" placeholder="Filter by email..." oninput="filterTable()">
+            </div>
+            <div>
+                <button class="btn btn-secondary" onclick="resetFilters()">Reset</button>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table id="syncTable">
+                <thead>
+                    <tr>
+                        <th>Date & Time</th>
+                        <th>User Email</th>
+                        <th>Service</th>
+                        <th>Status</th>
+                        <th>Items Synced</th>
+                        <th>Duration</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <!-- Table rows will be generated by JavaScript -->
+                </tbody>
+            </table>
+
+            <div class="pagination">
+                <div class="pagination-info" id="paginationInfo">Showing 1-10 of 50</div>
+                <div class="pagination-controls" id="paginationControls"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for log details -->
+    <div class="modal" id="logModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Sync Log Details</h3>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="log-details" id="logDetails"></div>
+        </div>
+    </div>
+
+    <script>
+        let allSyncData = [];
+        let currentPage = 1;
+        const itemsPerPage = 10;
+
+        // Generate mock sync history data
+        function generateMockData() {
+            const services = ['classroom', 'calendar'];
+            const statuses = ['success', 'error', 'in-progress'];
+            const users = [
+                'john.doe@learners.prakriti.org.in',
+                'jane.smith@learners.prakriti.org.in',
+                'alice.johnson@teachers.prakriti.org.in',
+                'bob.williams@learners.prakriti.org.in',
+                'charlie.brown@learners.prakriti.org.in'
+            ];
+
+            allSyncData = [];
+            for (let i = 0; i < 50; i++) {
+                const date = new Date();
+                date.setDate(date.getDate() - Math.floor(Math.random() * 30));
+                date.setHours(Math.floor(Math.random() * 24));
+                date.setMinutes(Math.floor(Math.random() * 60));
+
+                const service = services[Math.floor(Math.random() * services.length)];
+                const status = statuses[Math.floor(Math.random() * statuses.length)];
+                const user = users[Math.floor(Math.random() * users.length)];
+
+                allSyncData.push({
+                    id: i + 1,
+                    date: date,
+                    user: user,
+                    service: service,
+                    status: status,
+                    itemsSynced: status === 'success' ? Math.floor(Math.random() * 100) + 10 : 0,
+                    duration: Math.floor(Math.random() * 30) + 5,
+                    log: `[${date.toISOString()}] Starting sync for ${user}\n[${date.toISOString()}] Service: ${service}\n[${date.toISOString()}] Status: ${status}\n[${date.toISOString()}] Items processed: ${status === 'success' ? Math.floor(Math.random() * 100) + 10 : 0}\n[${date.toISOString()}] Sync ${status === 'success' ? 'completed' : 'failed'}`
+                });
+            }
+
+            // Sort by date (newest first)
+            allSyncData.sort((a, b) => b.date - a.date);
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('tableBody');
+            const filtered = getFilteredData();
+            const paginated = getPaginatedData(filtered);
+
+            if (paginated.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="empty-state">
+                            <div class="empty-state-icon">📭</div>
+                            <div>No sync records found</div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = paginated.map(item => {
+                const statusClass = item.status === 'success' ? 'success' : 
+                                   item.status === 'error' ? 'error' : 'in-progress';
+                const statusText = item.status === 'success' ? 'Success' : 
+                                  item.status === 'error' ? 'Failed' : 'In Progress';
+                const serviceClass = item.service === 'classroom' ? '' : 'calendar';
+                const serviceText = item.service === 'classroom' ? 'Classroom' : 'Calendar';
+
+                return `
+                    <tr>
+                        <td>${item.date.toLocaleString()}</td>
+                        <td>${item.user}</td>
+                        <td><span class="service-badge ${serviceClass}">${serviceText}</span></td>
+                        <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                        <td>${item.itemsSynced}</td>
+                        <td>${item.duration}s</td>
+                        <td>
+                            <button class="action-btn" onclick="viewLog(${item.id})">View Log</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            updatePagination(filtered);
+        }
+
+        function getFilteredData() {
+            const dateFrom = document.getElementById('dateFrom').value;
+            const dateTo = document.getElementById('dateTo').value;
+            const serviceFilter = document.getElementById('serviceFilter').value;
+            const statusFilter = document.getElementById('statusFilter').value;
+            const userFilter = document.getElementById('userFilter').value.toLowerCase();
+
+            return allSyncData.filter(item => {
+                if (dateFrom && item.date < new Date(dateFrom)) return false;
+                if (dateTo && item.date > new Date(dateTo + 'T23:59:59')) return false;
+                if (serviceFilter && item.service !== serviceFilter) return false;
+                if (statusFilter && item.status !== statusFilter) return false;
+                if (userFilter && !item.user.toLowerCase().includes(userFilter)) return false;
+                return true;
+            });
+        }
+
+        function getPaginatedData(data) {
+            const start = (currentPage - 1) * itemsPerPage;
+            const end = start + itemsPerPage;
+            return data.slice(start, end);
+        }
+
+        function updatePagination(filtered) {
+            const total = filtered.length;
+            const start = (currentPage - 1) * itemsPerPage + 1;
+            const end = Math.min(currentPage * itemsPerPage, total);
+            
+            document.getElementById('paginationInfo').textContent = 
+                total > 0 ? `Showing ${start}-${end} of ${total}` : 'No results';
+
+            const controls = document.getElementById('paginationControls');
+            const totalPages = Math.ceil(total / itemsPerPage);
+            
+            controls.innerHTML = '';
+            
+            // Previous button
+            const prevBtn = document.createElement('button');
+            prevBtn.className = 'pagination-btn';
+            prevBtn.textContent = 'Previous';
+            prevBtn.disabled = currentPage === 1;
+            prevBtn.onclick = () => {
+                if (currentPage > 1) {
+                    currentPage--;
+                    renderTable();
+                }
+            };
+            controls.appendChild(prevBtn);
+
+            // Page numbers
+            for (let i = 1; i <= Math.min(totalPages, 5); i++) {
+                const pageBtn = document.createElement('button');
+                pageBtn.className = 'pagination-btn' + (i === currentPage ? ' active' : '');
+                pageBtn.textContent = i;
+                pageBtn.onclick = () => {
+                    currentPage = i;
+                    renderTable();
+                };
+                controls.appendChild(pageBtn);
+            }
+
+            // Next button
+            const nextBtn = document.createElement('button');
+            nextBtn.className = 'pagination-btn';
+            nextBtn.textContent = 'Next';
+            nextBtn.disabled = currentPage >= totalPages;
+            nextBtn.onclick = () => {
+                if (currentPage < totalPages) {
+                    currentPage++;
+                    renderTable();
+                }
+            };
+            controls.appendChild(nextBtn);
+        }
+
+        function filterTable() {
+            currentPage = 1;
+            renderTable();
+        }
+
+        function resetFilters() {
+            document.getElementById('dateFrom').value = '';
+            document.getElementById('dateTo').value = '';
+            document.getElementById('serviceFilter').value = '';
+            document.getElementById('statusFilter').value = '';
+            document.getElementById('userFilter').value = '';
+            currentPage = 1;
+            renderTable();
+        }
+
+        function viewLog(id) {
+            const item = allSyncData.find(d => d.id === id);
+            if (item) {
+                document.getElementById('logDetails').textContent = item.log;
+                document.getElementById('logModal').classList.add('show');
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('logModal').classList.remove('show');
+        }
+
+        // Close modal on outside click
+        document.getElementById('logModal').addEventListener('click', (e) => {
+            if (e.target.id === 'logModal') {
+                closeModal();
+            }
+        });
+
+        // Initialize
+        window.addEventListener('DOMContentLoaded', () => {
+            generateMockData();
+            renderTable();
+        });
+    </script>
+</body>
+</html>
+

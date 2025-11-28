@@ -1,19 +1,34 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from typing import Optional
 import httpx
 import json
-from datetime import datetime, timedelta
+import asyncio
+from datetime import datetime, timedelta, timezone
 import os
 
 from ..core.database import get_db
 from ..models.admin import Admin, GoogleIntegration, ClassroomData, CalendarData
 # Auth functions removed - using Supabase authentication in frontend
 from ..services.supabase_admin import SupabaseAdminService
+from ..services.google_dwd_service import get_dwd_service
+from ..services.embedding_generator import get_embedding_generator
+from ..services.auto_sync_scheduler import get_auto_sync_scheduler
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+# Sync status tracking for bulk sync operations
+_sync_status = {
+    "is_running": False,
+    "started_at": None,
+    "completed_at": None,
+    "total_users": 0,
+    "users_synced": 0,
+    "users_failed": 0,
+    "error": None
+}
 
 # Pydantic models for request/response
 class AdminLogin(BaseModel):
@@ -80,192 +95,8 @@ GOOGLE_CALENDAR_SCOPES = [
     "https://www.googleapis.com/auth/calendar.events.readonly"
 ]
 
-@router.get("/auth-url")
-async def get_google_auth_url(service: str):
-    """Generate Google OAuth URL for admin integration"""
-    print(f"🔍 Auth URL request for service: {service}")
-    print(f"🔍 GOOGLE_CLIENT_ID: {GOOGLE_CLIENT_ID}")
-    print(f"🔍 GOOGLE_REDIRECT_URI: {GOOGLE_REDIRECT_URI}")
-    
-    if not GOOGLE_CLIENT_ID:
-        raise HTTPException(status_code=500, detail="Google Client ID not configured")
-    
-    if service not in ["classroom", "calendar", "both"]:
-        raise HTTPException(status_code=400, detail="Service must be 'classroom', 'calendar', or 'both'")
-    
-    if service == "both":
-        scopes = GOOGLE_CLASSROOM_SCOPES + GOOGLE_CALENDAR_SCOPES
-    elif service == "classroom":
-        scopes = GOOGLE_CLASSROOM_SCOPES
-    else:
-        scopes = GOOGLE_CALENDAR_SCOPES
-    scope_string = " ".join(scopes)
-    
-    # CRITICAL: Ensure redirect_uri points to FRONTEND, not backend
-    redirect_uri = GOOGLE_REDIRECT_URI
-    if "localhost:8000" in redirect_uri or "/api/" in redirect_uri:
-        print(f"⚠️ ERROR: redirect_uri points to backend: {redirect_uri}")
-        print(f"⚠️ FORCING redirect_uri to frontend: http://localhost:3000/admin/callback")
-        redirect_uri = "http://localhost:3000/admin/callback"
-    
-    auth_url = (
-        f"https://accounts.google.com/o/oauth2/v2/auth?"
-        f"client_id={GOOGLE_CLIENT_ID}&"
-        f"redirect_uri={redirect_uri}&"
-        f"response_type=code&"
-        f"scope={scope_string}&"
-        f"access_type=offline&"
-        f"prompt=consent&"
-        f"state={service}"
-    )
-    
-    print(f"🔍 Generated auth URL with redirect_uri: {redirect_uri}")
-    print(f"🔍 Full auth URL: {auth_url}")
-    return {"auth_url": auth_url, "service": service}
 
-@router.get("/callback")
-async def handle_google_callback(
-    code: str,
-    state: str,
-    email: Optional[str] = None,
-    db: Session = Depends(get_db)
-):
-    """
-    DEPRECATED: This route should NOT be used.
-    OAuth callbacks should go through Next.js frontend at /admin/callback which calls /api/admin/callback.
-    This route is kept for backward compatibility but will reject requests that don't have email.
-    """
-    print(f"⚠️ [BACKEND CALLBACK] DEPRECATED ROUTE CALLED - This should use Next.js API route instead")
-    print(f"⚠️ [BACKEND CALLBACK] Code: {code[:20]}..., State: {state}, Email: {email}")
-    
-    # REJECT requests without email - force using Next.js callback API
-    if not email:
-        print(f"❌ [BACKEND CALLBACK] Rejecting callback without email - must use Next.js callback route")
-        raise HTTPException(
-            status_code=400, 
-            detail="This route requires email parameter. Please use the frontend callback at /admin/callback which will call the Next.js API route."
-        )
-    
-    if state not in ["classroom", "calendar", "both"]:
-        raise HTTPException(status_code=400, detail="Invalid service type")
-    
-    try:
-        # Use Supabase service
-        admin_service = SupabaseAdminService()
-        
-        # Get CURRENT USER by email - NO FALLBACK
-        print(f"🔍 [BACKEND CALLBACK] Looking for admin with email: {email}")
-        admin = admin_service.get_admin(email)
-        
-        if not admin:
-            print(f"❌ [BACKEND CALLBACK] Admin not found for email: {email}")
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Admin profile not found for {email}. Please ensure this user has admin_privileges=true."
-            )
-        
-        print(f"✅ [BACKEND CALLBACK] Found admin: {admin['email']} (ID: {admin['id']})")
-        
-        # Exchange code for tokens
-        token_data = {
-            "client_id": GOOGLE_CLIENT_ID,
-            "client_secret": GOOGLE_CLIENT_SECRET,
-            "code": code,
-            "grant_type": "authorization_code",
-            "redirect_uri": GOOGLE_REDIRECT_URI
-        }
-        
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://oauth2.googleapis.com/token",
-                data=token_data
-            )
-            response.raise_for_status()
-            tokens = response.json()
-        
-        print(f"🔍 [BACKEND CALLBACK] Tokens received, storing under admin_id: {admin['id']}")
-        
-        # Store tokens for each service - using current user's ID
-        if state == "both":
-            # Create integration for classroom
-            admin_service.create_google_integration(
-                admin_id=admin['id'],  # Current user's ID
-                service_type="classroom",
-                access_token=tokens["access_token"],
-                refresh_token=tokens["refresh_token"],
-                token_expires_at=datetime.utcnow() + timedelta(seconds=tokens["expires_in"]),
-                scope=" ".join(GOOGLE_CLASSROOM_SCOPES)
-            )
-            
-            # Create integration for calendar
-            admin_service.create_google_integration(
-                admin_id=admin['id'],  # Current user's ID
-                service_type="calendar",
-                access_token=tokens["access_token"],
-                refresh_token=tokens["refresh_token"],
-                token_expires_at=datetime.utcnow() + timedelta(seconds=tokens["expires_in"]),
-                scope=" ".join(GOOGLE_CALENDAR_SCOPES)
-            )
-            
-            # Enable both services
-            admin_service.update_admin_integrations(admin['id'], classroom_enabled=True, calendar_enabled=True)
-        
-        else:
-            # Single service integration
-            admin_service.create_google_integration(
-                admin_id=admin['id'],  # Current user's ID
-                service_type=state,
-                access_token=tokens["access_token"],
-                refresh_token=tokens["refresh_token"],
-                token_expires_at=datetime.utcnow() + timedelta(seconds=tokens["expires_in"]),
-                scope=" ".join(GOOGLE_CLASSROOM_SCOPES if state == "classroom" else GOOGLE_CALENDAR_SCOPES)
-            )
-            
-            if state == "classroom":
-                admin_service.update_admin_integrations(admin['id'], classroom_enabled=True)
-            else:
-                admin_service.update_admin_integrations(admin['id'], calendar_enabled=True)
-        
-        print(f"✅ [BACKEND CALLBACK] Successfully stored integrations for {admin['email']} (ID: {admin['id']})")
-        
-        # Redirect back to admin dashboard
-        return RedirectResponse(url="http://localhost:3000/admin?connected=true", status_code=302)
-        
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=400, detail=f"Google OAuth error: {e.response.text}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Integration error: {str(e)}")
 
-@router.get("/integrations")
-async def get_admin_integrations(email: Optional[str] = None):
-    """Get admin's Google integrations status"""
-    
-    try:
-        admin_service = SupabaseAdminService()
-        admin = None
-        if email:
-            admin = admin_service.get_admin(email)
-        
-        if not admin:
-            admin = admin_service.get_first_admin()
-        
-        if not admin:
-            print("No admin profile found in user_profiles")
-            return {
-                "classroom_enabled": False,
-                "calendar_enabled": False,
-                "integrations": []
-            }
-        
-        return admin_service.get_integration_status(admin['id'])
-        
-    except Exception as e:
-        print(f"Error getting integrations: {e}")
-        return {
-            "classroom_enabled": False,
-            "calendar_enabled": False,
-            "integrations": []
-        }
 
 # Sync functions removed - using Supabase authentication in frontend
 # @router.post("/sync/classroom")
@@ -495,10 +326,19 @@ async def get_classroom_data(email: Optional[str] = None):
 
 @router.post("/sync/website")
 async def sync_website_data(email: Optional[str] = None):
-    """Sync website data by clearing cache and triggering fresh crawl"""
+    """Sync website data by running daily_crawl_essential.py to update all essential pages"""
     try:
-        from app.agents.web_crawler_agent import web_crawler, get_supabase_client
+        import sys
+        import os
         from datetime import datetime, timedelta
+        
+        # Add backend directory to path to import daily_crawl_essential
+        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        if backend_dir not in sys.path:
+            sys.path.insert(0, backend_dir)
+        
+        from daily_crawl_essential import crawl_essential_pages
+        from supabase_config import get_supabase_client
         
         print(f"[Admin] Website sync requested by: {email or 'unknown'}")
         
@@ -511,73 +351,42 @@ async def sync_website_data(email: Optional[str] = None):
                 "stats": {}
             }
         
-        # Clear old cache entries (older than 1 day) to force fresh crawl
+        # Clear old cache entries (older than 1 hour) to force fresh crawl
         cutoff_date = (datetime.utcnow() - timedelta(hours=1)).isoformat()
         
         # Mark old cache entries as inactive
         try:
             supabase.table('web_crawler_data').update({'is_active': False}).lt('crawled_at', cutoff_date).execute()
             supabase.table('search_cache').update({'is_active': False}).lt('expires_at', datetime.utcnow().isoformat()).execute()
-            supabase.table('team_member_data').update({'is_active': False}).lt('crawled_at', cutoff_date).execute()
             print(f"[Admin] ✅ Cleared old cache entries")
         except Exception as e:
             print(f"[Admin] Warning: Error clearing cache: {e}")
         
-        # Trigger fresh crawl of team page with Selenium to extract popup data
-        team_url = "https://prakriti.edu.in/team/"
-        
+        # Run the daily crawl essential script
         try:
-            # Directly trigger team member extraction with Selenium (this handles popups)
-            print(f"[Admin] Extracting ALL team members with Selenium from: {team_url}")
-            # Use process_all=True to extract all team members, not just first 3
-            team_members_dict = web_crawler.extract_team_members_with_selenium(team_url, process_all=True)
+            print(f"[Admin] Running daily_crawl_essential.py to crawl all essential pages...")
+            crawl_essential_pages()
+            print(f"[Admin] ✅ Daily crawl completed successfully")
             
-            # Store team members in team_member_data table
-            team_member_count = 0
-            if team_members_dict:
-                for name, data in team_members_dict.items():
-                    try:
-                        team_member_entry = {
-                            'name': name,
-                            'title': data.get('title', ''),
-                            'description': data.get('description', ''),
-                            'details': data.get('details', ''),
-                            'full_content': data.get('full_content', ''),
-                            'image_url': data.get('image_url', ''),
-                            'source_url': team_url,
-                            'crawled_date': datetime.utcnow().date().isoformat(),
-                            'is_active': True
-                        }
-                        
-                        # Upsert (insert or update) team member data
-                        supabase.table('team_member_data').upsert(
-                            team_member_entry,
-                            on_conflict='name,crawled_date'
-                        ).execute()
-                        team_member_count += 1
-                        print(f"[Admin] ✅ Cached team member: {name}")
-                    except Exception as e:
-                        print(f"[Admin] Warning: Error caching {name}: {e}")
-                        continue
+            # Count pages crawled (check web_crawler_data updated in last hour)
+            pages_result = supabase.table('web_crawler_data').select('id').eq('is_active', True).gte('crawled_at', cutoff_date).execute()
+            pages_count = len(pages_result.data) if pages_result.data else 0
             
-            # Also trigger a general crawl to update web_crawler_data table
-            print(f"[Admin] Triggering general website crawl...")
-            test_query = "team members"
-            enhanced_response = web_crawler.get_enhanced_response(test_query)
-            
-            # Count final team members
-            team_members_result = supabase.table('team_member_data').select('name').eq('is_active', True).gte('crawled_at', cutoff_date).execute()
-            final_count = len(team_members_result.data) if team_members_result.data else team_member_count
+            # Count team members updated
+            team_members_result = supabase.table('team_member_data').select('id').eq('is_active', True).gte('crawled_at', cutoff_date).execute()
+            team_members_count = len(team_members_result.data) if team_members_result.data else 0
             
             return {
                 "success": True,
-                "message": f"Website data synced successfully. {final_count} team members updated.",
+                "message": f"Website data synced successfully. {pages_count} pages and {team_members_count} team members updated.",
                 "stats": {
-                    "team_members": final_count,
+                    "pages_crawled": pages_count,
+                    "team_members": team_members_count,
                     "cache_cleared": True
                 },
                 "summary": {
-                    "team_members": final_count
+                    "pages": pages_count,
+                    "team_members": team_members_count
                 }
             }
         except Exception as e:
@@ -599,6 +408,33 @@ async def sync_website_data(email: Optional[str] = None):
             "message": f"Sync error: {str(e)}",
             "stats": {}
         }
+
+@router.get("/data/website")
+async def get_website_page_data(url: Optional[str] = None):
+    """Get synced website page data"""
+    try:
+        from supabase_config import get_supabase_client
+        
+        supabase = get_supabase_client()
+        if not supabase:
+            return {"title": "", "crawled_at": None}
+        
+        if not url:
+            return {"title": "", "crawled_at": None}
+        
+        # Get most recent active record for this URL
+        result = supabase.table('web_crawler_data').select('title, crawled_at').eq('url', url).eq('is_active', True).order('crawled_at', desc=True).limit(1).execute()
+        
+        if result.data and len(result.data) > 0:
+            return {
+                "title": result.data[0].get('title', ''),
+                "crawled_at": result.data[0].get('crawled_at')
+            }
+        
+        return {"title": "", "crawled_at": None}
+    except Exception as e:
+        print(f"Error getting website page data: {e}")
+        return {"title": "", "crawled_at": None}
 
 @router.get("/data/calendar")
 async def get_calendar_data(email: Optional[str] = None):
@@ -666,3 +502,1333 @@ async def refresh_google_token(integration: GoogleIntegration, db: Session):
         integration.is_active = False
         db.commit()
         raise e
+# DWD Status Endpoint
+@router.get("/dwd/status")
+async def get_dwd_status():
+    """Check if DWD service is available and configured"""
+    try:
+        dwd_service = get_dwd_service()
+        if not dwd_service:
+            return {
+                "available": False,
+                "workspace_domain": os.getenv('GOOGLE_WORKSPACE_DOMAIN', 'not configured'),
+                "service_account_path": os.getenv('GOOGLE_APPLICATION_CREDENTIALS', 'not configured'),
+                "error": "DWD service not available. Check GOOGLE_APPLICATION_CREDENTIALS path and service account file."
+            }
+        
+        return {
+            "available": True,
+            "workspace_domain": dwd_service.workspace_domain,
+            "service_account_path": dwd_service.service_account_path,
+            "message": "DWD service is configured and ready"
+        }
+    except Exception as e:
+        return {
+            "available": False,
+            "workspace_domain": os.getenv('GOOGLE_WORKSPACE_DOMAIN', 'not configured'),
+            "service_account_path": os.getenv('GOOGLE_APPLICATION_CREDENTIALS', 'not configured'),
+            "error": str(e)
+        }
+
+# DWD Sync Endpoint
+class DWDSyncRequest(BaseModel):
+    user_email: str
+
+class GradeRoleSyncRequest(BaseModel):
+    service: str
+    email: Optional[str] = None
+
+@router.post("/sync-dwd/{service}")
+async def sync_dwd(service: str, request: DWDSyncRequest):
+    """
+    Sync Google Classroom/Calendar data using Domain-Wide Delegation (DWD)
+    Requires: user_email in request body (email of the user to sync data for)
+    """
+    if service not in ["classroom", "calendar"]:
+        raise HTTPException(status_code=400, detail="Service must be 'classroom' or 'calendar'")
+    
+    user_email = request.user_email
+    if not user_email:
+        raise HTTPException(status_code=400, detail="user_email is required")
+    
+    # Get DWD service
+    dwd_service = get_dwd_service()
+    if not dwd_service:
+        raise HTTPException(
+            status_code=500, 
+            detail="DWD service not available. Check GOOGLE_APPLICATION_CREDENTIALS path and service account file."
+        )
+    
+    # Get user profile to find user_id
+    admin_service = SupabaseAdminService()
+    user_profile = admin_service.get_user_profile_by_email(user_email)
+    
+    if not user_profile:
+        raise HTTPException(status_code=404, detail=f"User profile not found for {user_email}")
+    
+    user_id = user_profile.get('user_id') or user_profile.get('id')
+    if not user_id:
+        raise HTTPException(status_code=404, detail=f"user_id not found for {user_email}")
+    
+    # Get Supabase client
+    from supabase_config import get_supabase_client
+    supabase = get_supabase_client()
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase client not available")
+    
+    sync_stats = {
+        "courses": {"created": 0, "updated": 0},
+        "teachers": {"created": 0, "updated": 0},
+        "students": {"created": 0, "updated": 0},
+        "coursework": {"created": 0, "updated": 0},
+        "submissions": {"created": 0, "updated": 0},
+        "announcements": {"created": 0, "updated": 0},
+        "calendars": {"created": 0, "updated": 0},
+        "events": {"created": 0, "updated": 0}
+    }
+    
+    def parse_google_timestamp(timestamp: str = None) -> str:
+        """Parse Google timestamp to ISO format"""
+        if not timestamp:
+            return None
+        try:
+            return datetime.fromisoformat(timestamp.replace('Z', '+00:00')).isoformat()
+        except:
+            return None
+    
+    try:
+        if service == "classroom":
+            print(f"🔍 DWD: Fetching Classroom data for {user_email}...")
+            
+            # Fetch courses
+            courses = dwd_service.fetch_user_courses(user_email)
+            print(f"🔍 DWD: Found {len(courses)} courses")
+            
+            # Process each course
+            for course in courses:
+                course_id = course.get('id')
+                if not course_id:
+                    continue
+                
+                print(f"🔍 DWD: Processing course: {course.get('name', 'Unknown')} ({course_id})")
+                
+                # Prepare course data
+                course_data = {
+                    "user_id": user_id,
+                    "course_id": course_id,
+                    "name": course.get('name', ''),
+                    "description": course.get('description'),
+                    "section": course.get('section'),
+                    "room": course.get('room'),
+                    "owner_id": course.get('ownerId'),
+                    "enrollment_code": course.get('enrollmentCode'),
+                    "course_state": course.get('courseState'),
+                    "alternate_link": course.get('alternateLink'),
+                    "teacher_group_email": course.get('teacherGroupEmail'),
+                    "course_group_email": course.get('courseGroupEmail'),
+                    "guardians_enabled": course.get('guardiansEnabled', False),
+                    "calendar_enabled": bool(course.get('calendarId')),
+                    "max_rosters": course.get('maxRosters'),
+                    "course_material_sets": course.get('courseMaterialSets'),
+                    "gradebook_settings": course.get('gradebookSettings'),
+                    "description_heading": course.get('descriptionHeading'),
+                    "update_time": parse_google_timestamp(course.get('updateTime')),
+                    "last_synced_at": datetime.now(timezone.utc).isoformat()
+                }
+                
+                # Upsert course
+                existing_course = supabase.table('google_classroom_courses').select('id').eq('user_id', user_id).eq('course_id', course_id).single().execute()
+                
+                db_course_id = None
+                if existing_course.data:
+                    supabase.table('google_classroom_courses').update(course_data).eq('id', existing_course.data['id']).execute()
+                    db_course_id = existing_course.data['id']
+                    sync_stats["courses"]["updated"] += 1
+                else:
+                    result = supabase.table('google_classroom_courses').insert(course_data).select('id').execute()
+                    if result.data:
+                        db_course_id = result.data[0]['id']
+                        sync_stats["courses"]["created"] += 1
+                
+                if not db_course_id:
+                    # Fallback: try to get ID
+                    result = supabase.table('google_classroom_courses').select('id').eq('user_id', user_id).eq('course_id', course_id).single().execute()
+                    if result.data:
+                        db_course_id = result.data['id']
+                    else:
+                        print(f"⚠️ DWD: Could not get database course ID for {course_id}")
+                        continue
+                
+                # Fetch and store teachers
+                try:
+                    teachers = dwd_service.fetch_course_teachers(user_email, course_id)
+                    for teacher in teachers:
+                        teacher_data = {
+                            "course_id": db_course_id,
+                            "user_id": teacher.get('userId', ''),
+                            "course_user_id": f"{course_id}_{teacher.get('userId', '')}",
+                            "profile": teacher.get('profile', {})
+                        }
+                        
+                        existing = supabase.table('google_classroom_teachers').select('id').eq('course_id', db_course_id).eq('course_user_id', teacher_data['course_user_id']).single().execute()
+                        
+                        if existing.data:
+                            supabase.table('google_classroom_teachers').update(teacher_data).eq('id', existing.data['id']).execute()
+                            sync_stats["teachers"]["updated"] += 1
+                        else:
+                            supabase.table('google_classroom_teachers').insert(teacher_data).execute()
+                            sync_stats["teachers"]["created"] += 1
+                except Exception as e:
+                    print(f"⚠️ DWD: Error fetching teachers for course {course_id}: {e}")
+                
+                # Fetch and store students
+                try:
+                    students = dwd_service.fetch_course_students(user_email, course_id)
+                    for student in students:
+                        student_data = {
+                            "course_id": db_course_id,
+                            "user_id": student.get('userId', ''),
+                            "course_user_id": f"{course_id}_{student.get('userId', '')}",
+                            "profile": student.get('profile', {}),
+                            "student_work_folder": student.get('studentWorkFolder')
+                        }
+                        
+                        existing = supabase.table('google_classroom_students').select('id').eq('course_id', db_course_id).eq('course_user_id', student_data['course_user_id']).single().execute()
+                        
+                        if existing.data:
+                            supabase.table('google_classroom_students').update(student_data).eq('id', existing.data['id']).execute()
+                            sync_stats["students"]["updated"] += 1
+                        else:
+                            supabase.table('google_classroom_students').insert(student_data).execute()
+                            sync_stats["students"]["created"] += 1
+                except Exception as e:
+                    print(f"⚠️ DWD: Error fetching students for course {course_id}: {e}")
+                
+                # Fetch and store coursework
+                try:
+                    coursework_list = dwd_service.fetch_course_coursework(user_email, course_id)
+                    for cw in coursework_list:
+                        cw_id = cw.get('id')
+                        if not cw_id:
+                            continue
+                        
+                        due_date = None
+                        if cw.get('dueDate'):
+                            due_date_str = f"{cw['dueDate'].get('year', 2000)}-{cw['dueDate'].get('month', 1):02d}-{cw['dueDate'].get('day', 1):02d}"
+                            due_date = parse_google_timestamp(f"{due_date_str}T00:00:00Z")
+                        elif cw.get('dueTime'):
+                            due_date = parse_google_timestamp(cw['dueTime'])
+                        
+                        coursework_data = {
+                            "course_id": db_course_id,
+                            "coursework_id": cw_id,
+                            "title": cw.get('title', ''),
+                            "description": cw.get('description'),
+                            "materials": cw.get('materials'),
+                            "state": cw.get('state'),
+                            "alternate_link": cw.get('alternateLink'),
+                            "creation_time": parse_google_timestamp(cw.get('creationTime')),
+                            "update_time": parse_google_timestamp(cw.get('updateTime')),
+                            "due_date": due_date,
+                            "due_time": cw.get('dueTime'),
+                            "max_points": float(cw['maxPoints'].get('value', 0)) if cw.get('maxPoints') else None,
+                            "work_type": cw.get('workType'),
+                            "associated_with_developer": cw.get('associatedWithDeveloper', False),
+                            "assignee_mode": cw.get('assigneeMode'),
+                            "individual_students_options": cw.get('individualStudentsOptions'),
+                            "submission_modification_mode": cw.get('submissionModificationMode'),
+                            "creator_user_id": cw.get('creatorUserId'),
+                            "topic_id": cw.get('topicId'),
+                            "grade_category": cw.get('gradeCategory'),
+                            "assignment": cw.get('assignment'),
+                            "multiple_choice_question": cw.get('multipleChoiceQuestion'),
+                            "last_synced_at": datetime.now(timezone.utc).isoformat()
+                        }
+                        
+                        existing = supabase.table('google_classroom_coursework').select('id').eq('course_id', db_course_id).eq('coursework_id', cw_id).single().execute()
+                        
+                        cw_db_id = None
+                        if existing.data:
+                            supabase.table('google_classroom_coursework').update(coursework_data).eq('id', existing.data['id']).execute()
+                            cw_db_id = existing.data['id']
+                            sync_stats["coursework"]["updated"] += 1
+                        else:
+                            result = supabase.table('google_classroom_coursework').insert(coursework_data).select('id').execute()
+                            if result.data:
+                                cw_db_id = result.data[0]['id']
+                                sync_stats["coursework"]["created"] += 1
+                        
+                        # Generate embedding for coursework
+                        if cw_db_id:
+                            try:
+                                embedding_gen = get_embedding_generator()
+                                embedding_gen.generate_for_coursework(cw_db_id)
+                            except Exception as e:
+                                print(f"⚠️ DWD: Failed to generate embedding for coursework {cw_id}: {e}")
+                        
+                        # Fetch and store submissions
+                        if cw_db_id:
+                            try:
+                                submissions = dwd_service.fetch_course_submissions(user_email, course_id, cw_id)
+                                for sub in submissions:
+                                    submission_data = {
+                                        "coursework_id": cw_db_id,
+                                        "submission_id": sub.get('id', ''),
+                                        "course_id": course_id,
+                                        "coursework_id_google": cw_id,
+                                        "user_id": sub.get('userId', ''),
+                                        "state": sub.get('state'),
+                                        "alternate_link": sub.get('alternateLink'),
+                                        "assigned_grade": float(sub['assignedGrade']) if sub.get('assignedGrade') else None,
+                                        "draft_grade": float(sub['draftGrade']) if sub.get('draftGrade') else None,
+                                        "course_work_type": sub.get('courseWorkType'),
+                                        "associated_with_developer": sub.get('associatedWithDeveloper', False),
+                                        "submission_history": sub.get('submissionHistory'),
+                                        "last_synced_at": datetime.now(timezone.utc).isoformat()
+                                    }
+                                    
+                                    existing = supabase.table('google_classroom_submissions').select('id').eq('coursework_id', cw_db_id).eq('submission_id', submission_data['submission_id']).single().execute()
+                                    
+                                    if existing.data:
+                                        supabase.table('google_classroom_submissions').update(submission_data).eq('id', existing.data['id']).execute()
+                                        sync_stats["submissions"]["updated"] += 1
+                                    else:
+                                        supabase.table('google_classroom_submissions').insert(submission_data).execute()
+                                        sync_stats["submissions"]["created"] += 1
+                            except Exception as e:
+                                print(f"⚠️ DWD: Error fetching submissions for coursework {cw_id}: {e}")
+                except Exception as e:
+                    print(f"⚠️ DWD: Error fetching coursework for course {course_id}: {e}")
+                
+                # Fetch and store announcements
+                try:
+                    announcements = dwd_service.fetch_course_announcements(user_email, course_id)
+                    for ann in announcements:
+                        announcement_data = {
+                            "course_id": db_course_id,
+                            "announcement_id": ann.get('id', ''),
+                            "text": ann.get('text'),
+                            "materials": ann.get('materials'),
+                            "state": ann.get('state'),
+                            "alternate_link": ann.get('alternateLink'),
+                            "creation_time": parse_google_timestamp(ann.get('creationTime')),
+                            "update_time": parse_google_timestamp(ann.get('updateTime')),
+                            "scheduled_time": parse_google_timestamp(ann.get('scheduledTime')),
+                            "assignee_mode": ann.get('assigneeMode'),
+                            "individual_students_options": ann.get('individualStudentsOptions'),
+                            "creator_user_id": ann.get('creatorUserId'),
+                            "course_work_type": ann.get('courseWorkType'),
+                            "last_synced_at": datetime.now(timezone.utc).isoformat()
+                        }
+                        
+                        existing = supabase.table('google_classroom_announcements').select('id').eq('course_id', db_course_id).eq('announcement_id', announcement_data['announcement_id']).single().execute()
+                        
+                        ann_db_id = None
+                        if existing.data:
+                            supabase.table('google_classroom_announcements').update(announcement_data).eq('id', existing.data['id']).execute()
+                            ann_db_id = existing.data['id']
+                            sync_stats["announcements"]["updated"] += 1
+                        else:
+                            result = supabase.table('google_classroom_announcements').insert(announcement_data).select('id').execute()
+                            if result.data:
+                                ann_db_id = result.data[0]['id']
+                                sync_stats["announcements"]["created"] += 1
+                        
+                        # Generate embedding for announcement
+                        if ann_db_id:
+                            try:
+                                embedding_gen = get_embedding_generator()
+                                embedding_gen.generate_for_announcement(ann_db_id)
+                            except Exception as e:
+                                print(f"⚠️ DWD: Failed to generate embedding for announcement {ann.get('id', 'Unknown')}: {e}")
+                except Exception as e:
+                    print(f"⚠️ DWD: Error fetching announcements for course {course_id}: {e}")
+            
+            return {
+                "success": True,
+                "message": f"Synced Google Classroom data for {user_email}",
+                "stats": sync_stats,
+                "summary": {
+                    "courses": sync_stats["courses"]["created"] + sync_stats["courses"]["updated"],
+                    "teachers": sync_stats["teachers"]["created"] + sync_stats["teachers"]["updated"],
+                    "students": sync_stats["students"]["created"] + sync_stats["students"]["updated"],
+                    "announcements": sync_stats["announcements"]["created"] + sync_stats["announcements"]["updated"],
+                    "coursework": sync_stats["coursework"]["created"] + sync_stats["coursework"]["updated"],
+                    "submissions": sync_stats["submissions"]["created"] + sync_stats["submissions"]["updated"]
+                }
+            }
+        
+        elif service == "calendar":
+            print(f"🔍 DWD: Fetching Calendar data for {user_email}...")
+            
+            # Fetch calendars
+            calendars = dwd_service.fetch_user_calendars(user_email)
+            print(f"🔍 DWD: Found {len(calendars)} calendars")
+            
+            for cal in calendars:
+                cal_id = cal.get('id')
+                if not cal_id:
+                    continue
+                
+                calendar_data = {
+                    "user_id": user_id,
+                    "calendar_id": cal_id,
+                    "summary": cal.get('summary'),
+                    "description": cal.get('description'),
+                    "location": cal.get('location'),
+                    "timezone": cal.get('timeZone'),
+                    "color_id": cal.get('colorId'),
+                    "background_color": cal.get('backgroundColor'),
+                    "foreground_color": cal.get('foregroundColor'),
+                    "access_role": cal.get('accessRole'),
+                    "selected": cal.get('selected', True),
+                    "primary_calendar": cal_id == 'primary',
+                    "deleted": cal.get('deleted', False),
+                    "conference_properties": cal.get('conferenceProperties'),
+                    "notification_settings": cal.get('notificationSettings'),
+                    "last_synced_at": datetime.now(timezone.utc).isoformat()
+                }
+                
+                existing = supabase.table('google_calendar_calendars').select('id').eq('user_id', user_id).eq('calendar_id', cal_id).single().execute()
+                
+                if existing.data:
+                    supabase.table('google_calendar_calendars').update(calendar_data).eq('id', existing.data['id']).execute()
+                    sync_stats["calendars"]["updated"] += 1
+                else:
+                    supabase.table('google_calendar_calendars').insert(calendar_data).execute()
+                    sync_stats["calendars"]["created"] += 1
+                
+                # Fetch events for this calendar
+                try:
+                    events = dwd_service.fetch_calendar_events(user_email, cal_id)
+                    for event in events:
+                        event_id = event.get('id')
+                        if not event_id:
+                            continue
+                        
+                        # Parse start/end times
+                        start_time = None
+                        end_time = None
+                        all_day = False
+                        
+                        if event.get('start'):
+                            if event['start'].get('dateTime'):
+                                start_time = parse_google_timestamp(event['start']['dateTime'])
+                            elif event['start'].get('date'):
+                                start_time = parse_google_timestamp(f"{event['start']['date']}T00:00:00Z")
+                                all_day = True
+                        
+                        if event.get('end'):
+                            if event['end'].get('dateTime'):
+                                end_time = parse_google_timestamp(event['end']['dateTime'])
+                            elif event['end'].get('date'):
+                                end_time = parse_google_timestamp(f"{event['end']['date']}T00:00:00Z")
+                        
+                        event_data = {
+                            "user_id": user_id,
+                            "event_id": event_id,
+                            "calendar_id": cal_id,
+                            "summary": event.get('summary'),
+                            "description": event.get('description'),
+                            "location": event.get('location'),
+                            "start_time": start_time,
+                            "end_time": end_time,
+                            "all_day": all_day,
+                            "timezone": event.get('start', {}).get('timeZone') if not all_day else None,
+                            "recurrence": event.get('recurrence'),
+                            "attendees": event.get('attendees'),
+                            "creator": event.get('creator'),
+                            "organizer": event.get('organizer'),
+                            "html_link": event.get('htmlLink'),
+                            "hangout_link": event.get('hangoutLink'),
+                            "conference_data": event.get('conferenceData'),
+                            "visibility": event.get('visibility'),
+                            "transparency": event.get('transparency'),
+                            "status": event.get('status'),
+                            "event_type": event.get('eventType'),
+                            "color_id": event.get('colorId'),
+                            "last_synced_at": datetime.now(timezone.utc).isoformat()
+                        }
+                        
+                        existing = supabase.table('google_calendar_events').select('id').eq('user_id', user_id).eq('event_id', event_id).single().execute()
+                        
+                        if existing.data:
+                            supabase.table('google_calendar_events').update(event_data).eq('id', existing.data['id']).execute()
+                            sync_stats["events"]["updated"] += 1
+                        else:
+                            supabase.table('google_calendar_events').insert(event_data).execute()
+                            sync_stats["events"]["created"] += 1
+                except Exception as e:
+                    print(f"⚠️ DWD: Error fetching events for calendar {cal_id}: {e}")
+            
+            return {
+                "success": True,
+                "message": f"Synced Google Calendar data for {user_email}",
+                "stats": sync_stats,
+                "summary": {
+                    "calendars": sync_stats["calendars"]["created"] + sync_stats["calendars"]["updated"],
+                    "events": sync_stats["events"]["created"] + sync_stats["events"]["updated"]
+                }
+            }
+    
+    except Exception as e:
+        print(f"❌ DWD: Sync failed for {user_email}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"DWD sync failed: {str(e)}")
+
+# Helper function for parsing Google timestamps
+def parse_google_timestamp(timestamp: Optional[str]) -> Optional[str]:
+    """Parse Google API timestamp to ISO format"""
+    if not timestamp:
+        return None
+    try:
+        return datetime.fromisoformat(timestamp.replace('Z', '+00:00')).isoformat()
+    except:
+        return None
+
+# Individual Sync Endpoints
+
+@router.post("/sync/classroom/{course_id}")
+async def sync_individual_course(course_id: str, email: Optional[str] = None):
+    """Sync a specific Google Classroom course using DWD"""
+    print(f"[SyncCourse] ========== Starting sync for course_id: {course_id} ==========")
+    print(f"[SyncCourse] Admin email: {email or 'not provided'}")
+    try:
+        admin_service = SupabaseAdminService()
+        admin = None
+        if email:
+            admin = admin_service.get_admin(email)
+        
+        if not admin:
+            admin = admin_service.get_first_admin()
+        
+        if not admin:
+            raise HTTPException(status_code=404, detail="No admin profile found")
+        
+        # Find course owner's email from database
+        print(f"[SyncCourse] Looking up course owner for course_id: {course_id}")
+        user_email = None
+        
+        try:
+            # Query for course owner - try to find any course with this course_id
+            existing_course = admin_service.supabase.table('google_classroom_courses').select('user_id').eq('course_id', course_id).limit(1).execute()
+            
+            if existing_course.data and len(existing_course.data) > 0:
+                course_owner_user_id = existing_course.data[0].get('user_id')
+                print(f"[SyncCourse] Found course in database with user_id: {course_owner_user_id}")
+                
+                # Find the email for this user_id
+                if course_owner_user_id:
+                    try:
+                        owner_profile = admin_service.supabase.table('user_profiles').select('email').eq('user_id', course_owner_user_id).single().execute()
+                        if owner_profile.data:
+                            user_email = owner_profile.data.get('email')
+                            print(f"[SyncCourse] Found course owner email: {user_email}")
+                    except Exception as e:
+                        print(f"[SyncCourse] Warning: Error finding course owner email: {e}")
+            else:
+                print(f"[SyncCourse] Course {course_id} not found in database - will use admin's email")
+        except Exception as e:
+            print(f"[SyncCourse] Error querying database for course owner: {e}")
+        
+        # If course owner not found, use admin's email
+        if not user_email:
+            user_email = admin.get('email')
+            print(f"[SyncCourse] Using admin's email for sync: {user_email}")
+        
+        if not user_email:
+            raise HTTPException(status_code=400, detail="Could not determine user email for sync")
+        
+        # Use DWD to sync this course
+        from ..services.google_dwd_service import get_dwd_service
+        
+        dwd_service = get_dwd_service()
+        if not dwd_service:
+            raise HTTPException(status_code=500, detail="DWD service not available. Please configure Domain-Wide Delegation.")
+        
+        # Fetch the course using DWD
+        try:
+            classroom_service = dwd_service.get_classroom_service(user_email)
+            course_response = classroom_service.courses().get(id=course_id).execute()
+            course = course_response
+        except Exception as e:
+            print(f"[SyncCourse] Error fetching course with DWD: {e}")
+            raise HTTPException(status_code=404, detail=f"Course {course_id} not found or not accessible for {user_email}")
+        
+        # Get user_id for database
+        profile = admin_service.supabase.table('user_profiles').select('user_id').eq('email', user_email).single().execute()
+        user_id = profile.data.get('user_id') if profile.data else None
+        
+        if not user_id:
+            raise HTTPException(status_code=400, detail=f"User ID not found for {user_email}")
+        
+        # Update course in database
+        course_data = {
+            "user_id": user_id,
+            "course_id": course_id,
+            "name": course.get('name', ''),
+            "description": course.get('description'),
+            "section": course.get('section'),
+            "room": course.get('room'),
+            "owner_id": course.get('ownerId'),
+            "enrollment_code": course.get('enrollmentCode'),
+            "course_state": course.get('courseState'),
+            "alternate_link": course.get('alternateLink'),
+            "teacher_group_email": course.get('teacherGroupEmail'),
+            "course_group_email": course.get('courseGroupEmail'),
+            "guardians_enabled": course.get('guardiansEnabled', False),
+            "calendar_enabled": bool(course.get('calendarId')),
+            "last_synced_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Upsert course
+        existing = admin_service.supabase.table('google_classroom_courses').select('id, user_id').eq('course_id', course_id).limit(1).execute()
+        
+        if existing.data and len(existing.data) > 0:
+            existing_record = existing.data[0]
+            if existing_record.get('user_id') != user_id:
+                print(f"[SyncCourse] Warning: Course exists with different user_id. Updating to: {user_id}")
+            admin_service.supabase.table('google_classroom_courses').update(course_data).eq('id', existing_record['id']).execute()
+        else:
+            admin_service.supabase.table('google_classroom_courses').insert(course_data).execute()
+        
+        # Fetch and update related data using DWD
+        try:
+            # Teachers
+            teachers = dwd_service.fetch_course_teachers(user_email, course_id)
+            for teacher in teachers:
+                teacher_data = {
+                    "user_id": user_id,
+                    "course_id": course_id,
+                    "teacher_id": teacher.get('userId'),
+                    "profile_name": teacher.get('profile', {}).get('name', {}).get('fullName', ''),
+                    "email": teacher.get('profile', {}).get('emailAddress', ''),
+                    "last_synced_at": datetime.now(timezone.utc).isoformat()
+                }
+                existing_teacher = admin_service.supabase.table('google_classroom_teachers').select('id').eq('user_id', user_id).eq('course_id', course_id).eq('teacher_id', teacher_data['teacher_id']).single().execute()
+                if existing_teacher.data:
+                    admin_service.supabase.table('google_classroom_teachers').update(teacher_data).eq('id', existing_teacher.data['id']).execute()
+                else:
+                    admin_service.supabase.table('google_classroom_teachers').insert(teacher_data).execute()
+            
+            # Students
+            students = dwd_service.fetch_course_students(user_email, course_id)
+            for student in students:
+                student_data = {
+                    "user_id": user_id,
+                    "course_id": course_id,
+                    "student_id": student.get('userId'),
+                    "profile_name": student.get('profile', {}).get('name', {}).get('fullName', ''),
+                    "email": student.get('profile', {}).get('emailAddress', ''),
+                    "last_synced_at": datetime.now(timezone.utc).isoformat()
+                }
+                existing_student = admin_service.supabase.table('google_classroom_students').select('id').eq('user_id', user_id).eq('course_id', course_id).eq('student_id', student_data['student_id']).single().execute()
+                if existing_student.data:
+                    admin_service.supabase.table('google_classroom_students').update(student_data).eq('id', existing_student.data['id']).execute()
+                else:
+                    admin_service.supabase.table('google_classroom_students').insert(student_data).execute()
+            
+            # Announcements
+            announcements = dwd_service.fetch_course_announcements(user_email, course_id)
+            for ann in announcements:
+                ann_data = {
+                    "user_id": user_id,
+                    "course_id": course_id,
+                    "announcement_id": ann.get('id'),
+                    "text": ann.get('text', ''),
+                    "state": ann.get('state'),
+                    "alternate_link": ann.get('alternateLink'),
+                    "creation_time": parse_google_timestamp(ann.get('creationTime')),
+                    "update_time": parse_google_timestamp(ann.get('updateTime')),
+                    "scheduled_time": parse_google_timestamp(ann.get('scheduledTime')),
+                    "last_synced_at": datetime.now(timezone.utc).isoformat()
+                }
+                existing_ann = admin_service.supabase.table('google_classroom_announcements').select('id').eq('user_id', user_id).eq('course_id', course_id).eq('announcement_id', ann_data['announcement_id']).single().execute()
+                if existing_ann.data:
+                    admin_service.supabase.table('google_classroom_announcements').update(ann_data).eq('id', existing_ann.data['id']).execute()
+                else:
+                    admin_service.supabase.table('google_classroom_announcements').insert(ann_data).execute()
+        except Exception as e:
+            print(f"[SyncCourse] Warning: Error syncing related data: {e}")
+        
+        print(f"[SyncCourse] ========== Successfully synced course: {course.get('name', course_id)} ==========")
+        print(f"[SyncCourse] Course saved with user_id: {user_id}")
+        
+        return {
+            "success": True,
+            "message": f"Course '{course.get('name', course_id)}' synced successfully using DWD",
+            "course": course_data,
+            "synced_for": user_email
+        }
+        
+    except HTTPException as e:
+        print(f"[SyncCourse] ❌ HTTP Error: {e.status_code} - {e.detail}")
+        raise
+    except Exception as e:
+        print(f"[SyncCourse] ❌ Unexpected error syncing individual course: {e}")
+        import traceback
+        traceback.print_exc()
+        error_msg = f"Sync error: {str(e)}"
+        if course_id:
+            error_msg += f" (course_id: {course_id})"
+        raise HTTPException(status_code=500, detail=error_msg)
+
+@router.post("/sync/calendar/{calendar_id}")
+async def sync_individual_calendar(calendar_id: str, email: Optional[str] = None):
+    """Sync a specific Google Calendar using DWD"""
+    try:
+        admin_service = SupabaseAdminService()
+        admin = None
+        if email:
+            admin = admin_service.get_admin(email)
+        
+        if not admin:
+            admin = admin_service.get_first_admin()
+        
+        if not admin:
+            raise HTTPException(status_code=404, detail="No admin profile found")
+        
+        # Find calendar owner's email from database
+        user_email = None
+        
+        try:
+            # Query for calendar owner
+            existing_calendar = admin_service.supabase.table('google_calendar_calendars').select('user_id').eq('calendar_id', calendar_id).limit(1).execute()
+            
+            if existing_calendar.data and len(existing_calendar.data) > 0:
+                calendar_owner_user_id = existing_calendar.data[0].get('user_id')
+                if calendar_owner_user_id:
+                    owner_profile = admin_service.supabase.table('user_profiles').select('email').eq('user_id', calendar_owner_user_id).single().execute()
+                    if owner_profile.data:
+                        user_email = owner_profile.data.get('email')
+        except Exception as e:
+            print(f"[SyncCalendar] Error querying database for calendar owner: {e}")
+        
+        # If calendar owner not found, use admin's email
+        if not user_email:
+            user_email = admin.get('email')
+        
+        if not user_email:
+            raise HTTPException(status_code=400, detail="Could not determine user email for sync")
+        
+        # Use DWD to sync this calendar
+        from ..services.google_dwd_service import get_dwd_service
+        
+        dwd_service = get_dwd_service()
+        if not dwd_service:
+            raise HTTPException(status_code=500, detail="DWD service not available. Please configure Domain-Wide Delegation.")
+        
+        # Fetch the calendar using DWD
+        try:
+            calendar_service = dwd_service.get_calendar_service(user_email)
+            calendar_response = calendar_service.calendars().get(calendarId=calendar_id).execute()
+            calendar = calendar_response
+        except Exception as e:
+            print(f"[SyncCalendar] Error fetching calendar with DWD: {e}")
+            raise HTTPException(status_code=404, detail=f"Calendar {calendar_id} not found or not accessible for {user_email}")
+        
+        # Get user_id for database
+        profile = admin_service.supabase.table('user_profiles').select('user_id').eq('email', user_email).single().execute()
+        user_id = profile.data.get('user_id') if profile.data else None
+        
+        if not user_id:
+            raise HTTPException(status_code=400, detail=f"User ID not found for {user_email}")
+        
+        # Update calendar in database
+        calendar_data = {
+            "user_id": user_id,
+            "calendar_id": calendar_id,
+            "summary": calendar.get('summary'),
+            "description": calendar.get('description'),
+            "location": calendar.get('location'),
+            "timezone": calendar.get('timeZone'),
+            "last_synced_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Upsert calendar
+        existing = admin_service.supabase.table('google_calendar_calendars').select('id, user_id').eq('calendar_id', calendar_id).limit(1).execute()
+        
+        if existing.data and len(existing.data) > 0:
+            existing_record = existing.data[0]
+            if existing_record.get('user_id') != user_id:
+                print(f"[SyncCalendar] Warning: Calendar exists with different user_id. Updating to: {user_id}")
+            admin_service.supabase.table('google_calendar_calendars').update(calendar_data).eq('id', existing_record['id']).execute()
+        else:
+            admin_service.supabase.table('google_calendar_calendars').insert(calendar_data).execute()
+        
+        # Fetch and update events using DWD
+        try:
+            timeMin = datetime.now(timezone.utc).isoformat()
+            timeMax = (datetime.now(timezone.utc) + timedelta(days=90)).isoformat()
+            
+            events_response = calendar_service.events().list(
+                calendarId=calendar_id,
+                timeMin=timeMin,
+                timeMax=timeMax,
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+            
+            events = events_response.get('items', [])
+            
+            for event in events:
+                event_data = {
+                    "user_id": user_id,
+                    "event_id": event.get('id'),
+                    "calendar_id": calendar_id,
+                    "summary": event.get('summary'),
+                    "description": event.get('description'),
+                    "location": event.get('location'),
+                    "start_time": parse_google_timestamp(event.get('start', {}).get('dateTime') or event.get('start', {}).get('date')),
+                    "end_time": parse_google_timestamp(event.get('end', {}).get('dateTime') or event.get('end', {}).get('date')),
+                    "all_day": not event.get('start', {}).get('dateTime') and bool(event.get('start', {}).get('date')),
+                    "last_synced_at": datetime.now(timezone.utc).isoformat()
+                }
+                
+                existing_event = admin_service.supabase.table('google_calendar_events').select('id').eq('user_id', user_id).eq('event_id', event_data['event_id']).single().execute()
+                if existing_event.data:
+                    admin_service.supabase.table('google_calendar_events').update(event_data).eq('id', existing_event.data['id']).execute()
+                else:
+                    admin_service.supabase.table('google_calendar_events').insert(event_data).execute()
+        except Exception as e:
+            print(f"[SyncCalendar] Warning: Error syncing events: {e}")
+        
+        return {
+            "success": True,
+            "message": f"Calendar '{calendar.get('summary', calendar_id)}' synced successfully using DWD",
+            "calendar": calendar_data,
+            "synced_for": user_email
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error syncing individual calendar: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Sync error: {str(e)}")
+
+@router.post("/sync/event/{event_id}")
+async def sync_individual_event(event_id: str, email: Optional[str] = None, calendar_id: Optional[str] = None):
+    """Sync a specific Google Calendar event using DWD"""
+    try:
+        admin_service = SupabaseAdminService()
+        admin = None
+        if email:
+            admin = admin_service.get_admin(email)
+        
+        if not admin:
+            admin = admin_service.get_first_admin()
+        
+        if not admin:
+            raise HTTPException(status_code=404, detail="No admin profile found")
+        
+        # Find event owner's email from database
+        user_email = None
+        
+        try:
+            # Query for event owner
+            existing_event = admin_service.supabase.table('google_calendar_events').select('user_id').eq('event_id', event_id).limit(1).execute()
+            
+            if existing_event.data and len(existing_event.data) > 0:
+                event_owner_user_id = existing_event.data[0].get('user_id')
+                if event_owner_user_id:
+                    owner_profile = admin_service.supabase.table('user_profiles').select('email').eq('user_id', event_owner_user_id).single().execute()
+                    if owner_profile.data:
+                        user_email = owner_profile.data.get('email')
+        except Exception as e:
+            print(f"[SyncEvent] Error querying database for event owner: {e}")
+        
+        # If event owner not found, use admin's email
+        if not user_email:
+            user_email = admin.get('email')
+        
+        if not user_email:
+            raise HTTPException(status_code=400, detail="Could not determine user email for sync")
+        
+        # Use DWD to sync this event
+        from ..services.google_dwd_service import get_dwd_service
+        
+        dwd_service = get_dwd_service()
+        if not dwd_service:
+            raise HTTPException(status_code=500, detail="DWD service not available. Please configure Domain-Wide Delegation.")
+        
+        # Get calendar_id if not provided
+        if not calendar_id:
+            try:
+                existing_event = admin_service.supabase.table('google_calendar_events').select('calendar_id').eq('user_id', admin_service.supabase.table('user_profiles').select('user_id').eq('email', user_email).single().execute().data.get('user_id')).eq('event_id', event_id).limit(1).execute()
+                if existing_event.data and existing_event.data[0].get('calendar_id'):
+                    calendar_id = existing_event.data[0]['calendar_id']
+                else:
+                    calendar_id = 'primary'
+            except:
+                calendar_id = 'primary'
+        
+        # Fetch the event using DWD
+        try:
+            calendar_service = dwd_service.get_calendar_service(user_email)
+            event_response = calendar_service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+            event = event_response
+        except Exception as e:
+            print(f"[SyncEvent] Error fetching event with DWD: {e}")
+            raise HTTPException(status_code=404, detail=f"Event {event_id} not found or not accessible for {user_email}")
+        
+        # Get user_id for database
+        profile = admin_service.supabase.table('user_profiles').select('user_id').eq('email', user_email).single().execute()
+        user_id = profile.data.get('user_id') if profile.data else None
+        
+        if not user_id:
+            raise HTTPException(status_code=400, detail=f"User ID not found for {user_email}")
+        
+        # Update event in database
+        start_time = event.get('start', {}).get('dateTime') or event.get('start', {}).get('date')
+        end_time = event.get('end', {}).get('dateTime') or event.get('end', {}).get('date')
+        
+        event_data = {
+            "user_id": user_id,
+            "calendar_id": calendar_id,
+            "event_id": event_id,
+            "summary": event.get('summary', ''),
+            "description": event.get('description'),
+            "location": event.get('location'),
+            "start_time": parse_google_timestamp(start_time) if start_time else None,
+            "end_time": parse_google_timestamp(end_time) if end_time else None,
+            "status": event.get('status'),
+            "html_link": event.get('htmlLink'),
+            "last_synced_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        existing = admin_service.supabase.table('google_calendar_events').select('id').eq('user_id', user_id).eq('calendar_id', calendar_id).eq('event_id', event_id).single().execute()
+        
+        if existing.data:
+            admin_service.supabase.table('google_calendar_events').update(event_data).eq('id', existing.data['id']).execute()
+        else:
+            admin_service.supabase.table('google_calendar_events').insert(event_data).execute()
+        
+        return {
+            "success": True,
+            "message": f"Event '{event.get('summary', event_id)}' synced successfully using DWD",
+            "event": event_data,
+            "synced_for": user_email
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error syncing individual event: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Sync error: {str(e)}")
+
+@router.post("/sync/website/{url:path}")
+async def sync_individual_website(url: str, email: Optional[str] = None):
+    """Sync a specific website page"""
+    try:
+        from urllib.parse import unquote
+        from app.agents.web_crawler_agent import WebCrawlerAgent
+        from supabase_config import get_supabase_client
+        
+        # Decode URL
+        url = unquote(url)
+        
+        print(f"[Admin] Individual website sync requested for: {url}")
+        
+        supabase = get_supabase_client()
+        if not supabase:
+            raise HTTPException(status_code=500, detail="Supabase not available")
+        
+        # Get content type from config
+        from app.config.essential_pages import PAGE_CONTENT_TYPES
+        content_type = PAGE_CONTENT_TYPES.get(url, 'general')
+        
+        # Crawl the specific URL
+        crawler = WebCrawlerAgent()
+        content = crawler.extract_content_from_url(url, query="", skip_link_following=True)
+        
+        if 'error' in content:
+            raise HTTPException(status_code=400, detail=f"Error crawling URL: {content['error']}")
+        
+        # Extract keywords
+        keywords = []
+        if content.get('title'):
+            keywords.extend(content['title'].lower().split()[:5])
+        if content.get('description'):
+            keywords.extend(content['description'].lower().split()[:5])
+        
+        # Prepare data
+        cache_data = {
+            'url': url,
+            'title': content.get('title', ''),
+            'description': content.get('description', ''),
+            'main_content': content.get('main_content', '')[:50000],
+            'headings': content.get('headings', []),
+            'links': content.get('links', [])[:50],
+            'content_type': content_type,
+            'query_keywords': list(set(keywords))[:10],
+            'relevance_score': len(keywords),
+            'is_active': True,
+            'crawled_at': datetime.utcnow().isoformat()
+        }
+        
+        # Update or insert
+        existing = supabase.table('web_crawler_data').select('id').eq('url', url).eq('is_active', True).order('crawled_at', desc=True).limit(1).execute()
+        
+        if existing.data and len(existing.data) > 0:
+            record_id = existing.data[0]['id']
+            update_data = {
+                'title': cache_data['title'],
+                'description': cache_data['description'],
+                'main_content': cache_data['main_content'],
+                'headings': cache_data['headings'],
+                'links': cache_data['links'],
+                'content_type': cache_data['content_type'],
+                'query_keywords': cache_data['query_keywords'],
+                'relevance_score': cache_data['relevance_score'],
+                'crawled_at': datetime.utcnow().isoformat(),
+                'updated_at': datetime.utcnow().isoformat()
+            }
+            supabase.table('web_crawler_data').update(update_data).eq('id', record_id).execute()
+        else:
+            result = supabase.table('web_crawler_data').insert(cache_data).select('id').execute()
+            record_id = result.data[0].get('id') if result.data else None
+        
+        # Generate embedding
+        if record_id:
+            try:
+                embedding_gen = get_embedding_generator()
+                embedding_gen.generate_for_web_crawler(record_id)
+            except Exception as e:
+                print(f"Warning: Failed to generate embedding: {e}")
+        
+        return {
+            "success": True,
+            "message": f"Page '{content.get('title', url)}' synced successfully",
+            "page": {
+                "url": url,
+                "title": content.get('title', ''),
+                "content_type": content_type,
+                "crawled_at": datetime.utcnow().isoformat()
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error syncing individual website page: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Sync error: {str(e)}")
+
+@router.post("/sync-all")
+async def sync_all_users(background_tasks: BackgroundTasks, email: Optional[str] = None):
+    """
+    Trigger bulk sync for all users with active Google integrations.
+    Runs asynchronously in background.
+    """
+    # Verify admin privileges
+    admin_service = SupabaseAdminService()
+    if email:
+        profile = admin_service.get_user_profile_by_email(email)
+        if not profile or not profile.get('admin_privileges'):
+            raise HTTPException(status_code=403, detail="Admin privileges required")
+    
+    # Check if sync is already running
+    if _sync_status["is_running"]:
+        raise HTTPException(
+            status_code=409, 
+            detail="Bulk sync is already running. Please wait for it to complete."
+        )
+    
+    # Reset status
+    _sync_status.update({
+        "is_running": True,
+        "started_at": datetime.utcnow().isoformat(),
+        "completed_at": None,
+        "total_users": 0,
+        "users_synced": 0,
+        "users_failed": 0,
+        "error": None
+    })
+    
+    # Get scheduler and trigger sync in background
+    scheduler = get_auto_sync_scheduler()
+    
+    async def run_sync_with_tracking():
+        try:
+            # Get count of users to sync
+            supabase = admin_service.supabase
+            integrations_result = supabase.table('google_integrations').select('admin_id').eq('is_active', True).execute()
+            
+            if integrations_result.data:
+                admin_ids = set(i.get('admin_id') for i in integrations_result.data)
+                _sync_status["total_users"] = len(admin_ids)
+            
+            # Run the sync
+            await scheduler.sync_all_connected_services()
+            
+            # Update status on completion
+            _sync_status.update({
+                "is_running": False,
+                "completed_at": datetime.utcnow().isoformat()
+            })
+        except Exception as e:
+            _sync_status.update({
+                "is_running": False,
+                "completed_at": datetime.utcnow().isoformat(),
+                "error": str(e)
+            })
+            print(f"[BulkSync] Error: {e}")
+    
+    background_tasks.add_task(run_sync_with_tracking)
+    
+    return {
+        "success": True,
+        "message": "Bulk sync started in background",
+        "status": {
+            "is_running": True,
+            "started_at": _sync_status["started_at"]
+        }
+    }
+
+@router.get("/sync-all/status")
+async def get_sync_status():
+    """Get current status of bulk sync operation"""
+    return {
+        "status": _sync_status
+    }
+
+@router.get("/users/by-grade-role")
+async def get_users_by_grade_role(email: Optional[str] = None):
+    """Get all users organized by grade and role"""
+    try:
+        admin_service = SupabaseAdminService()
+        
+        # Verify admin privileges
+        if email:
+            profile = admin_service.get_user_profile_by_email(email)
+            if not profile or not profile.get('admin_privileges'):
+                raise HTTPException(status_code=403, detail="Admin privileges required")
+        
+        # Get all active users with grade and role
+        result = admin_service.supabase.table('user_profiles').select(
+            'id, email, first_name, last_name, role, grade, user_id'
+        ).eq('is_active', True).execute()
+        
+        # Get last sync times from google tables for each user
+        user_sync_times = {}
+        for user in result.data:
+            user_id = user.get('user_id') or user.get('id')
+            if not user_id:
+                continue
+            
+            # Check for last sync in classroom courses
+            try:
+                classroom_sync = admin_service.supabase.table('google_classroom_courses').select(
+                    'last_synced_at'
+                ).eq('user_id', user_id).order('last_synced_at', desc=True).limit(1).execute()
+                
+                if classroom_sync.data and len(classroom_sync.data) > 0:
+                    sync_time = classroom_sync.data[0].get('last_synced_at')
+                    if sync_time:
+                        if user_id not in user_sync_times or sync_time > user_sync_times[user_id]:
+                            user_sync_times[user_id] = sync_time
+            except:
+                pass
+            
+            # Check for last sync in calendar calendars
+            try:
+                calendar_sync = admin_service.supabase.table('google_calendar_calendars').select(
+                    'last_synced_at'
+                ).eq('user_id', user_id).order('last_synced_at', desc=True).limit(1).execute()
+                
+                if calendar_sync.data and len(calendar_sync.data) > 0:
+                    sync_time = calendar_sync.data[0].get('last_synced_at')
+                    if sync_time:
+                        if user_id not in user_sync_times or sync_time > user_sync_times[user_id]:
+                            user_sync_times[user_id] = sync_time
+            except:
+                pass
+        
+        # Organize by grade and role
+        organized = {}
+        for user in result.data:
+            grade = user.get('grade') or 'Ungraded'
+            role = user.get('role') or 'student'
+            user_id = user.get('user_id') or user.get('id')
+            
+            if grade not in organized:
+                organized[grade] = {
+                    'student': [],
+                    'teacher': [],
+                    'parent': []
+                }
+            
+            # Determine last sync status
+            last_sync = user_sync_times.get(user_id) if user_id else None
+            status = 'pending'
+            if last_sync:
+                try:
+                    sync_date = datetime.fromisoformat(last_sync.replace('Z', '+00:00'))
+                    hours_ago = (datetime.now(timezone.utc) - sync_date).total_seconds() / 3600
+                    if hours_ago < 24:
+                        status = 'synced'
+                    else:
+                        status = 'pending'
+                except:
+                    status = 'pending'
+            
+            user_data = {
+                'email': user.get('email'),
+                'name': f"{user.get('first_name', '')} {user.get('last_name', '')}".strip() or user.get('email'),
+                'lastSync': last_sync,
+                'status': status
+            }
+            
+            organized[grade][role].append(user_data)
+        
+        return organized
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting users by grade/role: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error fetching users: {str(e)}")
+
+@router.post("/sync/grade/{grade}")
+async def sync_grade(grade: str, request: GradeRoleSyncRequest):
+    """Sync all users in a specific grade"""
+    service = request.service
+    email = request.email
+    
+    if service not in ["classroom", "calendar"]:
+        raise HTTPException(status_code=400, detail="Service must be 'classroom' or 'calendar'")
+    
+    try:
+        admin_service = SupabaseAdminService()
+        
+        # Verify admin privileges
+        if email:
+            profile = admin_service.get_user_profile_by_email(email)
+            if not profile or not profile.get('admin_privileges'):
+                raise HTTPException(status_code=403, detail="Admin privileges required")
+        
+        # Get all users in this grade
+        result = admin_service.supabase.table('user_profiles').select(
+            'email, role'
+        ).eq('is_active', True).eq('grade', grade).execute()
+        
+        if not result.data:
+            return {
+                "success": True,
+                "message": f"No users found in {grade}",
+                "synced": 0,
+                "failed": 0
+            }
+        
+        # Sync each user using DWD
+        synced = 0
+        failed = 0
+        
+        for user in result.data:
+            user_email = user.get('email')
+            if not user_email:
+                continue
+            
+            try:
+                # Call the DWD sync endpoint logic directly
+                sync_request = DWDSyncRequest(user_email=user_email)
+                sync_response = await sync_dwd(service, sync_request)
+                if sync_response and sync_response.get('success', False):
+                    synced += 1
+                else:
+                    failed += 1
+            except Exception as e:
+                print(f"Error syncing {user_email}: {e}")
+                failed += 1
+        
+        return {
+            "success": True,
+            "message": f"Synced {service} for {grade}",
+            "synced": synced,
+            "failed": failed,
+            "total": len(result.data)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error syncing grade {grade}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error syncing grade: {str(e)}")
+
+@router.post("/sync/grade/{grade}/role/{role}")
+async def sync_grade_role(grade: str, role: str, request: GradeRoleSyncRequest):
+    """Sync all users of a specific role in a specific grade"""
+    service = request.service
+    email = request.email
+    
+    if service not in ["classroom", "calendar"]:
+        raise HTTPException(status_code=400, detail="Service must be 'classroom' or 'calendar'")
+    
+    if role not in ["student", "teacher", "parent"]:
+        raise HTTPException(status_code=400, detail="Role must be 'student', 'teacher', or 'parent'")
+    
+    try:
+        admin_service = SupabaseAdminService()
+        
+        # Verify admin privileges
+        if email:
+            profile = admin_service.get_user_profile_by_email(email)
+            if not profile or not profile.get('admin_privileges'):
+                raise HTTPException(status_code=403, detail="Admin privileges required")
+        
+        # Get all users with this grade and role
+        result = admin_service.supabase.table('user_profiles').select('email').eq(
+            'is_active', True
+        ).eq('grade', grade).eq('role', role).execute()
+        
+        if not result.data:
+            return {
+                "success": True,
+                "message": f"No {role}s found in {grade}",
+                "synced": 0,
+                "failed": 0
+            }
+        
+        # Sync each user using DWD
+        synced = 0
+        failed = 0
+        
+        for user in result.data:
+            user_email = user.get('email')
+            if not user_email:
+                continue
+            
+            try:
+                # Call the DWD sync endpoint logic directly
+                sync_request = DWDSyncRequest(user_email=user_email)
+                sync_response = await sync_dwd(service, sync_request)
+                if sync_response and sync_response.get('success', False):
+                    synced += 1
+                else:
+                    failed += 1
+            except Exception as e:
+                print(f"Error syncing {user_email}: {e}")
+                failed += 1
+        
+        return {
+            "success": True,
+            "message": f"Synced {service} for {role}s in {grade}",
+            "synced": synced,
+            "failed": failed,
+            "total": len(result.data)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error syncing {role}s in {grade}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error syncing users: {str(e)}")
+

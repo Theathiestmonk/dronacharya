@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import os
 
 from app.routes import lessonplan, chatbot, homework, grading, student, admin
+from app.services.auto_sync_scheduler import get_auto_sync_scheduler
 
 load_dotenv()
 
@@ -29,6 +30,43 @@ app.include_router(grading.router, prefix="/grading", tags=["Grading"])
 app.include_router(student.router, prefix="/students", tags=["Students"])
 app.include_router(admin.router, tags=["Admin"])
 
+@app.on_event("startup")
+async def startup_event():
+    """Start the auto-sync scheduler on app startup"""
+    try:
+        scheduler = get_auto_sync_scheduler()
+        scheduler.start()
+        print("[App] Auto-sync scheduler started")
+    except Exception as e:
+        print(f"[App] Warning: Failed to start auto-sync scheduler: {e}")
+        import traceback
+        traceback.print_exc()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Stop the auto-sync scheduler on app shutdown"""
+    try:
+        scheduler = get_auto_sync_scheduler()
+        scheduler.stop()
+        print("[App] Auto-sync scheduler stopped")
+    except Exception as e:
+        print(f"[App] Warning: Error stopping auto-sync scheduler: {e}")
+
 @app.get("/")
 async def root():
-    return {"message": "AI School Automation System Backend is running."} 
+    return {"message": "AI School Automation System Backend is running."}
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint that also shows scheduler status"""
+    scheduler = get_auto_sync_scheduler()
+    scheduler_status = "running" if scheduler.is_running else "stopped"
+    next_run = None
+    if scheduler.is_running and scheduler.scheduler.get_job('auto_sync_job'):
+        next_run = scheduler.scheduler.get_job('auto_sync_job').next_run_time.isoformat() if scheduler.scheduler.get_job('auto_sync_job').next_run_time else None
+    
+    return {
+        "status": "healthy",
+        "scheduler": scheduler_status,
+        "next_sync": next_run
+    } 

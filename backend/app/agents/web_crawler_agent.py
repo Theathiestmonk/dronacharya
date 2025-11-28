@@ -352,6 +352,21 @@ class WebCrawlerAgent:
         query_clean = re.sub(r'[?!.,;:]+', '', query)
         query_lower = query_clean.lower()
         
+        # CRITICAL: FIRST check if this is admission/fees/contact/article related - NOT a person query
+        if self.is_admission_related(query) or self.is_contact_related(query) or self.is_article_related(query) or self.is_news_related(query):
+            print(f"[WebCrawler] Excluding admission/contact/article/news query from person query detection: '{query}'")
+            return False
+        
+        # CRITICAL: Check for common non-person query phrases
+        non_person_phrases = [
+            'fees structure', 'fee structure', 'fees', 'fee', 'admission process', 'admission', 'admissions',
+            'contact', 'contact us', 'article', 'articles', 'latest article', 'latest news', 'blog', 'news',
+            'calendar', 'events', 'schedule', 'program', 'programs', 'curriculum', 'academic'
+        ]
+        if any(phrase in query_lower for phrase in non_person_phrases):
+            print(f"[WebCrawler] Excluding non-person query phrase from person query detection: '{query}'")
+            return False
+        
         # CRITICAL: FIRST check if this is a role-based query - if so, it's NOT a person query
         # Role-based queries like "who is the Chief Mentor", "who is the chairperson" should be handled as roles
         if self.is_role_based_query(query):
@@ -427,9 +442,17 @@ class WebCrawlerAgent:
         
         # Filter out common words and check for known names
         # CRITICAL: Exclude "vanilla" (flavor) - only "vanila" (person name) should match
-        common_words = ['little', 'bit', 'about', 'tell', 'me', 'who', 'is', 'information', 'details', 'cooking', 'recipes', 'admission', 'fees', 'school', 'program', 'course', 'prakriti', 'prakrit', 'roots', 'philosophy', 'article', 'articles', 'blog', 'news', 'calendar', 'event', 'admission', 'fee', 'curriculum', 'learning', 'learn', 'teaching', 'approach', 'want', 'newton', 'einstein', 'darwin', 'law', 'laws', 'theory', 'theorem', 'formula', 'concept', 'concepts', 'example', 'examples', 'explain', 'understand', 'help', 'solve', 'study', 'physics', 'chemistry', 'biology', 'math', 'mathematics', 'algebra', 'calculus', 'french', 'english', 'facilitator', 'teacher', 'coordinator',
-                       'founder', 'founde', 'foundr', 'co-founder', 'cofounder', 'founding', 'director', 'principal', 
-                       'chairperson', 'chairman', 'chairwoman', 'mentor', 'faculty', 'co', 'founde', 'the', 'vanilla']
+        # CRITICAL: Exclude admission/fees/contact/article related terms
+        common_words = ['little', 'bit', 'about', 'tell', 'me', 'who', 'is', 'information', 'details', 'cooking', 'recipes', 
+                       'admission', 'admissions', 'fees', 'fee', 'structure', 'process', 'procedure', 'school', 'program', 'programs', 
+                       'course', 'courses', 'prakriti', 'prakrit', 'roots', 'philosophy', 'article', 'articles', 'blog', 'news', 
+                       'calendar', 'event', 'events', 'curriculum', 'learning', 'learn', 'teaching', 'approach', 'want', 
+                       'newton', 'einstein', 'darwin', 'law', 'laws', 'theory', 'theorem', 'formula', 'concept', 'concepts', 
+                       'example', 'examples', 'explain', 'understand', 'help', 'solve', 'study', 'physics', 'chemistry', 
+                       'biology', 'math', 'mathematics', 'algebra', 'calculus', 'french', 'english', 'facilitator', 'teacher', 
+                       'coordinator', 'founder', 'founde', 'foundr', 'co-founder', 'cofounder', 'founding', 'director', 'principal', 
+                       'chairperson', 'chairman', 'chairwoman', 'mentor', 'faculty', 'co', 'founde', 'the', 'vanilla', 'contact',
+                       'latest', 'recent', 'substack']
         
         # Known person name patterns (first and last names)
         known_first_names = ['priyanka', 'shuchi', 'ritu', 'gunjan', 'gayatri', 'vanila', 'vidya', 
@@ -495,11 +518,12 @@ class WebCrawlerAgent:
             cleaned_query = cleaned_query.replace(pattern, '').strip()
         
         # Remove individual common words that might interfere
-        # Also exclude role-related terms that might be mistaken for names
+        # Also exclude role-related terms and admission/fees terms that might be mistaken for names
         common_words = ['little', 'bit', 'about', 'of', 'the', 'a', 'an', 'and', 'or', 'but', 'give', 'me', 'information', 'details', 'litle', 'info', 'check', 'for', 'this', 'that', 'these', 'those', 'with', 'introduction', 'detail', 'what', 'facilaor', 'facilitator', 
                        'founder', 'founde', 'foundr', 'co-founder', 'cofounder', 'founding', 'director', 'principal', 
                        'chairperson', 'chairman', 'chairwoman', 'coordinator', 'mentor', 'chief', 'teacher', 'faculty',
-                       'head', 'leader', 'manager', 'administrator', 'admin']
+                       'head', 'leader', 'manager', 'administrator', 'admin', 'admission', 'admissions', 'addmission', 'addmissions',
+                       'fees', 'fee', 'structure', 'process', 'procedure', 'contact', 'article', 'articles', 'blog', 'news']
         words = cleaned_query.split()
         cleaned_words = [word for word in words if word.lower() not in common_words]
         cleaned_query = ' '.join(cleaned_words)
@@ -778,9 +802,20 @@ class WebCrawlerAgent:
         }
     
     def is_article_related(self, query: str) -> bool:
-        """Check if the query is about articles/philosophy/roots"""
-        article_keywords = [
-            'article', 'articles', 'philosophy', 'philosophical', 'roots', 'beings',
+        """Check if the query is about articles/philosophy/roots (NOT news articles)"""
+        query_lower = query.lower()
+        
+        # EXCLUDE news/blog articles - these should be handled by is_news_related()
+        if 'news article' in query_lower or 'blog article' in query_lower:
+            return False
+        if 'latest article' in query_lower or 'recent article' in query_lower:
+            return False
+        if 'new article' in query_lower and ('news' in query_lower or 'blog' in query_lower):
+            return False
+        
+        # Philosophy/roots keywords (highest priority)
+        philosophy_keywords = [
+            'philosophy', 'philosophical', 'roots', 'beings', 'roots of all beings',
             'educational philosophy', 'learning philosophy', 'school philosophy',
             'prakriti philosophy', 'progressive education philosophy', 'nature',
             'inner nature', 'prakriti way', 'way of learning', 'educational approach',
@@ -790,22 +825,33 @@ class WebCrawlerAgent:
             'teaching method', 'learning style', 'educational style'
         ]
         
-        query_lower = query.lower()
-        return any(keyword in query_lower for keyword in article_keywords)
+        if any(keyword in query_lower for keyword in philosophy_keywords):
+            return True
+        
+        # Generic "article" keyword (only if not news/blog related)
+        if 'article' in query_lower and 'news' not in query_lower and 'blog' not in query_lower:
+            return True
+        
+        return False
     
     def is_news_related(self, query: str) -> bool:
         """Check if the query is about news/events/updates"""
-        # Check for specific news patterns first
+        query_lower = query.lower()
+        
+        # Check for specific news patterns first (highest priority)
         news_patterns = [
+            'latest news', 'latest blog', 'recent news', 'recent blog',
             'whats new', 'what\'s new', 'new article', 'new articles',
             'latest article', 'recent article', 'share by', 'published',
-            'latest news', 'recent news', 'new post', 'new posts'
+            'new post', 'new posts', 'latest post', 'latest posts'
         ]
-        
-        query_lower = query.lower()
         
         # Check for specific news patterns first (higher priority)
         if any(pattern in query_lower for pattern in news_patterns):
+            return True
+        
+        # Check if query contains "news article" or "blog article" (these are news, not philosophy articles)
+        if 'news article' in query_lower or 'blog article' in query_lower:
             return True
             
         # Then check for general news keywords
@@ -843,9 +889,23 @@ class WebCrawlerAgent:
     
     def is_testimonial_related(self, query: str) -> bool:
         """Check if the query is about testimonials/parent feedback"""
+        query_lower = query.lower()
+        
+        # High-priority patterns for parent testimonials
+        testimonial_patterns = [
+            'what say about parents', 'what parents say', 'what do parents say',
+            'what say parents', 'parents say about', 'say about parents',
+            'parent feedback', 'parent review', 'parent opinion', 'parent testimonial',
+            'parent testimonials', 'what our parents say', 'parents feedback'
+        ]
+        
+        # Check for specific patterns first (highest priority)
+        if any(pattern in query_lower for pattern in testimonial_patterns):
+            return True
+        
+        # General testimonial keywords
         testimonial_keywords = [
-            'testimonial', 'testimonials', 'parent feedback', 'parent review', 'parent opinion',
-            'what parents say', 'parent experience', 'parent satisfaction', 'parent comment',
+            'testimonial', 'testimonials', 'parent experience', 'parent satisfaction', 'parent comment',
             'feedback', 'review', 'opinion', 'experience', 'satisfaction', 'comment',
             'parents say', 'parent say', 'parent think', 'parent feel', 'parent testimonial',
             'what do parents think', 'what do parents say', 'parent views', 'parent thoughts'
@@ -2599,13 +2659,15 @@ class WebCrawlerAgent:
                 
                 # Determine content_type based on query
                 content_type = None
+                is_substack_query = 'substack' in query_lower
+                
                 if self.is_team_related(query):
                     content_type = 'team'
                 elif self.is_calendar_related(query):
                     content_type = 'calendar'
-                elif self.is_news_related(query):
+                elif self.is_news_related(query) and not is_substack_query:
                     content_type = 'news'
-                elif self.is_article_related(query):
+                elif self.is_article_related(query) and not is_substack_query:
                     content_type = 'article'
                 elif self.is_academic_related(query):
                     content_type = 'academic'
@@ -2619,10 +2681,14 @@ class WebCrawlerAgent:
                 # Query Supabase with filtering (TOKEN OPTIMIZATION - only get relevant pages)
                 base_query = supabase.table('web_crawler_data').select('url, title, description, main_content, content_type, query_keywords').eq('is_active', True).gte('crawled_at', (datetime.utcnow() - timedelta(hours=24)).isoformat())
                 
-                # Filter by content_type if detected
-                if content_type:
+                # Filter by content_type if detected (but handle Substack queries specially)
+                if content_type and not is_substack_query:
                     base_query = base_query.eq('content_type', content_type)
                     print(f"[WebCrawler] Filtering by content_type: {content_type}")
+                elif is_substack_query:
+                    # For Substack queries, search both 'news' and 'article' content types
+                    base_query = base_query.in_('content_type', ['news', 'article'])
+                    print(f"[WebCrawler] Filtering by content_type: news OR article (Substack query)")
                 
                 # Get all matching pages
                 result = base_query.execute()
@@ -2873,6 +2939,7 @@ class WebCrawlerAgent:
         
         query_lower = query.lower()
         query_words = [w for w in query_lower.split() if len(w) > 2]  # Filter out short words
+        is_article_query = any(word in query_lower for word in ['article', 'articles', 'latest', 'recent', 'news', 'blog', 'substack'])
         relevant_info = []
         
         for content in content_list:
@@ -2897,33 +2964,46 @@ class WebCrawlerAgent:
                 if any(word in main_lower for word in query_words):
                     relevance_score += 1
             
-            # If content is relevant, extract key information (MINIMAL to save tokens)
+            # If content is relevant, extract key information
             if relevance_score > 0:
                 info_parts = []
                 
-                # Extract MINIMAL info (TOKEN OPTIMIZATION)
+                # Always include title
                 if content.get('title'):
-                    info_parts.append(f"**{content['title'][:80]}**")  # Limit title (reduced from 100)
+                    info_parts.append(f"**{content['title']}**")
                 
-                # Only include description if title is missing or very short
-                if not content.get('title') or len(content.get('title', '')) < 20:
+                # Always include description for article queries, otherwise only if title is short
+                if is_article_query:
                     if content.get('description'):
-                        info_parts.append(f"{content['description'][:80]}")  # Reduced from 150
+                        info_parts.append(content['description'])
+                elif not content.get('title') or len(content.get('title', '')) < 20:
+                    if content.get('description'):
+                        info_parts.append(f"{content['description'][:80]}")
                 
                 if content.get('main_content'):
-                    # Extract ONLY 1 sentence that contains query words (TOKEN OPTIMIZATION - reduced from 2)
-                    sentences = content['main_content'].split('.')
-                    for sentence in sentences:
-                        sentence_lower = sentence.lower()
-                        if any(word in sentence_lower for word in query_words):
-                            info_parts.append(sentence.strip()[:120])  # Limit sentence length (reduced from 200)
-                            break  # Only 1 sentence
+                    if is_article_query:
+                        # For article queries, return first paragraph or first 1500 chars
+                        main_content = content['main_content'].strip()
+                        if main_content:
+                            # Get first paragraph or first 1500 chars
+                            first_paragraph = main_content.split('\n\n')[0] if '\n\n' in main_content else main_content
+                            if len(first_paragraph) > 1500:
+                                first_paragraph = first_paragraph[:1500] + "..."
+                            info_parts.append(first_paragraph)
+                    else:
+                        # For other queries, extract ONLY 1 sentence that contains query words
+                        sentences = content['main_content'].split('.')
+                        for sentence in sentences:
+                            sentence_lower = sentence.lower()
+                            if any(word in sentence_lower for word in query_words):
+                                info_parts.append(sentence.strip()[:120])
+                                break  # Only 1 sentence
                 
                 if info_parts:
                     relevant_info.append({
                         'url': content.get('url', ''),
                         'relevance_score': relevance_score,
-                        'info': ' | '.join(info_parts)  # Use | separator instead of newlines (more compact)
+                        'info': '\n\n'.join(info_parts) if is_article_query else ' | '.join(info_parts)
                     })
         
         # Sort by relevance score
@@ -2934,12 +3014,19 @@ class WebCrawlerAgent:
             top_result = relevant_info[0]  # Only top 1 result
             formatted_info = f"{top_result['info']}"
             if top_result['url']:
-                formatted_info += f" [{top_result['url']}]"
+                formatted_info += f"\n\nSource: [{top_result['url']}]({top_result['url']})"
             
-            # TRUNCATE entire formatted info to max 600 chars (reduced from 1200)
-            if len(formatted_info) > 600:
-                formatted_info = formatted_info[:600] + "..."
-                print(f"[WebCrawler] Truncated extract_relevant_info output to 600 chars")
+            # TRUNCATE based on query type
+            if is_article_query:
+                # For article queries, allow up to 2000 chars
+                if len(formatted_info) > 2000:
+                    formatted_info = formatted_info[:2000] + "..."
+                    print(f"[WebCrawler] Truncated extract_relevant_info output to 2000 chars (article query)")
+            else:
+                # For other queries, max 600 chars
+                if len(formatted_info) > 600:
+                    formatted_info = formatted_info[:600] + "..."
+                    print(f"[WebCrawler] Truncated extract_relevant_info output to 600 chars")
             
             return formatted_info
         
@@ -3355,7 +3442,50 @@ Source: {url}"""
                                     
                                     return structured_info
                     
-                    # Search in title and description fields for subject-based roles
+                    # Search for subject-based roles using vector search (primary method)
+                    if role_keywords and VECTOR_SEARCH_AVAILABLE:
+                        try:
+                            vector_service = get_vector_search_service()
+                            # Use vector search for semantic matching
+                            query = f"{' '.join(role_keywords)} {user_query}"
+                            vector_results = vector_service.search_team_members(query, limit=20, threshold=0.5)  # Lower threshold for better matching
+                            
+                            if vector_results and len(vector_results) > 0:
+                                # Filter results to ensure they match role keywords
+                                filtered_results = []
+                                for result in vector_results:
+                                    title_lower = (result.get('title', '') or '').lower()
+                                    # Check if any role keyword appears in title
+                                    if any(kw.lower() in title_lower for kw in role_keywords):
+                                        filtered_results.append(result)
+                                
+                                if filtered_results:
+                                    # Use best match (highest similarity)
+                                    best_match = filtered_results[0]
+                                    name = best_match.get('name', '')
+                                    title = best_match.get('title', '')
+                                    description = best_match.get('description', '')
+                                    details = best_match.get('details', '') or best_match.get('full_content', '')
+                                    url = best_match.get('source_url', 'https://prakriti.edu.in/team/')
+                                    
+                                    response_parts = [f"## {title or 'Team Member Information'}"]
+                                    if name:
+                                        response_parts.append(f"\n**Name**: {name}")
+                                    if title:
+                                        response_parts.append(f"\n**Title**: {title}")
+                                    if description:
+                                        response_parts.append(f"\n**Description**: {description}")
+                                    if details:
+                                        details_text = details[:800] + "..." if len(details) > 800 else details
+                                        response_parts.append(f"\n**Details**: {details_text}")
+                                    response_parts.append(f"\n*Source: [{url}]({url})*")
+                                    
+                                    print(f"[WebCrawler] ✅ Found role match via vector search: {name} - {title}")
+                                    return "\n".join(response_parts)
+                        except Exception as e:
+                            print(f"[WebCrawler] Error in vector search, falling back to keyword search: {e}")
+                    
+                    # Fallback to keyword search if vector search not available or returned no results
                     if role_keywords:
                         # Prioritize subject keywords (like "french") over role type keywords (like "facilitator")
                         subject_keywords_list = ['french', 'english', 'math', 'mathematics', 'science', 'physics', 'chemistry', 
@@ -3401,7 +3531,7 @@ Source: {url}"""
                             
                             # DO NOT fall back to description search - TITLE ONLY for role queries
                             # This ensures accuracy - only match if keywords are in title
-                            if not team_result.data or len(team_result.data) == 0:
+                        if not team_result.data or len(team_result.data) == 0:
                                 print(f"[WebCrawler] ⚠️ No results found with all keywords in title - will check fallback_data")
                         else:
                             # Single keyword search - CRITICAL: For role queries, ONLY search in title
@@ -4305,7 +4435,7 @@ Please specify which person you'd like to know about by providing their full nam
                         if normalized_clean == key_clean:
                             fallback_key = key
                             print(f"[WebCrawler] ✅ Exact match found (after space removal) in fallback_data: '{key}'")
-                            break
+                        break
                 
                 # If no exact match, try partial match (e.g., "Shuchi Mishra" matches "shuchi mishra")
                 if not fallback_key:
@@ -4335,7 +4465,7 @@ Please specify which person you'd like to know about by providing their full nam
                                     else:
                                         # Surname matches but first name doesn't - store for later
                                         exact_surname_matches.append((key, key_first))
-                        
+                
                         # If perfect match found, use it
                         if fallback_key:
                             pass  # Already found
@@ -4435,13 +4565,15 @@ We're continuously updating our team profiles, so please check back later or con
                 
                 # Determine content_type
                 content_type = None
+                is_substack_query = 'substack' in query_lower
+                
                 if self.is_team_related(query):
                     content_type = 'team'
-                elif self.is_article_related(query):
+                elif self.is_article_related(query) and not is_substack_query:
                     content_type = 'article'
                 elif self.is_calendar_related(query):
                     content_type = 'calendar'
-                elif self.is_news_related(query):
+                elif self.is_news_related(query) and not is_substack_query:
                     content_type = 'news'
                 elif self.is_academic_related(query):
                     content_type = 'academic'
@@ -4455,8 +4587,13 @@ We're continuously updating our team profiles, so please check back later or con
                 # Query cached pages directly
                 base_query = supabase.table('web_crawler_data').select('url, title, description, main_content, content_type').eq('is_active', True).gte('crawled_at', (datetime.utcnow() - timedelta(hours=24)).isoformat())
                 
-                if content_type:
+                # Filter by content_type (but handle Substack queries specially)
+                if content_type and not is_substack_query:
                     base_query = base_query.eq('content_type', content_type)
+                elif is_substack_query:
+                    # For Substack queries, search both 'news' and 'article' content types
+                    base_query = base_query.in_('content_type', ['news', 'article'])
+                    print(f"[WebCrawler] Fast cache: Filtering by content_type: news OR article (Substack query)")
                 
                 result = base_query.limit(10).execute()  # Limit to 10 for scoring
                 
@@ -4464,6 +4601,10 @@ We're continuously updating our team profiles, so please check back later or con
                     print(f"[WebCrawler] ✅ Found {len(result.data)} cached pages in web_crawler_data table, scoring by relevance...")
                     
                     # AGGRESSIVE FILTERING: Score pages and only keep highly relevant ones
+                    # Check if this is an article/news query - lower threshold for these
+                    is_article_query = any(word in query_lower for word in ['article', 'articles', 'latest', 'recent', 'news', 'blog', 'substack'])
+                    min_threshold = 3 if is_article_query else 5  # Lower threshold for article queries
+                    
                     scored_pages = []
                     for page in result.data:
                         score = 0
@@ -4490,8 +4631,12 @@ We're continuously updating our team profiles, so please check back later or con
                         if query_word_matches >= len(query_words) * 0.7:  # 70% of query words match
                             score += 10
                         
-                        # Only include pages with minimum relevance threshold (at least 5 points)
-                        if score >= 5:
+                        # For article queries, give bonus if page has substantial content
+                        if is_article_query and page.get('main_content') and len(page.get('main_content', '')) > 500:
+                            score += 5  # Bonus for having substantial content
+                        
+                        # Only include pages with minimum relevance threshold
+                        if score >= min_threshold:
                             scored_pages.append({
                                 'title': page.get('title', ''),
                                 'description': page.get('description', ''),
@@ -4506,44 +4651,70 @@ We're continuously updating our team profiles, so please check back later or con
                         # ONLY return TOP 1 most relevant page (TOKEN OPTIMIZATION)
                         top_page = scored_pages[0]
                         
-                        # Extract ONLY sentences containing query words (AGGRESSIVE FILTERING)
+                        # Check if this is an article/news query - return more content
+                        is_article_query = any(word in query_lower for word in ['article', 'articles', 'latest', 'recent', 'news', 'blog', 'substack'])
+                        
                         relevant_text_parts = []
                         
-                        # Title (if relevant)
-                        if top_page['title'] and any(word in top_page['title'].lower() for word in query_words):
-                            relevant_text_parts.append(top_page['title'][:70])
+                        # Always include title for article queries
+                        if top_page['title']:
+                            if is_article_query:
+                                relevant_text_parts.append(top_page['title'])
+                            elif any(word in top_page['title'].lower() for word in query_words):
+                                relevant_text_parts.append(top_page['title'][:70])
                         
-                        # Description (if relevant)
-                        if top_page['description'] and any(word in top_page['description'].lower() for word in query_words):
-                            relevant_text_parts.append(top_page['description'][:80])
+                        # Always include description for article queries
+                        if top_page['description']:
+                            if is_article_query:
+                                relevant_text_parts.append(top_page['description'])
+                            elif any(word in top_page['description'].lower() for word in query_words):
+                                relevant_text_parts.append(top_page['description'][:80])
                         
-                        # Extract ONLY sentences with query words from main_content (max 2 sentences)
+                        # Extract content from main_content
                         if top_page['main_content']:
-                            sentences = top_page['main_content'].split('.')
-                            relevant_sentences = []
-                            for sentence in sentences:
-                                sentence_clean = sentence.strip()
-                                if sentence_clean and len(sentence_clean) > 20:  # Skip very short sentences
-                                    sentence_lower = sentence_clean.lower()
-                                    # Check if sentence contains any query word
-                                    if any(word in sentence_lower for word in query_words):
-                                        relevant_sentences.append(sentence_clean[:150])  # Max 150 chars per sentence
-                                        if len(relevant_sentences) >= 2:  # Max 2 sentences
-                                            break
+                            if is_article_query:
+                                # For article queries, return more substantial content (first 1500 chars)
+                                main_content = top_page['main_content'].strip()
+                                if main_content:
+                                    # Get first paragraph or first 1500 chars
+                                    first_paragraph = main_content.split('\n\n')[0] if '\n\n' in main_content else main_content
+                                    if len(first_paragraph) > 1500:
+                                        first_paragraph = first_paragraph[:1500] + "..."
+                                    relevant_text_parts.append(first_paragraph)
+                            else:
+                                # For other queries, extract ONLY sentences with query words (max 2 sentences)
+                                sentences = top_page['main_content'].split('.')
+                                relevant_sentences = []
+                                for sentence in sentences:
+                                    sentence_clean = sentence.strip()
+                                    if sentence_clean and len(sentence_clean) > 20:  # Skip very short sentences
+                                        sentence_lower = sentence_clean.lower()
+                                        # Check if sentence contains any query word
+                                        if any(word in sentence_lower for word in query_words):
+                                            relevant_sentences.append(sentence_clean[:150])  # Max 150 chars per sentence
+                                            if len(relevant_sentences) >= 2:  # Max 2 sentences
+                                                break
                             
                             if relevant_sentences:
                                 relevant_text_parts.extend(relevant_sentences)
                         
-                        # Combine and truncate to max 400 chars total (TOKEN OPTIMIZATION)
+                        # Combine content
                         if relevant_text_parts:
-                            result_text = ' | '.join(relevant_text_parts)
-                            if len(result_text) > 400:
-                                result_text = result_text[:400] + "..."
+                            if is_article_query:
+                                # For article queries, use newlines for better formatting, max 2000 chars
+                                result_text = '\n\n'.join(relevant_text_parts)
+                                if len(result_text) > 2000:
+                                    result_text = result_text[:2000] + "..."
+                            else:
+                                # For other queries, use pipe separator, max 400 chars
+                                result_text = ' | '.join(relevant_text_parts)
+                                if len(result_text) > 400:
+                                    result_text = result_text[:400] + "..."
                             
                             if top_page['url']:
-                                result_text += f" [{top_page['url']}]"
+                                result_text += f"\n\nSource: [{top_page['url']}]({top_page['url']})"
                             
-                            print(f"[WebCrawler] ✅ Returning TOP 1 cached page (score: {top_page['score']}, matches: {top_page['query_matches']}/{len(query_words)} words, {len(result_text)} chars)")
+                            print(f"[WebCrawler] ✅ Returning TOP 1 cached page (score: {top_page['score']}, matches: {top_page['query_matches']}/{len(query_words)} words, {len(result_text)} chars, is_article_query: {is_article_query})")
                             return result_text
                         else:
                             print(f"[WebCrawler] ⚠️ Page found but no relevant text extracted (score: {top_page['score']})")

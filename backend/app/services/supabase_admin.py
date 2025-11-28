@@ -22,6 +22,15 @@ class SupabaseAdminService:
             print(f"Error getting admin: {e}")
             return None
     
+    def get_user_profile_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """Get user profile by email (any user, not just admin)"""
+        try:
+            result = self.supabase.table('user_profiles').select('*').eq('email', email).eq('is_active', True).limit(1).execute()
+            return result.data[0] if result.data else None
+        except Exception as e:
+            print(f"Error getting user profile: {e}")
+            return None
+    
     def get_first_admin(self) -> Optional[Dict[str, Any]]:
         """Get first available admin from user_profiles"""
         try:
@@ -135,32 +144,42 @@ class SupabaseAdminService:
             print(f"Error syncing calendar data: {e}")
             return False
     
-    def get_classroom_data(self, admin_id: Any) -> List[Dict[str, Any]]:
-        """Get classroom data for admin from normalized tables"""
+    def get_classroom_data(self, admin_id: Any, show_all_users: bool = True) -> List[Dict[str, Any]]:
+        """Get classroom data for admin from normalized tables
+        
+        Args:
+            admin_id: The admin's user_profiles.id
+            show_all_users: If True (default), show courses from all users. If False, show only admin's courses.
+        """
         try:
             # Get user_id from user_profiles (admin_id is user_profiles.id, we need auth.users.id)
-            profile = self.supabase.table('user_profiles').select('user_id').eq('id', admin_id).single().execute()
+            profile = self.supabase.table('user_profiles').select('user_id, admin_privileges').eq('id', admin_id).single().execute()
             user_id = profile.data.get('user_id') if profile.data else None
+            is_admin = profile.data.get('admin_privileges', False) if profile.data else False
             
             if not user_id:
                 print(f"No user_id found for admin_id {admin_id}")
                 return []
             
-            # Query from normalized google_classroom_courses table
-            # First, get the MAX last_synced_at to ensure we have the most recent timestamp
-            max_sync_result = self.supabase.table('google_classroom_courses').select('last_synced_at').eq('user_id', user_id).order('last_synced_at', desc=True).limit(1).execute()
-            
-            most_recent_sync = None
-            if max_sync_result.data and len(max_sync_result.data) > 0:
-                most_recent_sync = max_sync_result.data[0].get('last_synced_at')
-            
-            # Get all courses for display
-            result = self.supabase.table('google_classroom_courses').select('*').eq('user_id', user_id).limit(100).execute()
+            # For admins, show all courses from all users (if show_all_users is True)
+            # Otherwise, show only courses for this specific user
+            if is_admin and show_all_users:
+                # Get all courses from all users (admin view)
+                # Get MAX last_synced_at across all courses
+                max_sync_result = self.supabase.table('google_classroom_courses').select('last_synced_at').order('last_synced_at', desc=True).limit(1).execute()
+                most_recent_sync = max_sync_result.data[0].get('last_synced_at') if max_sync_result.data and len(max_sync_result.data) > 0 else None
+                
+                # Get all courses (limit to 500 for performance)
+                result = self.supabase.table('google_classroom_courses').select('*').order('last_synced_at', desc=True).limit(500).execute()
+            else:
+                # Get only courses for this specific user
+                max_sync_result = self.supabase.table('google_classroom_courses').select('last_synced_at').eq('user_id', user_id).order('last_synced_at', desc=True).limit(1).execute()
+                most_recent_sync = max_sync_result.data[0].get('last_synced_at') if max_sync_result.data and len(max_sync_result.data) > 0 else None
+                result = self.supabase.table('google_classroom_courses').select('*').eq('user_id', user_id).limit(100).execute()
             
             # Transform to match expected format
             courses = []
             for course in result.data:
-                # Use the most recent sync timestamp for all courses to ensure consistency
                 courses.append({
                     'course_id': course.get('course_id', ''),
                     'course_name': course.get('name', ''),
@@ -170,13 +189,15 @@ class SupabaseAdminService:
                     'course_state': course.get('course_state', ''),
                     'teacher_email': None,  # Will need to fetch from teachers table if needed
                     'student_count': 0,  # Will need to count from students table if needed
-                    'last_synced': most_recent_sync or course.get('last_synced_at', '')
+                    'last_synced': course.get('last_synced_at', '') or most_recent_sync or ''
                 })
             
-            print(f"🔍 [get_classroom_data] Found {len(courses)} courses, most recent sync: {most_recent_sync}")
+            print(f"🔍 [get_classroom_data] Found {len(courses)} courses (show_all_users={show_all_users}, is_admin={is_admin})")
             return courses
         except Exception as e:
             print(f"Error getting classroom data: {e}")
+            import traceback
+            traceback.print_exc()
             return []
     
     def get_calendar_data(self, admin_id: Any) -> List[Dict[str, Any]]:
@@ -244,3 +265,9 @@ class SupabaseAdminService:
         except Exception as e:
             print(f"Error getting calendar data: {e}")
             return []
+
+
+
+
+
+

@@ -579,7 +579,7 @@ def generate_chatbot_response(request):
     re_module = re
     openai_client = get_openai_client()
     user_query = request.message
-    conversation_history = getattr(request, 'conversation_history', [])
+    conversation_history = getattr(request, 'conversation_history', []) or []  # Ensure it's never None
     user_profile = getattr(request, 'user_profile', None)
 
     # Step 0.1: Handle empty queries - treat them as greetings so they get proper handling
@@ -1526,6 +1526,18 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     # Enhanced teacher query detection: includes "want", "list", "check" patterns
     is_teacher_query = any(kw in query_lower for kw in ['teacher', 'teachers', 'faculty', 'instructor', 'instructors', 'staff member', 'staff']) or \
                        (any(kw in query_lower for kw in ['want', 'show', 'list', 'check']) and any(kw in query_lower for kw in ['teacher', 'instructor']))
+    
+    # Check if query is about faculty with specific subject (e.g., "art and design facilitator", "math teacher")
+    # These should use team_member_data instead of Classroom data
+    subject_keywords_for_faculty = ['art', 'design', 'math', 'mathematics', 'science', 'english', 'history', 'physics', 
+                                   'chemistry', 'biology', 'geography', 'computer', 'french', 'music', 'drama', 
+                                   'literature', 'philosophy', 'economics', 'business', 'technology']
+    faculty_role_keywords = ['facilitator', 'teacher', 'instructor', 'faculty', 'staff']
+    has_subject_with_faculty = any(subj in query_lower for subj in subject_keywords_for_faculty) and \
+                               any(role in query_lower for role in faculty_role_keywords)
+    is_subject_faculty_query = has_subject_with_faculty or \
+                               (is_person_detail_query and any(subj in query_lower for subj in subject_keywords_for_faculty))
+    
     # Note: is_coursework_query, is_homework_query, and is_assignment_query are already defined above
     is_course_query = any(kw in query_lower for kw in ['course', 'courses', 'class', 'classes', 'subject', 'subjects'])
     is_calendar_query = any(kw in query_lower for kw in ['event', 'events', 'calendar', 'schedule', 'meeting', 'holiday'])
@@ -1550,11 +1562,13 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     should_use_web_crawling = False  # Initialize to avoid UnboundLocalError
     
     # Define web enhancement keywords outside if/else to avoid UnboundLocalError
+    # Include common typos for admission/fees
     web_enhancement_keywords = [
         'latest', 'recent', 'news', 'update', 'current', 'new', 'recently',
         'prakriti school', 'prakrit school', 'progressive education',
         'alternative school', 'igcse', 'a level', 'bridge programme',
-        'admission', 'fees', 'curriculum', 'activities', 'facilities',
+        'admission', 'admissions', 'addmission', 'addmissions', 'fees', 'fee', 'fee structure', 'fees structure',
+        'curriculum', 'activities', 'facilities', 'contact', 'contact us',
         'article', 'articles', 'substack', 'philosophy', 'learning approach'
     ]
     
@@ -1584,9 +1598,19 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         
         # CRITICAL: Skip web crawling for Classroom-related queries (announcements, coursework, students, teachers, courses, calendar)
         # These should use Classroom/Calendar data first, not web crawler
-        is_classroom_related_query = is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query
+        # BUT exclude subject faculty queries (use team_member_data instead)
+        is_classroom_related_query = (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query) and not is_subject_faculty_query
         
-        should_use_web_crawling = any(keyword in user_query.lower() for keyword in web_enhancement_keywords) and not is_pure_academic_query and not is_translation_query and not is_classroom_related_query
+        # Normalize query to handle common typos (e.g., "addmission" -> "admission")
+        normalized_query = user_query.lower()
+        typo_corrections = {
+            'addmission': 'admission', 'addmissions': 'admissions', 'addmision': 'admission',
+            'fee structure': 'fees structure', 'fee': 'fees'  # Normalize fee to fees for matching
+        }
+        for typo, correct in typo_corrections.items():
+            normalized_query = normalized_query.replace(typo, correct)
+        
+        should_use_web_crawling = any(keyword in normalized_query for keyword in web_enhancement_keywords) and not is_pure_academic_query and not is_translation_query and not is_classroom_related_query and not is_subject_faculty_query
         
         # Log why web crawling was skipped for classroom queries
         if is_classroom_related_query and any(keyword in user_query.lower() for keyword in web_enhancement_keywords):
@@ -1623,7 +1647,8 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     admin_data = {"classroom_data": [], "calendar_data": []}
     
     # Check if this is a classroom/calendar/home related query
-    is_classroom_related_query = is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query
+    # Exclude subject faculty queries from classroom-related (use team_member_data instead)
+    is_classroom_related_query = (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query) and not is_subject_faculty_query
     is_home_related_query = any(kw in query_lower for kw in ['home', 'homework', 'my assignments', 'my coursework', 'my classes', 'my courses'])
     
     # Check for teacher-specific queries (submissions, grading, student work)
@@ -1669,7 +1694,10 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             # Only load what's needed: if asking about teachers, only load teachers; if students, only students; etc.
             # CRITICAL: Only load classroom data if it's explicitly needed for the query
             # For person detail queries, always load teachers to verify web crawler claims (web might say someone is a teacher)
-            should_load_teachers = is_teacher_query or should_use_web_crawling_first
+            # BUT skip Classroom data for subject-related faculty queries (use team_member_data instead)
+            if is_subject_faculty_query:
+                print(f"[Chatbot] 🎯 Subject faculty query detected - using team_member_data instead of Classroom data")
+            should_load_teachers = (is_teacher_query or should_use_web_crawling_first) and not is_subject_faculty_query
             should_load_students = is_student_query
             should_load_announcements = is_announcement_query
             should_load_coursework = is_coursework_query
@@ -2258,16 +2286,35 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             
             if web_enhanced_info:
                 # TRUNCATE web info - TOKEN OPTIMIZATION (reduced to 300 chars for queries with classroom data)
-                # If classroom data exists, use less web info to prioritize classroom data
-                max_web_chars = 300 if admin_data.get('classroom_data') else 400
+                # EXCEPTION: For person queries, don't truncate - we need full person information
+                if should_use_web_crawling_first:
+                    # Person query - use full information (up to 2000 chars to be safe)
+                    max_web_chars = 2000
+                    print(f"[Chatbot] Person query detected - using full web info ({len(web_enhanced_info)} chars)")
+                else:
+                    # If classroom data exists, use less web info to prioritize classroom data
+                    max_web_chars = 300 if admin_data.get('classroom_data') else 400
+                
                 truncated_web_info = web_enhanced_info[:max_web_chars] + ("..." if len(web_enhanced_info) > max_web_chars else "")
                 user_content += f"Web:\n{truncated_web_info}\n"
                 if len(web_enhanced_info) > max_web_chars:
                     print(f"[Chatbot] Truncated web_enhanced_info from {len(web_enhanced_info)} to {max_web_chars} chars to save tokens")
                 
+                # CRITICAL: For person queries, use the Web information to answer
+                if should_use_web_crawling_first:
+                    # Check if web info contains actual data or "Information Not Available"
+                    if web_enhanced_info and "Information Not Available" not in web_enhanced_info and "not found" not in web_enhanced_info.lower() and "sorry" not in web_enhanced_info.lower():
+                        user_content += "\n**IMPORTANT: This is a person/team member query. The Web section above contains structured information about the person (Name, Title, Description, Details). Format this information as a natural, conversational chatbot response - NOT as a search result or bullet points. Write it like you're having a friendly conversation, introducing the person naturally. Include their name, title, background, and key details in a flowing narrative style. Use proper formatting with **bold** for emphasis where appropriate, but make it sound like a helpful assistant explaining who this person is, not like a database search result.**\n"
+                    else:
+                        # Web info says "not available" but we should still try to extract what we can
+                        user_content += "\n**IMPORTANT: This is a person detail query. If the Web section contains any information about the person (even partial), use it. If it says 'Information Not Available', check if there's any mention of the person in the Classroom data or provide a helpful response directing them to contact the school.**\n"
+                
                 # CRITICAL: If web info claims someone is a teacher AND we have Classroom data, verify against it
-                if admin_data.get('classroom_data') and should_use_web_crawling_first:
+                # BUT skip verification for subject-related faculty queries (use team_member_data as primary source)
+                if admin_data.get('classroom_data') and should_use_web_crawling_first and not is_subject_faculty_query:
                     user_content += "\n⚠️ VERIFICATION: Use Web data to provide general information about the person (role, background, etc.). However, if Web info claims they are a teacher, VERIFY against Classroom Data below. Only confirm they are CURRENTLY a teacher for the user's grade/course if their name appears in the Classroom teacher list. If Web says they're a teacher but they're NOT in Classroom Data, provide the general info from Web but clarify their current teaching status based on Classroom Data.\n"
+                elif is_subject_faculty_query:
+                    user_content += "\n✅ FACULTY QUERY: This is a query about a faculty member with a specific subject/role. Use team_member_data as the PRIMARY source. Do NOT check Classroom data for this - team_member_data contains the accurate information about faculty members and their roles/subjects. Provide information directly from team_member_data without mentioning Classroom data.\n"
             
             # Check again for guest classroom query and teacher connection requirements (re-check in this scope)
             is_guest_classroom_query_local = not user_profile and (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query or any(kw in query_lower for kw in ['home', 'homework', 'my assignments', 'my coursework', 'my classes', 'my courses']))

@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Single User Sync - DWD Admin Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f0f2f5;
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            border-radius: 8px;
+            padding: 25px 30px;
+            margin-bottom: 25px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            font-size: 24px;
+            color: #1a202c;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            color: #718096;
+            font-size: 14px;
+        }
+
+        .sync-card {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            margin-bottom: 25px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 8px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #4299e1;
+        }
+
+        .service-selector {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .service-option {
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+
+        .service-option:hover {
+            border-color: #4299e1;
+            background: #ebf8ff;
+        }
+
+        .service-option.selected {
+            border-color: #4299e1;
+            background: #ebf8ff;
+        }
+
+        .service-option input[type="radio"] {
+            display: none;
+        }
+
+        .service-option .icon {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .service-option .label {
+            font-weight: 600;
+            color: #2d3748;
+            font-size: 16px;
+        }
+
+        .service-option .description {
+            font-size: 12px;
+            color: #718096;
+            margin-top: 5px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn-primary {
+            background: #4299e1;
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #3182ce;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(66, 153, 225, 0.4);
+        }
+
+        .btn-primary:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+        }
+
+        .results-section {
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 2px solid #e2e8f0;
+            display: none;
+        }
+
+        .results-section.show {
+            display: block;
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .result-header h3 {
+            font-size: 18px;
+            color: #1a202c;
+        }
+
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-badge.success {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .status-badge.error {
+            background: #fed7d7;
+            color: #742a2a;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: #f7fafc;
+            padding: 20px;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .stat-card .number {
+            font-size: 28px;
+            font-weight: 700;
+            color: #4299e1;
+            margin-bottom: 5px;
+        }
+
+        .stat-card .label {
+            font-size: 12px;
+            color: #718096;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .message-box {
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+
+        .message-box.success {
+            background: #c6f6d5;
+            border: 1px solid #9ae6b4;
+            color: #22543d;
+        }
+
+        .message-box.error {
+            background: #fed7d7;
+            border: 1px solid #feb2b2;
+            color: #742a2a;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 15px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #4299e1;
+            transition: width 0.3s;
+            border-radius: 4px;
+        }
+
+        @media (max-width: 768px) {
+            .service-selector {
+                grid-template-columns: 1fr;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Single User Sync</h1>
+            <p>Sync Google Classroom or Calendar data for a specific user</p>
+        </div>
+
+        <div class="sync-card">
+            <form id="syncForm" onsubmit="handleSync(event)">
+                <div class="form-group">
+                    <label for="userEmail">User Email</label>
+                    <input 
+                        type="email" 
+                        id="userEmail" 
+                        placeholder="user@learners.prakriti.org.in"
+                        required
+                        oninput="validateForm()"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label>Select Service</label>
+                    <div class="service-selector">
+                        <label class="service-option" onclick="selectService('classroom')">
+                            <input type="radio" name="service" value="classroom" required>
+                            <div class="icon">📚</div>
+                            <div class="label">Google Classroom</div>
+                            <div class="description">Courses, assignments, students</div>
+                        </label>
+                        <label class="service-option" onclick="selectService('calendar')">
+                            <input type="radio" name="service" value="calendar" required>
+                            <div class="icon">📅</div>
+                            <div class="label">Google Calendar</div>
+                            <div class="description">Events, calendars, schedules</div>
+                        </label>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="syncBtn" disabled>
+                    Start Sync
+                </button>
+
+                <div class="progress-bar" id="progressBar" style="display: none;">
+                    <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                </div>
+            </form>
+
+            <div class="results-section" id="resultsSection">
+                <div class="result-header">
+                    <h3>Sync Results</h3>
+                    <span class="status-badge" id="statusBadge"></span>
+                </div>
+
+                <div class="stats-grid" id="statsGrid"></div>
+
+                <div class="message-box" id="messageBox"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedService = null;
+
+        function selectService(service) {
+            selectedService = service;
+            document.querySelectorAll('.service-option').forEach(opt => {
+                opt.classList.remove('selected');
+            });
+            event.currentTarget.classList.add('selected');
+            document.querySelector(`input[value="${service}"]`).checked = true;
+            validateForm();
+        }
+
+        function validateForm() {
+            const email = document.getElementById('userEmail').value;
+            const service = document.querySelector('input[name="service"]:checked');
+            const btn = document.getElementById('syncBtn');
+
+            if (email && service) {
+                btn.disabled = false;
+            } else {
+                btn.disabled = true;
+            }
+        }
+
+        function handleSync(event) {
+            event.preventDefault();
+            
+            const email = document.getElementById('userEmail').value;
+            const service = document.querySelector('input[name="service"]:checked').value;
+            const btn = document.getElementById('syncBtn');
+            const progressBar = document.getElementById('progressBar');
+            const progressFill = document.getElementById('progressFill');
+            const resultsSection = document.getElementById('resultsSection');
+
+            // Disable button and show progress
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span> Syncing...';
+            progressBar.style.display = 'block';
+            resultsSection.classList.remove('show');
+
+            // Simulate progress
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += Math.random() * 15;
+                if (progress > 90) progress = 90;
+                progressFill.style.width = progress + '%';
+            }, 300);
+
+            // Simulate API call
+            setTimeout(() => {
+                clearInterval(interval);
+                progressFill.style.width = '100%';
+
+                // Generate mock results
+                const isSuccess = Math.random() > 0.2; // 80% success rate
+                const stats = generateMockStats(service, isSuccess);
+
+                displayResults(isSuccess, stats, service, email);
+
+                // Reset button
+                btn.disabled = false;
+                btn.textContent = 'Start Sync';
+                progressBar.style.display = 'none';
+                progressFill.style.width = '0%';
+            }, 2000);
+        }
+
+        function generateMockStats(service, isSuccess) {
+            if (!isSuccess) {
+                return {
+                    success: false,
+                    message: 'Sync failed: User not found or insufficient permissions.'
+                };
+            }
+
+            if (service === 'classroom') {
+                return {
+                    success: true,
+                    message: 'Classroom data synced successfully!',
+                    courses: Math.floor(Math.random() * 10) + 1,
+                    teachers: Math.floor(Math.random() * 5) + 1,
+                    students: Math.floor(Math.random() * 50) + 10,
+                    announcements: Math.floor(Math.random() * 20) + 5
+                };
+            } else {
+                return {
+                    success: true,
+                    message: 'Calendar data synced successfully!',
+                    calendars: Math.floor(Math.random() * 5) + 1,
+                    events: Math.floor(Math.random() * 30) + 10,
+                    upcoming: Math.floor(Math.random() * 15) + 5
+                };
+            }
+        }
+
+        function displayResults(isSuccess, stats, service, email) {
+            const resultsSection = document.getElementById('resultsSection');
+            const statusBadge = document.getElementById('statusBadge');
+            const statsGrid = document.getElementById('statsGrid');
+            const messageBox = document.getElementById('messageBox');
+
+            resultsSection.classList.add('show');
+
+            // Status badge
+            if (isSuccess) {
+                statusBadge.className = 'status-badge success';
+                statusBadge.textContent = 'Success';
+            } else {
+                statusBadge.className = 'status-badge error';
+                statusBadge.textContent = 'Failed';
+            }
+
+            // Stats grid
+            statsGrid.innerHTML = '';
+            if (isSuccess) {
+                if (service === 'classroom') {
+                    statsGrid.innerHTML = `
+                        <div class="stat-card">
+                            <div class="number">${stats.courses}</div>
+                            <div class="label">Courses</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="number">${stats.teachers}</div>
+                            <div class="label">Teachers</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="number">${stats.students}</div>
+                            <div class="label">Students</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="number">${stats.announcements}</div>
+                            <div class="label">Announcements</div>
+                        </div>
+                    `;
+                } else {
+                    statsGrid.innerHTML = `
+                        <div class="stat-card">
+                            <div class="number">${stats.calendars}</div>
+                            <div class="label">Calendars</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="number">${stats.events}</div>
+                            <div class="label">Total Events</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="number">${stats.upcoming}</div>
+                            <div class="label">Upcoming</div>
+                        </div>
+                    `;
+                }
+            }
+
+            // Message box
+            messageBox.className = `message-box ${isSuccess ? 'success' : 'error'}`;
+            messageBox.textContent = stats.message;
+        }
+    </script>
+</body>
+</html>
+

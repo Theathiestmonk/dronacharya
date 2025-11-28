@@ -229,3 +229,8 @@ jspm_packages/
 
 # TernJS port file
 .tern-port
+
+# Google Service Account Keys (sensitive credentials)
+**/service-account*.json
+backend/service-account-key.json
+*.service-account.json

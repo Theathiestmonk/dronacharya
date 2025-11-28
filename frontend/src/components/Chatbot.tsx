@@ -240,28 +240,46 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   // Speech-to-text logic
   const handleMic = () => {
     if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-      alert('Speech recognition is not supported in this browser.');
+      alert('Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari.');
       return;
     }
+    
+    // Check if already listening
+    if (listening) {
+      return;
+    }
+    
     // @ts-expect-error - webkitSpeechRecognition is not in TypeScript types
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
     recognition.lang = 'en-US';
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
+    recognition.continuous = false; // Stop after first result
+    
     setListening(true);
     setMicPlaceholder('Listening...');
+    
     recognition.onresult = async (event: Event) => {
+      try {
       const results = (event as unknown as { results: SpeechRecognitionResultList }).results;
+        if (!results || results.length === 0) {
+          console.warn('No speech recognition results');
+          setListening(false);
+          setMicPlaceholder('Ask me anything...');
+          return;
+        }
+        
       const transcript = results[0][0].transcript;
+        console.log('Speech recognition transcript:', transcript);
       setInput('');
       setListening(false);
       setMicPlaceholder('Ask me anything...');
+        
       // Immediately send the recognized text as a user message
       if (transcript && transcript.trim()) {
         const userMsg: Message = { sender: 'user', text: transcript };
         setMessages((msgs) => [...msgs, userMsg]);
-        
         
         setLoading(true);
         setDisplayedBotText('');
@@ -355,18 +373,84 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           .finally(() => {
             setLoadingWithMinDuration();
           });
-      }
+          
       inputRef.current?.focus({ preventScroll: true });
+        } else {
+          console.warn('Empty transcript received');
+          setMicPlaceholder('No speech detected. Try again...');
+          setTimeout(() => setMicPlaceholder('Ask me anything...'), 2000);
+        }
+      } catch (error) {
+        console.error('Error processing speech recognition result:', error);
+        setListening(false);
+        setMicPlaceholder('Error processing speech. Try again...');
+        setTimeout(() => setMicPlaceholder('Ask me anything...'), 2000);
+      }
     };
-    recognition.onerror = () => {
+    
+    recognition.onerror = (event: Event) => {
+      const errorEvent = event as unknown as { error: string; message?: string };
+      const errorName = errorEvent.error || 'unknown';
+      
       setListening(false);
+      
+      // Handle "no-speech" errors silently (just update placeholder, no alert)
+      if (errorName === 'no-speech') {
+        console.log('No speech detected - user may not have spoken');
+        setMicPlaceholder('No speech detected. Try again...');
+        setTimeout(() => setMicPlaceholder('Ask me anything...'), 2000);
+        return; // Exit early, don't show alert
+      }
+      
+      // Log other errors for debugging
+      console.error('Speech recognition error:', errorName, errorEvent.message);
       setMicPlaceholder('Ask me anything...');
+      
+      // Provide user-friendly error messages for critical errors only
+      let errorMessage = 'Speech recognition failed. ';
+      switch (errorName) {
+        case 'audio-capture':
+          errorMessage = 'Microphone not found or access denied. Please check your microphone permissions.';
+          break;
+        case 'not-allowed':
+          errorMessage = 'Microphone permission denied. Please allow microphone access in your browser settings.';
+          break;
+        case 'network':
+          errorMessage = 'Network error. Please check your internet connection.';
+          break;
+        case 'aborted':
+          // Aborted errors are usually intentional (user stopped), so handle silently
+          console.log('Speech recognition was aborted');
+          return; // Exit early, don't show alert
+        case 'service-not-allowed':
+          errorMessage = 'Speech recognition service not allowed. Please check your browser settings.';
+          break;
+        default:
+          errorMessage = `Speech recognition error: ${errorName}. Please try again.`;
+      }
+      
+      // Show error message to user only for critical errors
+      alert(errorMessage);
     };
+    
     recognition.onend = () => {
+      console.log('Speech recognition ended');
       setListening(false);
       setMicPlaceholder('Ask me anything...');
     };
+    
+    recognition.onstart = () => {
+      console.log('Speech recognition started');
+    };
+    
+    try {
     recognition.start();
+    } catch (error) {
+      console.error('Error starting speech recognition:', error);
+      setListening(false);
+      setMicPlaceholder('Ask me anything...');
+      alert('Failed to start speech recognition. Please try again or check your microphone permissions.');
+    }
   };
 
   // Helper function to hide typing animation with minimum display duration
@@ -1928,9 +2012,10 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                     className={`absolute right-12 sm:right-14 md:right-16 p-1.5 sm:p-2 rounded-full transition-all duration-200 ${listening ? 'animate-pulse' : ''} hover:bg-gray-200 hover:scale-105 flex items-center justify-center`}
                     style={{ 
                       backgroundColor: listening ? 'var(--brand-primary-50)' : 'transparent',
+                      borderWidth: listening ? '2px' : '0px',
+                      borderStyle: 'solid',
                       borderColor: listening ? 'var(--brand-primary)' : 'transparent',
                       zIndex: 10,
-                      border: 'none',
                       top: '50%',
                       transform: 'translateY(-50%)'
                     }}
@@ -2224,9 +2309,10 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                 className={`absolute right-12 sm:right-14 md:right-16 p-1.5 sm:p-2 rounded-full transition-all duration-200 ${listening ? 'animate-pulse' : ''} hover:bg-gray-200 hover:scale-105 flex items-center justify-center`}
                 style={{ 
                   backgroundColor: listening ? 'var(--brand-primary-50)' : 'transparent',
+                  borderWidth: listening ? '2px' : '0px',
+                  borderStyle: 'solid',
                   borderColor: listening ? 'var(--brand-primary)' : 'transparent',
                   zIndex: 10,
-                  border: 'none',
                   top: '50%',
                   transform: 'translateY(-50%)'
                 }}
