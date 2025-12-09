@@ -516,11 +516,41 @@ async def get_dwd_status():
                 "error": "DWD service not available. Check GOOGLE_APPLICATION_CREDENTIALS path and service account file."
             }
         
+        # Read service account file to get Client ID
+        client_id = None
+        service_account_email = None
+        project_id = None
+        try:
+            import json
+            service_account_path = dwd_service.service_account_path
+            if os.path.exists(service_account_path):
+                with open(service_account_path, 'r') as f:
+                    service_account_info = json.load(f)
+                    client_id = service_account_info.get('client_id')
+                    service_account_email = service_account_info.get('client_email')
+                    project_id = service_account_info.get('project_id')
+        except Exception as e:
+            print(f"Warning: Could not read service account file: {e}")
+        
+        # Check workspace domain
+        workspace_domain = dwd_service.workspace_domain
+        expected_domain = "learners.prakriti.org.in"
+        domain_matches = workspace_domain == expected_domain
+        
         return {
             "available": True,
-            "workspace_domain": dwd_service.workspace_domain,
+            "workspace_domain": workspace_domain,
+            "workspace_domain_correct": domain_matches,
+            "expected_domain": expected_domain,
             "service_account_path": dwd_service.service_account_path,
-            "message": "DWD service is configured and ready"
+            "client_id": client_id,
+            "service_account_email": service_account_email,
+            "project_id": project_id,
+            "message": "DWD service is configured and ready",
+            "warnings": [
+                f"Workspace domain mismatch: Configured as '{workspace_domain}' but expected '{expected_domain}'. Set GOOGLE_WORKSPACE_DOMAIN=learners.prakriti.org.in" if not domain_matches else None
+            ],
+            "note": f"Verify Client ID '{client_id}' is authorized in Google Admin Console with the required scopes."
         }
     except Exception as e:
         return {
@@ -636,25 +666,28 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                     "last_synced_at": datetime.now(timezone.utc).isoformat()
                 }
                 
-                # Upsert course
-                existing_course = supabase.table('google_classroom_courses').select('id').eq('user_id', user_id).eq('course_id', course_id).single().execute()
+                # Upsert course - check if exists first (use limit(1) instead of single() to handle 0 rows)
+                existing_course_result = supabase.table('google_classroom_courses').select('id').eq('user_id', user_id).eq('course_id', course_id).limit(1).execute()
                 
                 db_course_id = None
-                if existing_course.data:
-                    supabase.table('google_classroom_courses').update(course_data).eq('id', existing_course.data['id']).execute()
-                    db_course_id = existing_course.data['id']
+                if existing_course_result.data and len(existing_course_result.data) > 0:
+                    # Course exists - update it
+                    existing_course_id = existing_course_result.data[0]['id']
+                    supabase.table('google_classroom_courses').update(course_data).eq('id', existing_course_id).execute()
+                    db_course_id = existing_course_id
                     sync_stats["courses"]["updated"] += 1
                 else:
-                    result = supabase.table('google_classroom_courses').insert(course_data).select('id').execute()
-                    if result.data:
-                        db_course_id = result.data[0]['id']
+                    # Course doesn't exist - insert it
+                    result = supabase.table('google_classroom_courses').insert(course_data).execute()
+                    if result.data and len(result.data) > 0:
+                        db_course_id = result.data[0].get('id')
                         sync_stats["courses"]["created"] += 1
                 
                 if not db_course_id:
                     # Fallback: try to get ID
-                    result = supabase.table('google_classroom_courses').select('id').eq('user_id', user_id).eq('course_id', course_id).single().execute()
-                    if result.data:
-                        db_course_id = result.data['id']
+                    result = supabase.table('google_classroom_courses').select('id').eq('user_id', user_id).eq('course_id', course_id).limit(1).execute()
+                    if result.data and len(result.data) > 0:
+                        db_course_id = result.data[0]['id']
                     else:
                         print(f"⚠️ DWD: Could not get database course ID for {course_id}")
                         continue
@@ -670,9 +703,9 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                             "profile": teacher.get('profile', {})
                         }
                         
-                        existing = supabase.table('google_classroom_teachers').select('id').eq('course_id', db_course_id).eq('course_user_id', teacher_data['course_user_id']).single().execute()
+                        existing = supabase.table('google_classroom_teachers').select('id').eq('course_id', db_course_id).eq('course_user_id', teacher_data['course_user_id']).limit(1).execute()
                         
-                        if existing.data:
+                        if existing.data and len(existing.data) > 0:
                             supabase.table('google_classroom_teachers').update(teacher_data).eq('id', existing.data['id']).execute()
                             sync_stats["teachers"]["updated"] += 1
                         else:
@@ -693,9 +726,9 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                             "student_work_folder": student.get('studentWorkFolder')
                         }
                         
-                        existing = supabase.table('google_classroom_students').select('id').eq('course_id', db_course_id).eq('course_user_id', student_data['course_user_id']).single().execute()
+                        existing = supabase.table('google_classroom_students').select('id').eq('course_id', db_course_id).eq('course_user_id', student_data['course_user_id']).limit(1).execute()
                         
-                        if existing.data:
+                        if existing.data and len(existing.data) > 0:
                             supabase.table('google_classroom_students').update(student_data).eq('id', existing.data['id']).execute()
                             sync_stats["students"]["updated"] += 1
                         else:
@@ -745,17 +778,17 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                             "last_synced_at": datetime.now(timezone.utc).isoformat()
                         }
                         
-                        existing = supabase.table('google_classroom_coursework').select('id').eq('course_id', db_course_id).eq('coursework_id', cw_id).single().execute()
+                        existing = supabase.table('google_classroom_coursework').select('id').eq('course_id', db_course_id).eq('coursework_id', cw_id).limit(1).execute()
                         
                         cw_db_id = None
-                        if existing.data:
+                        if existing.data and len(existing.data) > 0:
                             supabase.table('google_classroom_coursework').update(coursework_data).eq('id', existing.data['id']).execute()
                             cw_db_id = existing.data['id']
                             sync_stats["coursework"]["updated"] += 1
                         else:
-                            result = supabase.table('google_classroom_coursework').insert(coursework_data).select('id').execute()
-                            if result.data:
-                                cw_db_id = result.data[0]['id']
+                            result = supabase.table('google_classroom_coursework').insert(coursework_data).execute()
+                            if result.data and len(result.data) > 0:
+                                cw_db_id = result.data[0].get('id')
                                 sync_stats["coursework"]["created"] += 1
                         
                         # Generate embedding for coursework
@@ -787,9 +820,9 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                                         "last_synced_at": datetime.now(timezone.utc).isoformat()
                                     }
                                     
-                                    existing = supabase.table('google_classroom_submissions').select('id').eq('coursework_id', cw_db_id).eq('submission_id', submission_data['submission_id']).single().execute()
+                                    existing = supabase.table('google_classroom_submissions').select('id').eq('coursework_id', cw_db_id).eq('submission_id', submission_data['submission_id']).limit(1).execute()
                                     
-                                    if existing.data:
+                                    if existing.data and len(existing.data) > 0:
                                         supabase.table('google_classroom_submissions').update(submission_data).eq('id', existing.data['id']).execute()
                                         sync_stats["submissions"]["updated"] += 1
                                     else:
@@ -821,17 +854,17 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                             "last_synced_at": datetime.now(timezone.utc).isoformat()
                         }
                         
-                        existing = supabase.table('google_classroom_announcements').select('id').eq('course_id', db_course_id).eq('announcement_id', announcement_data['announcement_id']).single().execute()
+                        existing = supabase.table('google_classroom_announcements').select('id').eq('course_id', db_course_id).eq('announcement_id', announcement_data['announcement_id']).limit(1).execute()
                         
                         ann_db_id = None
-                        if existing.data:
+                        if existing.data and len(existing.data) > 0:
                             supabase.table('google_classroom_announcements').update(announcement_data).eq('id', existing.data['id']).execute()
                             ann_db_id = existing.data['id']
                             sync_stats["announcements"]["updated"] += 1
                         else:
-                            result = supabase.table('google_classroom_announcements').insert(announcement_data).select('id').execute()
-                            if result.data:
-                                ann_db_id = result.data[0]['id']
+                            result = supabase.table('google_classroom_announcements').insert(announcement_data).execute()
+                            if result.data and len(result.data) > 0:
+                                ann_db_id = result.data[0].get('id')
                                 sync_stats["announcements"]["created"] += 1
                         
                         # Generate embedding for announcement
@@ -889,12 +922,16 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                     "last_synced_at": datetime.now(timezone.utc).isoformat()
                 }
                 
-                existing = supabase.table('google_calendar_calendars').select('id').eq('user_id', user_id).eq('calendar_id', cal_id).single().execute()
+                # Check if calendar exists - use limit(1) instead of single() to handle 0 rows
+                existing_result = supabase.table('google_calendar_calendars').select('id').eq('user_id', user_id).eq('calendar_id', cal_id).limit(1).execute()
                 
-                if existing.data:
-                    supabase.table('google_calendar_calendars').update(calendar_data).eq('id', existing.data['id']).execute()
+                if existing_result.data and len(existing_result.data) > 0:
+                    # Calendar exists - update it
+                    existing_id = existing_result.data[0]['id']
+                    supabase.table('google_calendar_calendars').update(calendar_data).eq('id', existing_id).execute()
                     sync_stats["calendars"]["updated"] += 1
                 else:
+                    # Calendar doesn't exist - insert it
                     supabase.table('google_calendar_calendars').insert(calendar_data).execute()
                     sync_stats["calendars"]["created"] += 1
                 
@@ -950,9 +987,9 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                             "last_synced_at": datetime.now(timezone.utc).isoformat()
                         }
                         
-                        existing = supabase.table('google_calendar_events').select('id').eq('user_id', user_id).eq('event_id', event_id).single().execute()
+                        existing = supabase.table('google_calendar_events').select('id').eq('user_id', user_id).eq('event_id', event_id).limit(1).execute()
                         
-                        if existing.data:
+                        if existing.data and len(existing.data) > 0:
                             supabase.table('google_calendar_events').update(event_data).eq('id', existing.data['id']).execute()
                             sync_stats["events"]["updated"] += 1
                         else:
@@ -975,7 +1012,114 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
         print(f"❌ DWD: Sync failed for {user_email}: {str(e)}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"DWD sync failed: {str(e)}")
+        
+        # Extract meaningful error message
+        error_detail = str(e)
+        error_type = "unknown"
+        
+        # Get Client ID for error messages
+        client_id_for_error = "N/A"
+        try:
+            dwd_service = get_dwd_service()
+            if dwd_service:
+                client_id_for_error = dwd_service._get_client_id()
+        except:
+            pass
+        
+        # Categorize error types and provide specific guidance
+        if 'invalid_scope' in error_detail.lower() and 'empty or missing scope not allowed' in error_detail.lower():
+            error_type = "invalid_scope"
+            error_detail = (
+                f"❌ Invalid scope error: Empty or missing scope not allowed.\n\n"
+                f"This means the Client ID authorization in Admin Console is incorrect or missing.\n\n"
+                f"🔧 TROUBLESHOOTING STEPS:\n"
+                f"1. Go to: https://admin.google.com → Security → API Controls → Domain-wide Delegation\n"
+                f"2. Verify Client ID: {client_id_for_error} is authorized\n"
+                f"3. Ensure EXACTLY these 5 scopes are authorized (one per line, no typos):\n"
+                f"   • https://www.googleapis.com/auth/classroom.courses.readonly\n"
+                f"   • https://www.googleapis.com/auth/classroom.rosters.readonly\n"
+                f"   • https://www.googleapis.com/auth/classroom.announcements.readonly\n"
+                f"   • https://www.googleapis.com/auth/calendar.readonly\n"
+                f"   • https://www.googleapis.com/auth/calendar.events.readonly\n"
+                f"4. Remove any other scopes (only these 5)\n"
+                f"5. Ensure API Access Control is set to 'Unrestricted'\n"
+                f"6. Wait 15-30 minutes after authorization for propagation\n\n"
+                f"📄 See: backend/DWD_ADMIN_CONSOLE_SETUP.md for detailed instructions"
+            )
+        elif 'unauthorized_client' in error_detail.lower():
+            error_type = "unauthorized_client"
+            error_detail = (
+                f"❌ Unauthorized client error: Client is not authorized.\n\n"
+                f"🔧 TROUBLESHOOTING STEPS:\n"
+                f"1. Go to: https://admin.google.com → Security → API Controls → Domain-wide Delegation\n"
+                f"2. Verify Client ID: {client_id_for_error} matches exactly (no spaces, no typos)\n"
+                f"3. Ensure all 5 scopes are authorized exactly as shown\n"
+                f"4. Wait 15-30 minutes for propagation\n\n"
+                f"📄 See: backend/DWD_ADMIN_CONSOLE_SETUP.md for detailed instructions"
+            )
+        elif 'access_denied' in error_detail.lower() or 'not authorized' in error_detail.lower():
+            error_type = "access_denied"
+            if isinstance(e, tuple) and len(e) >= 2:
+                # Extract error description from tuple format
+                error_info = e[1] if isinstance(e[1], dict) else {}
+                error_desc = error_info.get('error_description', error_info.get('error', 'Requested client not authorized'))
+                error_detail = (
+                    f"❌ Access denied: {error_desc}\n\n"
+                    f"🔧 TROUBLESHOOTING STEPS:\n"
+                    f"1. Verify Client ID {client_id_for_error} is authorized in Google Workspace Admin Console\n"
+                    f"   (Security → API Controls → Domain-wide Delegation)\n"
+                    f"2. Ensure these 5 scopes are authorized (one per line, EXACT URLs):\n"
+                    f"   • https://www.googleapis.com/auth/classroom.courses.readonly\n"
+                    f"   • https://www.googleapis.com/auth/classroom.rosters.readonly\n"
+                    f"   • https://www.googleapis.com/auth/classroom.announcements.readonly\n"
+                    f"   • https://www.googleapis.com/auth/calendar.readonly\n"
+                    f"   • https://www.googleapis.com/auth/calendar.events.readonly\n"
+                    f"3. Ensure Admin SDK API is enabled in Google Cloud Console\n"
+                    f"4. Wait 15-30 minutes for propagation\n"
+                    f"5. Check user email domain matches workspace domain\n"
+                    f"6. Verify no typos or extra spaces in scopes\n\n"
+                    f"📄 See: backend/DWD_ADMIN_CONSOLE_SETUP.md for detailed instructions"
+                )
+            else:
+                error_detail = (
+                    f"❌ Access denied: Requested client not authorized.\n\n"
+                    f"🔧 TROUBLESHOOTING STEPS:\n"
+                    f"1. Verify Client ID {client_id_for_error} is authorized in Google Workspace Admin Console\n"
+                    f"   (Security → API Controls → Domain-wide Delegation)\n"
+                    f"2. Ensure these 5 scopes are authorized (one per line, EXACT URLs):\n"
+                    f"   • https://www.googleapis.com/auth/classroom.courses.readonly\n"
+                    f"   • https://www.googleapis.com/auth/classroom.rosters.readonly\n"
+                    f"   • https://www.googleapis.com/auth/classroom.announcements.readonly\n"
+                    f"   • https://www.googleapis.com/auth/calendar.readonly\n"
+                    f"   • https://www.googleapis.com/auth/calendar.events.readonly\n"
+                    f"3. Ensure Admin SDK API is enabled in Google Cloud Console\n"
+                    f"4. Wait 15-30 minutes for propagation\n"
+                    f"5. Check user email domain matches workspace domain\n"
+                    f"6. Verify no typos or extra spaces in scopes\n\n"
+                    f"📄 See: backend/DWD_ADMIN_CONSOLE_SETUP.md for detailed instructions"
+                )
+        elif isinstance(e, tuple):
+            # Handle tuple-formatted errors
+            if len(e) >= 1:
+                error_detail = str(e[0]) if e[0] else str(e)
+            else:
+                error_detail = str(e)
+        else:
+            # Generic error - still provide helpful context
+            error_detail = (
+                f"❌ Sync error: {error_detail}\n\n"
+                f"🔧 TROUBLESHOOTING:\n"
+                f"1. Check if user email '{user_email}' exists in your workspace\n"
+                f"2. Verify DWD is properly configured (see backend/DWD_ADMIN_CONSOLE_SETUP.md)\n"
+                f"3. Check backend logs for more details\n"
+                f"4. Try running: python scripts/test_dwd_fetch.py {user_email}"
+            )
+        
+        raise HTTPException(
+            status_code=500, 
+            detail=f"DWD sync failed for {user_email}:\n\n{error_detail}",
+            headers={"X-Error-Type": error_type}
+        )
 
 # Helper function for parsing Google timestamps
 def parse_google_timestamp(timestamp: Optional[str]) -> Optional[str]:

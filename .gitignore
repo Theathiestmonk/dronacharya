@@ -234,3 +234,26 @@ jspm_packages/
 **/service-account*.json
 backend/service-account-key.json
 *.service-account.json
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary troubleshooting documentation
+*TROUBLESHOOTING*.md
+*CHECKLIST*.md
+*VERIFY*.md
+*CRITICAL*.md
+*FINAL*.md
+*QUICK_REFERENCE*.md
+*SETUP_INSTRUCTIONS*.md
+*ENABLE*.md
+*RE_AUTHORIZE*.md
+*FIND*.md
+*MESSAGE*.md
+*CHECK*.md
+*DEEP*.md
+*CURRENT_STATUS*.md
+*FIX_IMPLEMENTED*.md
+*SYNC_ERROR*.md

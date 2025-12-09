@@ -368,26 +368,53 @@ const AdminDashboard: React.FC = () => {
       
       // Sync both services sequentially
       const results = {
-        classroom: { synced: 0, failed: 0 },
-        calendar: { synced: 0, failed: 0 }
+        classroom: { synced: 0, failed: 0, error: null as string | null },
+        calendar: { synced: 0, failed: 0, error: null as string | null }
       };
 
       // Sync Classroom
       try {
         const classroomResponse = await fetch(`${backendUrl}/api/admin/sync/grade/${encodeURIComponent(grade)}`, {
-          method: 'POST',
+        method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        body: JSON.stringify({
             service: 'classroom',
             email: profile?.email
           })
         });
-        const classroomData = await classroomResponse.json();
+        
         if (classroomResponse.ok) {
-          results.classroom = { synced: classroomData.synced || 0, failed: classroomData.failed || 0 };
+          const classroomData = await classroomResponse.json();
+          results.classroom = { 
+            synced: classroomData.synced || 0, 
+            failed: classroomData.failed || 0,
+            error: null
+          };
+        } else {
+          // Handle non-OK response
+          try {
+            const errorData = await classroomResponse.json();
+            results.classroom = {
+              synced: 0,
+              failed: 1,
+              error: errorData.detail || errorData.message || `HTTP ${classroomResponse.status}: ${classroomResponse.statusText}`
+            };
+          } catch (parseErr) {
+            // If JSON parsing fails, use status text
+            results.classroom = {
+              synced: 0,
+              failed: 1,
+              error: `HTTP ${classroomResponse.status}: ${classroomResponse.statusText}`
+            };
+          }
         }
       } catch (err) {
         console.error('Error syncing classroom:', err);
+        results.classroom = {
+          synced: 0,
+          failed: 1,
+          error: err instanceof Error ? err.message : 'Network error or unknown error'
+        };
       }
 
       // Sync Calendar
@@ -400,23 +427,67 @@ const AdminDashboard: React.FC = () => {
             email: profile?.email
           })
         });
-        const calendarData = await calendarResponse.json();
+        
         if (calendarResponse.ok) {
-          results.calendar = { synced: calendarData.synced || 0, failed: calendarData.failed || 0 };
+          const calendarData = await calendarResponse.json();
+          results.calendar = { 
+            synced: calendarData.synced || 0, 
+            failed: calendarData.failed || 0,
+            error: null
+          };
+        } else {
+          // Handle non-OK response
+          try {
+            const errorData = await calendarResponse.json();
+            results.calendar = {
+              synced: 0,
+              failed: 1,
+              error: errorData.detail || errorData.message || `HTTP ${calendarResponse.status}: ${calendarResponse.statusText}`
+            };
+          } catch (parseErr) {
+            // If JSON parsing fails, use status text
+            results.calendar = {
+              synced: 0,
+              failed: 1,
+              error: `HTTP ${calendarResponse.status}: ${calendarResponse.statusText}`
+            };
+          }
         }
       } catch (err) {
         console.error('Error syncing calendar:', err);
+        results.calendar = {
+          synced: 0,
+          failed: 1,
+          error: err instanceof Error ? err.message : 'Network error or unknown error'
+        };
       }
 
       const totalSynced = results.classroom.synced + results.calendar.synced;
       const totalFailed = results.classroom.failed + results.calendar.failed;
       
-      alert(`Sync completed for ${grade}!\nClassroom: ${results.classroom.synced} synced, ${results.classroom.failed} failed\nCalendar: ${results.calendar.synced} synced, ${results.calendar.failed} failed\nTotal: ${totalSynced} synced, ${totalFailed} failed`);
+      // Build alert message with error details
+      let alertMessage = `Sync completed for ${grade}!\n\n`;
+      alertMessage += `📊 RESULTS:\n`;
+      alertMessage += `Classroom: ${results.classroom.synced} synced, ${results.classroom.failed} failed\n`;
+      if (results.classroom.error) {
+        alertMessage += `  ❌ Error: ${results.classroom.error}\n`;
+      }
+      alertMessage += `Calendar: ${results.calendar.synced} synced, ${results.calendar.failed} failed\n`;
+      if (results.calendar.error) {
+        alertMessage += `  ❌ Error: ${results.calendar.error}\n`;
+      }
+      alertMessage += `\nTotal: ${totalSynced} synced, ${totalFailed} failed`;
+      
+      if (totalFailed > 0) {
+        alertMessage += `\n\n📄 For troubleshooting steps, see: backend/DWD_ADMIN_CONSOLE_SETUP.md`;
+      }
+      
+      alert(alertMessage);
       
       // Force refresh to get updated data from Supabase
       await fetchUsersByGradeRole(true);
-      await fetchClassroomData(true);
-      await fetchCalendarData(true);
+          await fetchClassroomData(true);
+          await fetchCalendarData(true);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       setError(`Failed to sync ${grade}: ${errorMessage}`);
@@ -450,14 +521,20 @@ const AdminDashboard: React.FC = () => {
             user_email: email
           })
         });
-        const classroomData = await classroomResponse.json();
+        
         if (classroomResponse.ok) {
           successCount++;
-        } else {
-          errorMessages.push(`Classroom: ${classroomData.detail || classroomData.error || 'Failed'}`);
+      } else {
+          try {
+            const classroomData = await classroomResponse.json();
+            errorMessages.push(`Classroom: ${classroomData.detail || classroomData.error || `HTTP ${classroomResponse.status}: ${classroomResponse.statusText}`}`);
+          } catch (parseErr) {
+            errorMessages.push(`Classroom: HTTP ${classroomResponse.status}: ${classroomResponse.statusText}`);
+          }
         }
-      } catch {
-        errorMessages.push('Classroom: Network error');
+      } catch (err) {
+        console.error('Error syncing classroom:', err);
+        errorMessages.push(`Classroom: ${err instanceof Error ? err.message : 'Network error'}`);
       }
 
       // Sync Calendar
@@ -469,22 +546,30 @@ const AdminDashboard: React.FC = () => {
             user_email: email
           })
         });
-        const calendarData = await calendarResponse.json();
+        
         if (calendarResponse.ok) {
           successCount++;
         } else {
-          errorMessages.push(`Calendar: ${calendarData.detail || calendarData.error || 'Failed'}`);
+          try {
+            const calendarData = await calendarResponse.json();
+            errorMessages.push(`Calendar: ${calendarData.detail || calendarData.error || `HTTP ${calendarResponse.status}: ${calendarResponse.statusText}`}`);
+          } catch (parseErr) {
+            errorMessages.push(`Calendar: HTTP ${calendarResponse.status}: ${calendarResponse.statusText}`);
+          }
         }
-      } catch {
-        errorMessages.push('Calendar: Network error');
+      } catch (err) {
+        console.error('Error syncing calendar:', err);
+        errorMessages.push(`Calendar: ${err instanceof Error ? err.message : 'Network error'}`);
       }
 
       if (successCount === 2) {
-        alert(`Sync completed for ${email}! Both Classroom and Calendar synced successfully.`);
+        alert(`✅ Sync completed for ${email}!\n\nBoth Classroom and Calendar synced successfully.`);
       } else if (successCount === 1) {
-        alert(`Partial sync for ${email}:\n${errorMessages.join('\n')}`);
+        alert(`⚠️ Partial sync for ${email}:\n\n${errorMessages.join('\n\n')}\n\nPlease check the error details above and verify Admin Console settings.`);
       } else {
-        setError(`Failed to sync ${email}: ${errorMessages.join(', ')}`);
+        const errorText = errorMessages.join('\n\n');
+        alert(`❌ Failed to sync ${email}:\n\n${errorText}\n\n📄 For troubleshooting steps, see: backend/DWD_ADMIN_CONSOLE_SETUP.md`);
+        setError(`Failed to sync ${email}. Check alert for details.`);
       }
 
       // Force refresh to get updated data from Supabase
@@ -779,11 +864,11 @@ const AdminDashboard: React.FC = () => {
                         <p className="text-xs font-semibold mb-1" style={{ color: 'var(--brand-primary-700)' }}>
                           Auto-sync: Every 12 hours
                         </p>
-                        {schedulerStatus.next_sync && (
+                  {schedulerStatus.next_sync && (
                           <p className="text-xs mt-1" style={{ color: 'var(--brand-primary-600)' }}>
                             Next: {formatDateTime(schedulerStatus.next_sync)}
                           </p>
-                        )}
+                  )}
                       </div>
                     </div>
                   </div>
@@ -792,7 +877,7 @@ const AdminDashboard: React.FC = () => {
               {/* DWD Status Icon */}
               {dwdStatus && (
                 <div className="relative inline-block flex-shrink-0">
-                  <button
+              <button
                     onClick={() => fetchDwdStatus(true)}
                     className="relative flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full transition-all duration-300 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2"
                     style={{
@@ -820,13 +905,13 @@ const AdminDashboard: React.FC = () => {
                     {dwdStatus.available ? (
                       <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    ) : (
+                    </svg>
+                ) : (
                       <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                    )}
-                  </button>
+                )}
+              </button>
                   
                   {/* Tooltip */}
                   <div className="hidden absolute left-0 top-full mt-2 w-64 sm:w-80 bg-white rounded-lg shadow-xl border-2 z-50 p-4"
@@ -851,7 +936,7 @@ const AdminDashboard: React.FC = () => {
                           >
                             Refresh
                           </button>
-                        </div>
+                </div>
                         <p className="text-xs text-gray-600 mb-2">
                           {dwdStatus.available ? 'Domain-Wide Delegation is configured and ready to use.' : 'Domain-Wide Delegation is not properly configured.'}
                         </p>
@@ -970,7 +1055,7 @@ const AdminDashboard: React.FC = () => {
               Website Pages
             </button>
           </nav>
-        </div>
+          </div>
 
         {/* Users by Grade & Role Tab */}
         {activeTab === 'users' && (
@@ -982,8 +1067,8 @@ const AdminDashboard: React.FC = () => {
                 <div className="text-2xl sm:text-3xl font-bold text-gray-900 transition-all duration-300">
                   {Object.values(usersByGrade).reduce((sum, grade) => 
                     sum + (grade.student?.length || 0) + (grade.teacher?.length || 0) + (grade.parent?.length || 0), 0
-                  )}
-                </div>
+              )}
+            </div>
               </div>
               <div className="bg-white rounded-lg sm:rounded-xl shadow-sm sm:shadow-md p-4 sm:p-5 transition-all duration-300 hover:shadow-md sm:hover:shadow-lg hover:-translate-y-0.5 sm:hover:-translate-y-1 border border-green-200" style={{ backgroundColor: 'var(--brand-secondary-50)' }}>
                 <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">Synced Today</div>
@@ -1105,7 +1190,7 @@ const AdminDashboard: React.FC = () => {
                         </span>
                       </div>
                       <div className="flex gap-2 w-full sm:w-auto">
-                        <button
+              <button
                           onClick={() => syncGrade(grade)}
                           disabled={isSyncing || !dwdStatus?.available}
                           className={`relative flex-1 sm:flex-none px-3 sm:px-4 md:px-5 py-2 sm:py-2.5 text-white rounded-lg font-medium text-xs sm:text-sm flex items-center justify-center gap-2 transition-all duration-300 transform hover:scale-105 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:hover:shadow-none ${
@@ -1128,22 +1213,22 @@ const AdminDashboard: React.FC = () => {
                           }}
                         >
                           {syncingGrade?.grade === grade ? (
-                            <>
+                  <>
                               <svg className="animate-spin h-3 w-3 sm:h-4 sm:w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
                               <span className="hidden sm:inline">Syncing...</span>
                               <span className="sm:hidden">Sync...</span>
-                            </>
-                          ) : (
+                  </>
+                ) : (
                             <>
                               <span className="text-sm sm:text-base">🔄</span>
                               <span className="hidden sm:inline">Sync All</span>
                               <span className="sm:hidden">Sync</span>
                             </>
-                          )}
-                        </button>
+                )}
+              </button>
                       </div>
                     </div>
 
@@ -1189,7 +1274,7 @@ const AdminDashboard: React.FC = () => {
                                     </span>
                                   </div>
                                   <div className="text-xs text-gray-400 mb-2 sm:mb-3 truncate">{lastSyncText}</div>
-                                  <button
+              <button
                                     onClick={() => syncUser(user.email)}
                                     disabled={isUserSyncing || !dwdStatus?.available}
                                     className={`w-full px-2 sm:px-3 py-1.5 sm:py-2 text-xs font-medium border-2 rounded-lg transition-all duration-300 transform hover:scale-105 hover:shadow-sm disabled:opacity-50 disabled:transform-none disabled:hover:shadow-none ${
@@ -1218,20 +1303,20 @@ const AdminDashboard: React.FC = () => {
                                     {isUserSyncing ? (
                                       <span className="flex items-center justify-center gap-1">
                                         <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                        </svg>
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
                                         <span className="hidden sm:inline">Syncing...</span>
                                         <span className="sm:hidden">Sync...</span>
                                       </span>
-                                    ) : (
+                ) : (
                                       <span className="flex items-center justify-center gap-1">
                                         <span>🔄</span>
                                         <span>Sync</span>
                                       </span>
-                                    )}
-                                  </button>
-                                </div>
+                )}
+              </button>
+            </div>
                               );
                             })}
                           </div>
@@ -1245,10 +1330,10 @@ const AdminDashboard: React.FC = () => {
             {Object.keys(usersByGrade).length === 0 && (
               <div className="bg-white rounded-lg sm:rounded-xl shadow-sm sm:shadow-md p-8 sm:p-12 text-center border border-gray-200">
                 <p className="text-gray-500 text-sm sm:text-base md:text-lg">No users found. Users will be organized by grade and role here.</p>
+                  </div>
+                )}
               </div>
             )}
-          </div>
-        )}
 
         {/* Google Classroom Tab */}
         {activeTab === 'classroom' && (

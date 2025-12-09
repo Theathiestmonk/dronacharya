@@ -38,3 +38,19 @@ const PrakritiLoader: React.FC<PrakritiLoaderProps> = ({
 
 export default PrakritiLoader;
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
