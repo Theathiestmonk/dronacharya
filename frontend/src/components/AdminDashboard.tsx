@@ -399,7 +399,7 @@ const AdminDashboard: React.FC = () => {
               failed: 1,
               error: errorData.detail || errorData.message || `HTTP ${classroomResponse.status}: ${classroomResponse.statusText}`
             };
-          } catch (parseErr) {
+          } catch {
             // If JSON parsing fails, use status text
             results.classroom = {
               synced: 0,
@@ -444,7 +444,7 @@ const AdminDashboard: React.FC = () => {
               failed: 1,
               error: errorData.detail || errorData.message || `HTTP ${calendarResponse.status}: ${calendarResponse.statusText}`
             };
-          } catch (parseErr) {
+          } catch {
             // If JSON parsing fails, use status text
             results.calendar = {
               synced: 0,
@@ -528,7 +528,7 @@ const AdminDashboard: React.FC = () => {
           try {
             const classroomData = await classroomResponse.json();
             errorMessages.push(`Classroom: ${classroomData.detail || classroomData.error || `HTTP ${classroomResponse.status}: ${classroomResponse.statusText}`}`);
-          } catch (parseErr) {
+          } catch {
             errorMessages.push(`Classroom: HTTP ${classroomResponse.status}: ${classroomResponse.statusText}`);
           }
         }
@@ -553,7 +553,7 @@ const AdminDashboard: React.FC = () => {
           try {
             const calendarData = await calendarResponse.json();
             errorMessages.push(`Calendar: ${calendarData.detail || calendarData.error || `HTTP ${calendarResponse.status}: ${calendarResponse.statusText}`}`);
-          } catch (parseErr) {
+          } catch {
             errorMessages.push(`Calendar: HTTP ${calendarResponse.status}: ${calendarResponse.statusText}`);
           }
         }
