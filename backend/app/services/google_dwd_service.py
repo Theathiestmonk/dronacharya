@@ -30,15 +30,102 @@ class GoogleDWDService:
         # Do NOT pass scopes when creating credentials - they are enforced by Admin Console authorization
         self._base_credentials = None
         self._load_credentials()
+
+    def _build_service_account_candidates(self) -> List[str]:
+        """Return prioritized absolute paths to try for the service account key."""
+        base_dir = os.path.normpath(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        file_name = os.path.basename(self.service_account_path) or 'service-account-key.json'
+        candidates: List[str] = []
+
+        def add(candidate_path: Optional[str]):
+            if not candidate_path:
+                return
+            normalized = os.path.normpath(os.path.expandvars(candidate_path))
+            
+            # Fix common typos in path
+            normalized = normalized.replace('droonacharya', 'dronacharya')
+            normalized = normalized.replace('backkend', 'backend')
+            
+            if not os.path.isabs(normalized):
+                # If path starts with "backend", strip it since base_dir already includes it
+                parts = normalized.replace('\\', '/').split('/')
+                if parts and parts[0].lower() == 'backend':
+                    parts = parts[1:]
+                normalized = os.path.normpath(os.path.join(base_dir, *parts) if parts else base_dir)
+            
+            # Fix typos in absolute paths too
+            normalized = normalized.replace('droonacharya', 'dronacharya')
+            normalized = normalized.replace('backkend', 'backend')
+            
+            if normalized not in candidates:
+                candidates.append(normalized)
+
+        # Add original path (will be normalized in add())
+        add(self.service_account_path)
+        
+        # If original path is relative and contains "backend", try without the backend prefix
+        if not os.path.isabs(self.service_account_path):
+            parts = self.service_account_path.replace('\\', '/').split('/')
+            if parts and parts[0].lower() == 'backend':
+                # Try without backend prefix
+                add('/'.join(parts[1:]) if len(parts) > 1 else file_name)
+        
+        # Try just the filename in base_dir
+        add(file_name)
+        add('service-account-key.json')
+
+        return candidates
     
     def _load_credentials(self):
         """Load service account credentials for Domain-Wide Delegation"""
         try:
-            # Resolve relative path
-            if not os.path.isabs(self.service_account_path):
-                # Make path relative to project root
-                base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-                self.service_account_path = os.path.join(base_dir, self.service_account_path.replace('backend/', ''))
+            # First priority: Read from environment variable (for deployment - secure, not in git)
+            service_account_json = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON')
+            if service_account_json:
+                try:
+                    service_account_info = json.loads(service_account_json)
+                    # Create temporary file for google-auth library
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                        json.dump(service_account_info, f)
+                        self.service_account_path = f.name
+                    
+                    # Create credentials from the temp file
+                    try:
+                        self._base_credentials = service_account.Credentials.from_service_account_file(
+                            self.service_account_path,
+                            scopes=None  # Explicitly None for DWD
+                        )
+                    except TypeError:
+                        self._base_credentials = service_account.Credentials.from_service_account_file(
+                            self.service_account_path
+                        )
+                    
+                    # Set token URI
+                    if not hasattr(self._base_credentials, '_token_uri') or not self._base_credentials._token_uri:
+                        self._base_credentials._token_uri = 'https://oauth2.googleapis.com/token'
+                    
+                    # Clear scopes for DWD
+                    if hasattr(self._base_credentials, '_scopes'):
+                        if self._base_credentials._scopes:
+                            self._base_credentials._scopes = None
+                    
+                    # Simple status message - no credential details
+                    print(f"✅ DWD: Connected")
+                    
+                    return  # Successfully loaded from env var
+                    
+                except json.JSONDecodeError:
+                    # Silently fall back to file-based credentials
+                    pass
+            
+            # Second priority: Try file paths (for local development)
+            candidates = self._build_service_account_candidates()
+            found_path = next((path for path in candidates if os.path.exists(path)), None)
+            if found_path:
+                self.service_account_path = found_path
+            elif candidates:
+                self.service_account_path = candidates[0]
             
             if os.path.exists(self.service_account_path):
                 # Read service account file first to get Client ID
@@ -74,72 +161,14 @@ class GoogleDWDService:
                 # The JWT assertion uses _scopes if scopes attribute is not set
                 if hasattr(self._base_credentials, '_scopes'):
                     if self._base_credentials._scopes:
-                        print(f"   ⚠️  WARNING: Base credentials _scopes (private) has value: {self._base_credentials._scopes}")
-                        print(f"   ⚠️  Clearing _scopes to ensure no scope in JWT...")
                         self._base_credentials._scopes = None
-                    else:
-                        print(f"   ✅ Base credentials _scopes (private) is None/empty (correct for DWD)")
                 
-                # CRITICAL: For DWD, credentials should have NO scopes attribute set
-                # Do NOT call with_scopes() - it might add scope parameter to JWT
-                # Admin Console enforces scopes, client should not request any
-                print(f"   🔍 Verifying base credentials scope state...")
-                if hasattr(self._base_credentials, 'scopes'):
-                    current_scopes = getattr(self._base_credentials, 'scopes', None)
-                    if current_scopes:
-                        print(f"   ❌ ERROR: Base credentials have scopes: {current_scopes}")
-                        print(f"   ❌ This should not happen - credentials created without scopes parameter")
-                        print(f"   ⚠️  For DWD, scopes should be None/empty - Admin Console enforces them")
-                    else:
-                        print(f"   ✅ Base credentials scopes attribute exists but is None/empty (correct for DWD)")
-                else:
-                    print(f"   ✅ Base credentials have no scopes attribute (correct for DWD)")
-                
-                # Get Client ID from credentials object if available
-                client_id_from_credentials = None
-                try:
-                    if hasattr(self._base_credentials, 'service_account_email'):
-                        # Try to get client_id from the credentials object
-                        if hasattr(self._base_credentials, '_service_account_email'):
-                            pass  # Credentials object doesn't directly expose client_id
-                except:
-                    pass
-                
-                # Use the Client ID from the file (most reliable)
-                client_id = client_id_from_file
-                
-                print(f"✅ DWD: Service account credentials loaded from {self.service_account_path}")
-                print(f"   Service Account Email: {service_account_email}")
-                print(f"   Client ID (from file): {client_id}")
-                print(f"   Project ID: {project_id}")
-                print(f"   Workspace Domain: {self.workspace_domain}")
-                print()
-                print(f"   ✅ NOTE: Domain-Wide Delegation is enabled by default (no Cloud Console setup needed)")
-                print(f"   ⚠️  CRITICAL: Authorize Client ID {client_id} in Google Workspace Admin Console:")
-                print(f"      → Go to: https://admin.google.com")
-                print(f"      → Security > API Controls > Domain-wide Delegation")
-                print(f"      → Add Client ID with the 5 required scopes")
-                
-                # Verify Client ID format and warn
-                if client_id and client_id != 'Not found':
-                    # Strip any whitespace
-                    client_id = str(client_id).strip()
-                    # Additional validation: check if Client ID looks valid (should be numeric)
-                    if not client_id.isdigit():
-                        print(f"   ⚠️  WARNING: Client ID contains non-numeric characters: {repr(client_id)}")
-                    elif len(client_id) != 20:
-                        print(f"   ⚠️  WARNING: Client ID length is {len(client_id)} (expected 20 digits): {repr(client_id)}")
-                    else:
-                        print(f"   ✅ Client ID format is valid (20 digits)")
-                    
-                    # Always show the same Client ID in the verification message
-                    print(f"   ⚠️  Verify this Client ID is authorized in Google Admin Console: {client_id}")
+                # Simple status message - no credential details
+                print(f"✅ DWD: Connected")
             else:
-                print(f"⚠️ DWD: Service account file not found at {self.service_account_path}")
-        except Exception as e:
-            print(f"❌ DWD: Failed to load credentials: {str(e)}")
-            import traceback
-            traceback.print_exc()
+                print(f"❌ DWD: Not Connected")
+        except Exception:
+            print(f"❌ DWD: Not Connected")
             self._base_credentials = None
     
     def _get_delegated_credentials(self, user_email: str):

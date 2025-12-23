@@ -928,7 +928,7 @@ const AdminDashboard: React.FC = () => {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-2">
                           <h3 className="text-sm font-semibold text-gray-900">
-                            {dwdStatus.available ? 'DWD Configured' : 'DWD Not Available'}
+                            {dwdStatus.available ? 'Connected' : 'DWD Not Available'}
                           </h3>
                           <button
                             onClick={() => fetchDwdStatus(true)}
