@@ -67,7 +67,7 @@ export default function PrivacyPolicy() {
           <ul className="list-disc pl-6 mb-4">
             <li>Teachers may access student chat history and usage data for educational purposes.</li>
             <li>Administrators may review system usage analytics for school management.</li>
-            <li>Parents may access their child's usage data and educational progress information.</li>
+            <li>Parents may access their child&apos;s usage data and educational progress information.</li>
           </ul>
 
           <h3 className="text-xl font-medium mt-6 mb-3">3.2 Service Providers</h3>
@@ -105,17 +105,17 @@ export default function PrivacyPolicy() {
             While we strive to protect your information, no method of transmission over the internet or electronic storage is 100% secure. We cannot guarantee absolute security.
           </p>
 
-          <h2 className="text-2xl font-semibold mt-8 mb-4">5. Children's Privacy (COPPA Compliance)</h2>
+          <h2 className="text-2xl font-semibold mt-8 mb-4">5. Children&apos;s Privacy (COPPA Compliance)</h2>
 
           <p className="mb-4">
-            Prakriti Chatbot serves students of various ages at Prakriti School. We are committed to complying with the Children's Online Privacy Protection Act (COPPA) and similar regulations:
+            Prakriti Chatbot serves students of various ages at Prakriti School. We are committed to complying with the Children&apos;s Online Privacy Protection Act (COPPA) and similar regulations:
           </p>
           <ul className="list-disc pl-6 mb-4">
             <li>Students under 13 require parental consent for account creation and use.</li>
-            <li>Parents have the right to review, modify, or delete their child's personal information.</li>
+            <li>Parents have the right to review, modify, or delete their child&apos;s personal information.</li>
             <li>Educational data collection is limited to what is necessary for learning purposes.</li>
             <li>We do not collect personal information from children under 13 without verifiable parental consent.</li>
-            <li>Parents can contact us at any time to exercise their rights regarding their child's data.</li>
+            <li>Parents can contact us at any time to exercise their rights regarding their child&apos;s data.</li>
           </ul>
 
           <h2 className="text-2xl font-semibold mt-8 mb-4">6. Data Retention</h2>

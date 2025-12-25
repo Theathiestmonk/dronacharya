@@ -51,7 +51,7 @@ export default function TermsOfService() {
 
           <h3 className="text-xl font-medium mt-6 mb-3">2.3 Parental Consent for Minors</h3>
           <p className="mb-4">
-            Students under 18 years of age require parental or guardian consent to create an account and use our Service. Parents are responsible for supervising their child's use of the Service and ensuring compliance with these Terms.
+            Students under 18 years of age require parental or guardian consent to create an account and use our Service. Parents are responsible for supervising their child&apos;s use of the Service and ensuring compliance with these Terms.
           </p>
 
           <h2 className="text-2xl font-semibold mt-8 mb-4">3. Acceptable Use Policy</h2>
@@ -71,7 +71,7 @@ export default function TermsOfService() {
           <ul className="list-disc pl-6 mb-4">
             <li>Violate any applicable laws, regulations, or school policies</li>
             <li>Share inappropriate, offensive, or harmful content</li>
-            <li>Attempt to gain unauthorized access to other users' accounts or data</li>
+            <li>Attempt to gain unauthorized access to other users&apos; accounts or data</li>
             <li>Use the Service for commercial purposes without authorization</li>
             <li>Harass, bully, or intimidate other users</li>
             <li>Share confidential or sensitive information inappropriately</li>
@@ -112,7 +112,7 @@ export default function TermsOfService() {
 
           <h3 className="text-xl font-medium mt-6 mb-3">5.3 Google Classroom Integration</h3>
           <p className="mb-4">
-            When integrating with Google Classroom, you authorize us to access your educational data as necessary to provide our services. This integration is subject to Google's Terms of Service and Privacy Policy.
+            When integrating with Google Classroom, you authorize us to access your educational data as necessary to provide our services. This integration is subject to Google&apos;s Terms of Service and Privacy Policy.
           </p>
 
           <h2 className="text-2xl font-semibold mt-8 mb-4">6. Intellectual Property Rights</h2>
@@ -129,7 +129,7 @@ export default function TermsOfService() {
 
           <h3 className="text-xl font-medium mt-6 mb-3">6.3 Third-Party Content</h3>
           <p className="mb-4">
-            Our Service may integrate with or display content from third parties, including YouTube videos and web resources. Such content is subject to the respective third parties' terms of service and intellectual property rights.
+            Our Service may integrate with or display content from third parties, including YouTube videos and web resources. Such content is subject to the respective third parties&apos; terms of service and intellectual property rights.
           </p>
 
           <h2 className="text-2xl font-semibold mt-8 mb-4">7. Privacy and Data Protection</h2>
@@ -159,7 +159,7 @@ export default function TermsOfService() {
 
           <h3 className="text-xl font-medium mt-6 mb-3">9.1 Service Disclaimer</h3>
           <p className="mb-4">
-            The Service is provided on an &quot;as is&quot; and &quot;as available&quot; basis. We make no warranties, expressed or implied, regarding the Service's accuracy, reliability, suitability, or availability.
+            The Service is provided on an &quot;as is&quot; and &quot;as available&quot; basis. We make no warranties, expressed or implied, regarding the Service&apos;s accuracy, reliability, suitability, or availability.
           </p>
 
           <h3 className="text-xl font-medium mt-6 mb-3">9.2 Limitation of Liability</h3>
