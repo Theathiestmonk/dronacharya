@@ -269,117 +269,21 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           setMicPlaceholder('Ask me anything...');
           return;
         }
-        
+
       const transcript = results[0][0].transcript;
         console.log('Speech recognition transcript:', transcript);
-      setInput('');
       setListening(false);
-      setMicPlaceholder('Ask me anything...');
-        
-      // Immediately send the recognized text as a user message
+
+      // Set transcript in input field and update placeholder - user must manually send
       if (transcript && transcript.trim()) {
-        const userMsg: Message = { sender: 'user', text: transcript };
-        setMessages((msgs) => [...msgs, userMsg]);
-        
-        setLoading(true);
-        setDisplayedBotText('');
-        setIsTyping(false);
-        fetch('/api/chatbot', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            message: transcript,
-            user_id: user?.id || null
-          }),
-        })
-          .then((res) => res.json())
-          .then((data) => {
-            // Check for structured responses with type field
-            if (data.type === 'calendar' && data.response && data.response.url) {
-              setMessages((msgs) => [...msgs, { sender: 'bot', type: 'calendar', url: data.response.url }]);
-              setIsTyping(false);
-              setDisplayedBotText('');
-              return;
-            } else if (data.type === 'map' && data.response && data.response.url) {
-              setMessages((msgs) => [...msgs, { sender: 'bot', type: 'map', url: data.response.url }]);
-              setIsTyping(false);
-              setDisplayedBotText('');
-              return;
-            } else if (data.type === 'mixed' && Array.isArray(data.response)) {
-              // Handle mixed responses (like location with map)
-              setMessages((msgs) => [
-                ...msgs,
-                { sender: 'bot', text: data.response[0] },
-                data.response[1]?.type === 'map' ? { sender: 'bot', type: 'map', url: data.response[1].url } : null
-              ].filter(Boolean) as Message[]);
-              setIsTyping(false);
-              setDisplayedBotText('');
-              return;
-            }
-            
-            // Handle regular text responses
-            const fullText = data.response;
-            console.log('Frontend speech received response length:', fullText?.length);
-            console.log('Frontend speech received response:', fullText);
-            let idx = 0;
-            setIsTyping(true);
-            setTypingAnimationKey(prev => prev + 1); // Retrigger animation
-            setShouldAnimate(false); // Reset animation - start with blue
-            // Delay to ensure DOM is ready, then trigger animation
-            requestAnimationFrame(() => {
-              setTimeout(() => setShouldAnimate(true), 50); // Trigger animation after a brief delay
-            });
-            function typeChar() {
-              setDisplayedBotText(fullText.slice(0, idx + 1));
-              if (idx < fullText.length - 1) {
-                idx++;
-                setTimeout(typeChar, 8);
-              } else {
-                setIsTyping(false);
-                // For inbuilt queries, preserve scroll position when adding bot message
-                if (isInbuiltQueryRef.current && messagesContainerRef.current) {
-                  const savedScrollPosition = messagesContainerRef.current.scrollTop;
-                  setMessages((msgs) => [...msgs, { sender: 'bot', text: fullText }]);
-                  // Restore scroll position immediately after adding message
-                  requestAnimationFrame(() => {
-                    if (messagesContainerRef.current && savedScrollPosition > 0) {
-                      messagesContainerRef.current.scrollTop = savedScrollPosition;
-                    }
-                  });
-                } else {
-                  setMessages((msgs) => [...msgs, { sender: 'bot', text: fullText }]);
-                }
-                setHasFirstResponse(true);
-              }
-            }
-            typeChar();
-          })
-          .catch(() => {
-            // For inbuilt queries, preserve scroll position when adding error message
-            if (isInbuiltQueryRef.current && messagesContainerRef.current) {
-              const savedScrollPosition = messagesContainerRef.current.scrollTop;
-              setMessages((msgs) => [...msgs, { sender: 'bot', text: 'Error: Could not get response.' }]);
-              // Restore scroll position immediately after adding message
-              requestAnimationFrame(() => {
-                if (messagesContainerRef.current && savedScrollPosition > 0) {
-                  messagesContainerRef.current.scrollTop = savedScrollPosition;
-                }
-              });
-            } else {
-              setMessages((msgs) => [...msgs, { sender: 'bot', text: 'Error: Could not get response.' }]);
-            }
-            setHasFirstResponse(true);
-          })
-          .finally(() => {
-            setLoadingWithMinDuration();
-          });
-          
+        setInput(transcript);
+        setMicPlaceholder(transcript);
+        console.log('✅ Speech transcript set in input field - user must click send button');
+      } else {
+        setMicPlaceholder('Ask me anything...');
+      }
+
       inputRef.current?.focus({ preventScroll: true });
-        } else {
-          console.warn('Empty transcript received');
-          setMicPlaceholder('No speech detected. Try again...');
-          setTimeout(() => setMicPlaceholder('Ask me anything...'), 2000);
-        }
       } catch (error) {
         console.error('Error processing speech recognition result:', error);
         setListening(false);
