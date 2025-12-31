@@ -76,7 +76,7 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Helvetica, Arial, sans-serif;
+  font-family: Helvetica, Arial, sans-serif, 'Noto Sans Devanagari', 'Noto Sans Gujarati';
 }
 
 /* Grid background pattern for chat area - light gray grid on white */
@@ -281,7 +281,12 @@ body {
   background-color: #f3f4f6;
   padding: 0.125rem 0.25rem;
   border-radius: 0.25rem;
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace, 'Noto Sans Devanagari', 'Noto Sans Gujarati';
+
+/* Ensure proper rendering of Indic scripts */
+:lang(hi), :lang(gu) {
+  font-family: 'Noto Sans Devanagari', 'Noto Sans Gujarati', Helvetica, Arial, sans-serif;
+}
   font-size: 0.875rem;
 }
 

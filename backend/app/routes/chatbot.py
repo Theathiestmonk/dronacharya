@@ -17,7 +17,28 @@ async def chat_with_bot(request: ChatbotRequest):
     try:
         print(f"Chatbot request: {request.message}")  # Debug log
         print(f"Conversation history length: {len(request.conversation_history) if request.conversation_history else 0}")  # Debug log
-        
+
+        # Fetch user profile embedding if user_id is provided
+        user_profile = None
+        if request.user_id:
+            try:
+                from supabase_config import get_supabase_client
+                supabase = get_supabase_client()
+                if supabase:
+                    # Fetch minimal essential fields + embedding for semantic personalization
+                    # Privacy: excludes sensitive data (phone, address, emergency contacts, etc.)
+                    result = supabase.table('user_profiles').select('id, user_id, first_name, role, grade, embedding').eq('user_id', request.user_id).execute()
+                    if result.data and len(result.data) > 0:
+                        user_profile = result.data[0]
+                        print(f"[Chatbot] ✅ Fetched user profile embedding for user: {request.user_id}")
+                    else:
+                        print(f"[Chatbot] ⚠️ No user profile found for user_id: {request.user_id}")
+            except Exception as e:
+                print(f"[Chatbot] ❌ Error fetching user profile: {e}")
+
+        # Add user profile to request
+        request.user_profile = user_profile
+
         # Use the chatbot agent
         result = generate_chatbot_response(request)
         print(f"Chatbot agent result: {result}")  # Debug log

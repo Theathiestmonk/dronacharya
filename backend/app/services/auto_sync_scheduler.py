@@ -47,19 +47,25 @@ class AutoSyncScheduler:
         
         # Schedule sync job to run every 12 hours
         # Delay first sync to 30 seconds to allow app to fully start
-        self.scheduler.add_job(
-            self.sync_all_connected_services,
-            trigger=IntervalTrigger(hours=12),
-            id='auto_sync_job',
-            name='Auto Sync Google Services',
-            replace_existing=True,
-            next_run_time=datetime.now() + timedelta(seconds=30)  # Run first sync 30 seconds after startup
-        )
+        # Temporarily disabled frequent auto-sync to prevent looping
+        # self.scheduler.add_job(
+        #     self.sync_all_connected_services,
+        #     trigger=IntervalTrigger(hours=12),
+        #     id='auto_sync_job',
+        #     name='Auto Sync Google Services',
+        #     replace_existing=True,
+        #     next_run_time=datetime.now() + timedelta(seconds=30)  # Run first sync 30 seconds after startup
+        # )
         
         self.scheduler.start()
         self.is_running = True
-        print("[AutoSync] Scheduler started - will run every 12 hours")
-        print(f"[AutoSync] Next sync scheduled for: {self.scheduler.get_job('auto_sync_job').next_run_time}")
+        print("[AutoSync] Scheduler started - Auto-sync currently DISABLED")
+        # Check if auto-sync job exists before logging
+        auto_sync_job = self.scheduler.get_job('auto_sync_job')
+        if auto_sync_job:
+            print(f"[AutoSync] Next sync scheduled for: {auto_sync_job.next_run_time}")
+        else:
+            print("[AutoSync] No auto-sync job scheduled (currently disabled)")
     
     def stop(self):
         """Stop the scheduler"""

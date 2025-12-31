@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from app.agents.web_crawler_cache_manager import get_web_enhanced_response
-from app.core.openai_client import get_openai_client
+from app.core.openai_client import get_openai_client, get_default_gpt_model
 
 # Ensure environment variables are loaded
 load_dotenv()
@@ -42,9 +42,12 @@ Instructions:
 
 Please provide a helpful response to the user's query."""
 
+            model_name = get_default_gpt_model()
+            print(f"[ChatbotCache] 🔍 MODEL: Using {model_name.upper()} for cached response generation")
+
             # Get response from OpenAI
             response = self.openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model=model_name,
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant for Prakriti School."},
                     {"role": "user", "content": prompt}

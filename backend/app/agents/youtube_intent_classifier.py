@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, Any
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel
-from app.core.openai_client import get_openai_client
+from app.core.openai_client import get_openai_client, get_default_gpt_model
 
 class VideoIntent(BaseModel):
     intent: str
@@ -120,7 +120,10 @@ def classify_video_intent(query: str) -> List[VideoIntent]:
     Classify the user query to determine video intent using OpenAI
     """
     openai_client = get_openai_client()
-    
+    model_name = get_default_gpt_model()
+
+    print(f"[YouTubeClassifier] 🔍 MODEL: Using {model_name.upper()} for video intent classification")
+
     categories = list(VIDEO_DATABASE.keys())
     category_descriptions = {
         "gardening": "Questions about gardening, farming, composting, sustainability, plants, vegetables, organic farming",
@@ -150,7 +153,7 @@ def classify_video_intent(query: str) -> List[VideoIntent]:
     
     try:
         response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=get_default_gpt_model(),
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
         )

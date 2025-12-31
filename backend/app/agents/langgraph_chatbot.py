@@ -2,7 +2,7 @@ import os
 import json
 from langgraph.graph import StateGraph
 from langgraph.graph import END
-from app.core.openai_client import get_openai_client
+from app.core.openai_client import get_openai_client, get_default_gpt_model
 from dotenv import load_dotenv
 
 # Ensure environment variables are loaded
@@ -33,10 +33,14 @@ def answer_contact_info(state):
 def answer_fallback(state):
     # Use OpenAI LLM for general-purpose fallback answers
     openai_client = get_openai_client()
+    model_name = get_default_gpt_model()
     user_input = state["input"]
+
+    print(f"[LangGraph] 🔍 MODEL: Using {model_name.upper()} for fallback response")
+
     prompt = f"User: {user_input}\nAI:"
     response = openai_client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model=model_name,
         messages=[{"role": "system", "content": "You are a helpful school assistant chatbot."},
                   {"role": "user", "content": user_input}],
         max_tokens=400,

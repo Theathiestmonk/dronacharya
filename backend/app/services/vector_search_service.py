@@ -1,9 +1,9 @@
 """
-Vector Search Service for semantic similarity search using OpenAI embeddings and pgvector
+Vector Search Service for semantic similarity search using sentence-transformers embeddings and pgvector
 """
 import os
 from typing import List, Dict, Optional
-from openai import OpenAI
+from sentence_transformers import SentenceTransformer
 from supabase_config import get_supabase_client
 from dotenv import load_dotenv
 
@@ -12,34 +12,31 @@ load_dotenv()
 
 class VectorSearchService:
     """Service for generating embeddings and performing semantic similarity search"""
-    
+
     def __init__(self):
         """Initialize the vector search service"""
-        self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         self.supabase = get_supabase_client()
-        # Use text-embedding-3-small for cost-effectiveness (1536 dimensions)
-        self.embedding_model = "text-embedding-3-small"
-        self.embedding_dimension = 1536
+        # Use sentence-transformers/all-MiniLM-L6-v2 for 384 dimensions (matches database schema)
+        self.embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+        self.embedding_dimension = 384
     
     def generate_embedding(self, text: str) -> List[float]:
         """
-        Generate embedding for text using OpenAI
-        
+        Generate embedding for text using sentence-transformers
+
         Args:
             text: Text to generate embedding for
-            
+
         Returns:
             List of floats representing the embedding vector
         """
         if not text or not text.strip():
             raise ValueError("Text cannot be empty")
-        
+
         try:
-            response = self.openai_client.embeddings.create(
-                model=self.embedding_model,
-                input=text.strip()
-            )
-            return response.data[0].embedding
+            # Generate embedding using sentence-transformers
+            embedding = self.embedding_model.encode(text.strip())
+            return embedding.tolist()  # Convert numpy array to list
         except Exception as e:
             print(f"[VectorSearch] Error generating embedding: {e}")
             raise

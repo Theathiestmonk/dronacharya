@@ -308,7 +308,10 @@ class GoogleDWDService:
                             scopes_for_jwt = [
                                 'https://www.googleapis.com/auth/classroom.courses.readonly',
                                 'https://www.googleapis.com/auth/classroom.rosters.readonly',
-                                'https://www.googleapis.com/auth/classroom.announcements.readonly'
+                                'https://www.googleapis.com/auth/classroom.announcements.readonly',
+                                'https://www.googleapis.com/auth/classroom.coursework.students.readonly',
+                                'https://www.googleapis.com/auth/classroom.student-submissions.students.readonly',
+                                'https://www.googleapis.com/auth/classroom.student-submissions.me.readonly'
                             ]
                         elif api_type == 'calendar':
                             scopes_for_jwt = [
@@ -321,6 +324,9 @@ class GoogleDWDService:
                                 'https://www.googleapis.com/auth/classroom.courses.readonly',
                                 'https://www.googleapis.com/auth/classroom.rosters.readonly',
                                 'https://www.googleapis.com/auth/classroom.announcements.readonly',
+                                'https://www.googleapis.com/auth/classroom.coursework.students.readonly',
+                                'https://www.googleapis.com/auth/classroom.student-submissions.students.readonly',
+                                'https://www.googleapis.com/auth/classroom.student-submissions.me.readonly',
                                 'https://www.googleapis.com/auth/calendar.readonly',
                                 'https://www.googleapis.com/auth/calendar.events.readonly'
                             ]
@@ -388,7 +394,10 @@ class GoogleDWDService:
             DWD_CLASSROOM_SCOPES = [
                 'https://www.googleapis.com/auth/classroom.courses.readonly',
                 'https://www.googleapis.com/auth/classroom.rosters.readonly',
-                'https://www.googleapis.com/auth/classroom.announcements.readonly'
+                'https://www.googleapis.com/auth/classroom.announcements.readonly',
+                'https://www.googleapis.com/auth/classroom.coursework.students.readonly',
+                'https://www.googleapis.com/auth/classroom.student-submissions.students.readonly',
+                'https://www.googleapis.com/auth/classroom.student-submissions.me.readonly'
             ]
             
             DWD_CALENDAR_SCOPES = [

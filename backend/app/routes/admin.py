@@ -676,12 +676,24 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                     supabase.table('google_classroom_courses').update(course_data).eq('id', existing_course_id).execute()
                     db_course_id = existing_course_id
                     sync_stats["courses"]["updated"] += 1
+                    # Generate embedding for updated course
+                    try:
+                        embedding_gen = get_embedding_generator()
+                        embedding_gen.generate_for_course(existing_course_id)
+                    except Exception as e:
+                        print(f"⚠️ DWD: Failed to generate embedding for course {existing_course_id}: {e}")
                 else:
                     # Course doesn't exist - insert it
                     result = supabase.table('google_classroom_courses').insert(course_data).execute()
                     if result.data and len(result.data) > 0:
                         db_course_id = result.data[0].get('id')
                         sync_stats["courses"]["created"] += 1
+                        # Generate embedding for new course
+                        try:
+                            embedding_gen = get_embedding_generator()
+                            embedding_gen.generate_for_course(db_course_id)
+                        except Exception as e:
+                            print(f"⚠️ DWD: Failed to generate embedding for course {db_course_id}: {e}")
                 
                 if not db_course_id:
                     # Fallback: try to get ID
@@ -706,11 +718,26 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                         existing = supabase.table('google_classroom_teachers').select('id').eq('course_id', db_course_id).eq('course_user_id', teacher_data['course_user_id']).limit(1).execute()
                         
                         if existing.data and len(existing.data) > 0:
-                            supabase.table('google_classroom_teachers').update(teacher_data).eq('id', existing.data['id']).execute()
+                            teacher_db_id = existing.data[0]['id']
+                            supabase.table('google_classroom_teachers').update(teacher_data).eq('id', teacher_db_id).execute()
                             sync_stats["teachers"]["updated"] += 1
+                            # Generate embedding for updated teacher
+                            try:
+                                embedding_gen = get_embedding_generator()
+                                embedding_gen.generate_for_teacher(teacher_db_id)
+                            except Exception as e:
+                                print(f"⚠️ DWD: Failed to generate embedding for teacher {teacher_db_id}: {e}")
                         else:
-                            supabase.table('google_classroom_teachers').insert(teacher_data).execute()
-                            sync_stats["teachers"]["created"] += 1
+                            result = supabase.table('google_classroom_teachers').insert(teacher_data).execute()
+                            if result.data and len(result.data) > 0:
+                                teacher_db_id = result.data[0].get('id')
+                                sync_stats["teachers"]["created"] += 1
+                                # Generate embedding for new teacher
+                                try:
+                                    embedding_gen = get_embedding_generator()
+                                    embedding_gen.generate_for_teacher(teacher_db_id)
+                                except Exception as e:
+                                    print(f"⚠️ DWD: Failed to generate embedding for teacher {teacher_db_id}: {e}")
                 except Exception as e:
                     print(f"⚠️ DWD: Error fetching teachers for course {course_id}: {e}")
                 
@@ -729,11 +756,26 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                         existing = supabase.table('google_classroom_students').select('id').eq('course_id', db_course_id).eq('course_user_id', student_data['course_user_id']).limit(1).execute()
                         
                         if existing.data and len(existing.data) > 0:
-                            supabase.table('google_classroom_students').update(student_data).eq('id', existing.data['id']).execute()
+                            student_db_id = existing.data[0]['id']
+                            supabase.table('google_classroom_students').update(student_data).eq('id', student_db_id).execute()
                             sync_stats["students"]["updated"] += 1
+                            # Generate embedding for updated student
+                            try:
+                                embedding_gen = get_embedding_generator()
+                                embedding_gen.generate_for_student(student_db_id)
+                            except Exception as e:
+                                print(f"⚠️ DWD: Failed to generate embedding for student {student_db_id}: {e}")
                         else:
-                            supabase.table('google_classroom_students').insert(student_data).execute()
-                            sync_stats["students"]["created"] += 1
+                            result = supabase.table('google_classroom_students').insert(student_data).execute()
+                            if result.data and len(result.data) > 0:
+                                student_db_id = result.data[0].get('id')
+                                sync_stats["students"]["created"] += 1
+                                # Generate embedding for new student
+                                try:
+                                    embedding_gen = get_embedding_generator()
+                                    embedding_gen.generate_for_student(student_db_id)
+                                except Exception as e:
+                                    print(f"⚠️ DWD: Failed to generate embedding for student {student_db_id}: {e}")
                 except Exception as e:
                     print(f"⚠️ DWD: Error fetching students for course {course_id}: {e}")
                 
@@ -782,8 +824,8 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                         
                         cw_db_id = None
                         if existing.data and len(existing.data) > 0:
-                            supabase.table('google_classroom_coursework').update(coursework_data).eq('id', existing.data['id']).execute()
-                            cw_db_id = existing.data['id']
+                            supabase.table('google_classroom_coursework').update(coursework_data).eq('id', existing.data[0]['id']).execute()
+                            cw_db_id = existing.data[0]['id']
                             sync_stats["coursework"]["updated"] += 1
                         else:
                             result = supabase.table('google_classroom_coursework').insert(coursework_data).execute()
@@ -823,11 +865,26 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                                     existing = supabase.table('google_classroom_submissions').select('id').eq('coursework_id', cw_db_id).eq('submission_id', submission_data['submission_id']).limit(1).execute()
                                     
                                     if existing.data and len(existing.data) > 0:
-                                        supabase.table('google_classroom_submissions').update(submission_data).eq('id', existing.data['id']).execute()
+                                        submission_db_id = existing.data[0]['id']
+                                        supabase.table('google_classroom_submissions').update(submission_data).eq('id', submission_db_id).execute()
                                         sync_stats["submissions"]["updated"] += 1
+                                        # Generate embedding for updated submission
+                                        try:
+                                            embedding_gen = get_embedding_generator()
+                                            embedding_gen.generate_for_submission(submission_db_id)
+                                        except Exception as e:
+                                            print(f"⚠️ DWD: Failed to generate embedding for submission {submission_db_id}: {e}")
                                     else:
-                                        supabase.table('google_classroom_submissions').insert(submission_data).execute()
-                                        sync_stats["submissions"]["created"] += 1
+                                        result = supabase.table('google_classroom_submissions').insert(submission_data).execute()
+                                        if result.data and len(result.data) > 0:
+                                            submission_db_id = result.data[0].get('id')
+                                            sync_stats["submissions"]["created"] += 1
+                                            # Generate embedding for new submission
+                                            try:
+                                                embedding_gen = get_embedding_generator()
+                                                embedding_gen.generate_for_submission(submission_db_id)
+                                            except Exception as e:
+                                                print(f"⚠️ DWD: Failed to generate embedding for submission {submission_db_id}: {e}")
                             except Exception as e:
                                 print(f"⚠️ DWD: Error fetching submissions for coursework {cw_id}: {e}")
                 except Exception as e:
@@ -837,6 +894,7 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                 try:
                     announcements = dwd_service.fetch_course_announcements(user_email, course_id)
                     for ann in announcements:
+
                         announcement_data = {
                             "course_id": db_course_id,
                             "announcement_id": ann.get('id', ''),
@@ -853,20 +911,20 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                             "course_work_type": ann.get('courseWorkType'),
                             "last_synced_at": datetime.now(timezone.utc).isoformat()
                         }
-                        
+
                         existing = supabase.table('google_classroom_announcements').select('id').eq('course_id', db_course_id).eq('announcement_id', announcement_data['announcement_id']).limit(1).execute()
-                        
+
                         ann_db_id = None
                         if existing.data and len(existing.data) > 0:
-                            supabase.table('google_classroom_announcements').update(announcement_data).eq('id', existing.data['id']).execute()
-                            ann_db_id = existing.data['id']
+                            supabase.table('google_classroom_announcements').update(announcement_data).eq('id', existing.data[0]['id']).execute()
+                            ann_db_id = existing.data[0]['id']
                             sync_stats["announcements"]["updated"] += 1
                         else:
                             result = supabase.table('google_classroom_announcements').insert(announcement_data).execute()
                             if result.data and len(result.data) > 0:
                                 ann_db_id = result.data[0].get('id')
                                 sync_stats["announcements"]["created"] += 1
-                        
+
                         # Generate embedding for announcement
                         if ann_db_id:
                             try:
@@ -930,10 +988,24 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                     existing_id = existing_result.data[0]['id']
                     supabase.table('google_calendar_calendars').update(calendar_data).eq('id', existing_id).execute()
                     sync_stats["calendars"]["updated"] += 1
+                    # Generate embedding for updated calendar
+                    try:
+                        embedding_gen = get_embedding_generator()
+                        embedding_gen.generate_for_calendar(existing_id)
+                    except Exception as e:
+                        print(f"⚠️ DWD: Failed to generate embedding for calendar {existing_id}: {e}")
                 else:
                     # Calendar doesn't exist - insert it
-                    supabase.table('google_calendar_calendars').insert(calendar_data).execute()
-                    sync_stats["calendars"]["created"] += 1
+                    result = supabase.table('google_calendar_calendars').insert(calendar_data).execute()
+                    if result.data and len(result.data) > 0:
+                        calendar_db_id = result.data[0].get('id')
+                        sync_stats["calendars"]["created"] += 1
+                        # Generate embedding for new calendar
+                        try:
+                            embedding_gen = get_embedding_generator()
+                            embedding_gen.generate_for_calendar(calendar_db_id)
+                        except Exception as e:
+                            print(f"⚠️ DWD: Failed to generate embedding for calendar {calendar_db_id}: {e}")
                 
                 # Fetch events for this calendar
                 try:
@@ -990,11 +1062,26 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                         existing = supabase.table('google_calendar_events').select('id').eq('user_id', user_id).eq('event_id', event_id).limit(1).execute()
                         
                         if existing.data and len(existing.data) > 0:
-                            supabase.table('google_calendar_events').update(event_data).eq('id', existing.data['id']).execute()
+                            event_db_id = existing.data[0]['id']
+                            supabase.table('google_calendar_events').update(event_data).eq('id', event_db_id).execute()
                             sync_stats["events"]["updated"] += 1
+                            # Generate embedding for updated event
+                            try:
+                                embedding_gen = get_embedding_generator()
+                                embedding_gen.generate_for_calendar_event(event_db_id)
+                            except Exception as e:
+                                print(f"⚠️ DWD: Failed to generate embedding for calendar event {event_db_id}: {e}")
                         else:
-                            supabase.table('google_calendar_events').insert(event_data).execute()
-                            sync_stats["events"]["created"] += 1
+                            result = supabase.table('google_calendar_events').insert(event_data).execute()
+                            if result.data and len(result.data) > 0:
+                                event_db_id = result.data[0].get('id')
+                                sync_stats["events"]["created"] += 1
+                                # Generate embedding for new event
+                                try:
+                                    embedding_gen = get_embedding_generator()
+                                    embedding_gen.generate_for_calendar_event(event_db_id)
+                                except Exception as e:
+                                    print(f"⚠️ DWD: Failed to generate embedding for calendar event {event_db_id}: {e}")
                 except Exception as e:
                     print(f"⚠️ DWD: Error fetching events for calendar {cal_id}: {e}")
             
@@ -1544,9 +1631,9 @@ async def sync_individual_event(event_id: str, email: Optional[str] = None, cale
         }
         
         existing = admin_service.supabase.table('google_calendar_events').select('id').eq('user_id', user_id).eq('calendar_id', calendar_id).eq('event_id', event_id).single().execute()
-        
+
         if existing.data:
-            admin_service.supabase.table('google_calendar_events').update(event_data).eq('id', existing.data['id']).execute()
+            admin_service.supabase.table('google_calendar_events').update(event_data).eq('id', existing.data[0]['id']).execute()
         else:
             admin_service.supabase.table('google_calendar_events').insert(event_data).execute()
         
@@ -1912,27 +1999,27 @@ async def sync_grade_role(grade: str, role: str, request: GradeRoleSyncRequest):
     """Sync all users of a specific role in a specific grade"""
     service = request.service
     email = request.email
-    
+
     if service not in ["classroom", "calendar"]:
         raise HTTPException(status_code=400, detail="Service must be 'classroom' or 'calendar'")
-    
+
     if role not in ["student", "teacher", "parent"]:
         raise HTTPException(status_code=400, detail="Role must be 'student', 'teacher', or 'parent'")
-    
+
     try:
         admin_service = SupabaseAdminService()
-        
+
         # Verify admin privileges
         if email:
             profile = admin_service.get_user_profile_by_email(email)
             if not profile or not profile.get('admin_privileges'):
                 raise HTTPException(status_code=403, detail="Admin privileges required")
-        
+
         # Get all users with this grade and role
         result = admin_service.supabase.table('user_profiles').select('email').eq(
             'is_active', True
         ).eq('grade', grade).eq('role', role).execute()
-        
+
         if not result.data:
             return {
                 "success": True,
@@ -1940,16 +2027,16 @@ async def sync_grade_role(grade: str, role: str, request: GradeRoleSyncRequest):
                 "synced": 0,
                 "failed": 0
             }
-        
+
         # Sync each user using DWD
         synced = 0
         failed = 0
-        
+
         for user in result.data:
             user_email = user.get('email')
             if not user_email:
                 continue
-            
+
             try:
                 # Call the DWD sync endpoint logic directly
                 sync_request = DWDSyncRequest(user_email=user_email)
@@ -1961,7 +2048,7 @@ async def sync_grade_role(grade: str, role: str, request: GradeRoleSyncRequest):
             except Exception as e:
                 print(f"Error syncing {user_email}: {e}")
                 failed += 1
-        
+
         return {
             "success": True,
             "message": f"Synced {service} for {role}s in {grade}",
@@ -1969,10 +2056,51 @@ async def sync_grade_role(grade: str, role: str, request: GradeRoleSyncRequest):
             "failed": failed,
             "total": len(result.data)
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"Error syncing {role}s in {grade}: {e}")
         raise HTTPException(status_code=500, detail=f"Error syncing users: {str(e)}")
+
+
+@router.post("/regenerate-embeddings")
+async def regenerate_all_embeddings(email: Optional[str] = None):
+    """
+    Regenerate embeddings for all records across all tables
+    Requires admin privileges
+    """
+    try:
+        admin_service = SupabaseAdminService()
+
+        # Verify admin privileges
+        if email:
+            profile = admin_service.get_user_profile_by_email(email)
+            if not profile or not profile.get('admin_privileges'):
+                raise HTTPException(status_code=403, detail="Admin privileges required")
+
+        print(f"[Admin] 🔄 Starting embedding regeneration for all records...")
+
+        # Get embedding generator and regenerate all embeddings
+        embedding_gen = get_embedding_generator()
+        results = embedding_gen.regenerate_all_embeddings()
+
+        return {
+            "success": True,
+            "message": f"Embedding regeneration completed. Generated {sum(results.values()) - results['errors']} embeddings across {len(results) - 1} tables",
+            "results": results,
+            "summary": {
+                "total_embeddings": sum(results.values()) - results['errors'],
+                "total_errors": results['errors'],
+                "tables_processed": len(results) - 1
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[Admin] ❌ Error during embedding regeneration: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Embedding regeneration failed: {str(e)}")
 

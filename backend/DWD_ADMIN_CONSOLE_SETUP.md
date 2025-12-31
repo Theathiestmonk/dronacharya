@@ -58,10 +58,8 @@ https://www.googleapis.com/auth/calendar.events.readonly
 - ✅ No leading/trailing spaces
 - ✅ Must start with `https://`
 - ✅ Must end with `.readonly`
-- ✅ Exactly 5 scopes (no more, no less)
-- ❌ DO NOT add any other scopes
-- ❌ DO NOT use `classroom.coursework.readonly` (invalid)
-- ❌ DO NOT use `classroom.student-submissions.readonly` (invalid)
+- ✅ All listed scopes should be authorized
+- ✅ Add all scopes that your organization needs
 
 ### Step 5: Authorize
 
@@ -84,8 +82,8 @@ https://www.googleapis.com/auth/calendar.events.readonly
 After setup, verify:
 
 - [ ] Client ID matches exactly: `105179368085912065226`
-- [ ] Exactly 5 scopes are listed (no more, no less)
-- [ ] All 5 scopes match exactly (no typos)
+- [ ] All authorized Classroom and Calendar scopes are listed
+- [ ] All scopes match exactly (no typos)
 - [ ] Each scope is on its own line
 - [ ] Authorization is saved and visible in the list
 - [ ] API Access Control is set to "Unrestricted"

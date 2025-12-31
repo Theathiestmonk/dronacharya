@@ -1,11 +1,15 @@
 import os
-from app.core.openai_client import get_openai_client
+from app.core.openai_client import get_openai_client, get_default_gpt_model
 
 async def auto_grade(request):
     """
     Use LangGraph and OpenAI GPT-4 to auto-grade student answers.
     """
     openai_client = get_openai_client()
+    model_name = get_default_gpt_model()
+
+    print(f"[GradingAgent] 🔍 MODEL: Using {model_name.upper()} for answer grading")
+
     prompt = f"""
     You are an expert teacher. Grade the following student answer.
     Question: {request.question or 'N/A'}
@@ -16,7 +20,7 @@ async def auto_grade(request):
     Respond in JSON: {{"score": float, "feedback": string}}
     """
     response = await openai_client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model=get_default_gpt_model(),
         messages=[{"role": "system", "content": "You are a helpful grading assistant."},
                   {"role": "user", "content": prompt}],
         max_tokens=200,

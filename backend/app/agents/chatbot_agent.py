@@ -1,7 +1,7 @@
 import os
 import json
 import re
-from app.core.openai_client import get_openai_client
+from app.core.openai_client import get_openai_client, get_default_gpt_model
 from app.agents.youtube_intent_classifier import process_video_query
 from app.agents.web_crawler_agent import get_web_enhanced_response
 from dotenv import load_dotenv
@@ -571,16 +571,131 @@ def get_admin_data(user_email: str = None,
         traceback.print_exc()
         return {"classroom_data": [], "calendar_data": []}
 
+def detect_query_language(query):
+    """
+    Detect the language of the user's query
+    Returns: 'english', 'hindi', 'gujarati', or 'english' as default
+    """
+    query_lower = query.lower()
+
+    # Hindi indicators - removed generic substrings that cause false positives
+    hindi_words = ['hai', 'kya', 'meri', 'mere', 'aaj', 'kal', 'school', 'event', 'koi', 'mein', 'बजे', 'घंटे']
+    hindi_chars = ['अ', 'आ', 'इ', 'ई', 'उ', 'ऊ', 'ए', 'ऐ', 'ओ', 'औ', 'अं', 'अः', 'क', 'ख', 'ग', 'घ', 'ङ', 'च', 'छ', 'ज', 'झ', 'ञ', 'ट', 'ठ', 'ड', 'ढ', 'ण', 'त', 'थ', 'द', 'ध', 'न', 'प', 'फ', 'ब', 'भ', 'म', 'य', 'र', 'ल', 'व', 'श', 'ष', 'स', 'ह']
+
+    # Gujarati indicators - removed generic substrings that cause false positives
+    gujarati_words = ['che', 'chhe', 'chu', 'shava', 'mari', 'mare', 'aaj', 'kal', 'shala', 'koi', 'athi']
+    gujarati_chars = ['અ', 'આ', 'ઇ', 'ઈ', 'ઉ', 'ઊ', 'એ', 'ઐ', 'ઓ', 'ઔ', 'અં', 'અઃ', 'ક', 'ખ', 'ગ', 'ઘ', 'ઙ', 'ચ', 'છ', 'જ', 'ઝ', 'ઞ', 'ટ', 'ઠ', 'ડ', 'ઢ', 'ણ', 'ત', 'થ', 'દ', 'ધ', 'ન', 'પ', 'ફ', 'બ', 'ભ', 'મ', 'ય', 'ર', 'લ', 'વ', 'શ', 'ષ', 'સ', 'હ']
+
+    # Check for Gujarati characters
+    if any(char in query for char in gujarati_chars):
+        return 'gujarati'
+
+    # Check for Hindi characters
+    if any(char in query for char in hindi_chars):
+        return 'hindi'
+
+    # Check for Hindi/Gujarati words (using word boundaries for better accuracy)
+    hindi_count = sum(1 for word in hindi_words if re.search(r'\b' + re.escape(word) + r'\b', query_lower))
+    gujarati_count = sum(1 for word in gujarati_words if re.search(r'\b' + re.escape(word) + r'\b', query_lower))
+
+    # Debug logging
+    print(f"[Chatbot] Language detection debug:")
+    print(f"  Query: '{query}'")
+    print(f"  Hindi words found: {[word for word in hindi_words if word in query_lower]}")
+    print(f"  Gujarati words found: {[word for word in gujarati_words if word in query_lower]}")
+    print(f"  Hindi count: {hindi_count}, Gujarati count: {gujarati_count}")
+
+    if gujarati_count > hindi_count and gujarati_count > 2:
+        return 'gujarati'
+    elif hindi_count > 2:
+        return 'hindi'
+
+    # Default to English
+    return 'english'
+
+def detect_holiday_context(date):
+    """
+    Detect if today is a special holiday or celebration day
+    Returns contextual information for the AI to use in responses
+    """
+    month, day = date.month, date.day
+
+    holidays = {
+        (12, 24): {
+            "name": "Christmas Eve",
+            "message": "Today is Christmas Eve! 🎄",
+            "context": "Christmas Eve is a magical time of anticipation and preparation for Christmas Day. It's a time for family gatherings, festive preparations, and reflecting on the joy of the holiday season."
+        },
+        (12, 25): {
+            "name": "Christmas",
+            "message": "Today is Christmas Day! 🎄",
+            "context": "Christmas is a joyful celebration of love, giving, and togetherness. At Prakriti School, we celebrate the spirit of Christmas through cultural activities, festive decorations, and special assemblies that emphasize the values of kindness and community."
+        },
+        (1, 1): {
+            "name": "New Year",
+            "message": "Today is New Year's Day! 🎉",
+            "context": "New Year's Day marks the beginning of a fresh start and new possibilities. We celebrate with reflections on the past year and aspirations for the future."
+        },
+        (10, 31): {
+            "name": "Halloween",
+            "message": "Today is Halloween! 🎃",
+            "context": "Halloween is a fun celebration with costumes, treats, and creative activities that encourage imagination and community spirit."
+        },
+        (11, 14): {
+            "name": "Children's Day",
+            "message": "Today is Children's Day! 🎈",
+            "context": "Children's Day celebrates the joy, creativity, and potential of every child. At Prakriti, we believe in nurturing each child's unique abilities."
+        },
+        (11, 26): {
+            "name": "Thanksgiving",
+            "message": "Today is Thanksgiving! 🦃",
+            "context": "Thanksgiving is a time to express gratitude for the blessings in our lives and appreciate the people who make our journey special."
+        },
+        (12, 31): {
+            "name": "New Year's Eve",
+            "message": "Today is New Year's Eve! 🥂",
+            "context": "As we prepare to welcome the new year, we reflect on our growth and look forward to new adventures and learning experiences."
+        }
+    }
+
+    if (month, day) in holidays:
+        return holidays[(month, day)]
+
+    return None
+
 def generate_chatbot_response(request):
     """
     Use OpenAI GPT-4 to generate a chatbot response with RAG logic and fuzzy matching.
     """
+    # 🔍 MODEL LOGGING FOR CHATBOT RESPONSE GENERATION
+    import re  # For post-processing regex patterns
+    selected_model = get_default_gpt_model()
+    print(f"[ChatbotResponse] 🔍 MODEL SELECTION: Using {selected_model.upper()} for comprehensive chatbot response generation")
+    print(f"[ChatbotResponse] 🤖 AI MODEL: {selected_model} (Default: GPT-4o-mini, Fallback: GPT-3.5-turbo)")
+    print(f"[ChatbotResponse] 📝 QUERY: {request.message[:100]}{'...' if len(request.message) > 100 else ''}")
+
+    # 🎄 EARLY HOLIDAY DETECTION - Check if today is a holiday for all responses
+    from datetime import datetime, timezone, timedelta
+    today_date = datetime.now(timezone.utc).date()
+    global_holiday_context = detect_holiday_context(today_date)
+    yesterday_date = today_date - timedelta(days=1)
+    yesterday_holiday_context = detect_holiday_context(yesterday_date)
+
+    if global_holiday_context:
+        print(f"[ChatbotResponse] 🎄 HOLIDAY DETECTED: {global_holiday_context['message']}")
+    if yesterday_holiday_context:
+        print(f"[ChatbotResponse] 🎄 HOLIDAY DETECTED for yesterday: {yesterday_holiday_context['message']}")
+
     # Capture re module at function start to avoid closure issues in generator expressions
     re_module = re
     openai_client = get_openai_client()
     user_query = request.message
     conversation_history = getattr(request, 'conversation_history', []) or []  # Ensure it's never None
     user_profile = getattr(request, 'user_profile', None)
+
+    # Profile includes embedding for semantic personalization
+    # Basic fields (first_name, role, grade) used for greetings and basic personalization
+    # Embedding provides additional semantic context for more personalized responses
 
     # Step 0.1: Handle empty queries - treat them as greetings so they get proper handling
     query_stripped = user_query.strip() if user_query else ""
@@ -752,6 +867,7 @@ Once you've completed these steps, I'll be able to help you with all your course
     
     
     if is_greeting and user_profile:
+
         role = user_profile.get('role', '') or ''
         first_name = user_profile.get('first_name', '') or ''
         gender = user_profile.get('gender', '') or ''
@@ -1159,7 +1275,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             "Please explain this in your own words, elaborate, or summarize as needed."
         )
         response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=get_default_gpt_model(),
             messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
@@ -1193,7 +1309,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             "Please explain this in your own words, elaborate, or summarize as needed."
         )
         response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=get_default_gpt_model(),
             messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
@@ -1233,7 +1349,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             "Please explain this in your own words, elaborate, or summarize as needed."
         )
         response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=get_default_gpt_model(),
             messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
@@ -1268,7 +1384,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             "Please explain this in your own words, elaborate, or summarize as needed."
         )
         response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=get_default_gpt_model(),
             messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
@@ -1309,7 +1425,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             "Please explain this in your own words, elaborate, or summarize as needed."
         )
         response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=get_default_gpt_model(),
             messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
@@ -1358,7 +1474,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             "Please explain this in your own words, summarize the fee structure, and mention the admission charges."
         )
         response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=get_default_gpt_model(),
             messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
@@ -1392,7 +1508,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             "Please explain this in your own words, elaborate, or summarize as needed."
         )
         response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=get_default_gpt_model(),
             messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
             temperature=0.3,
@@ -1494,18 +1610,31 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                     potential_names = [extracted_name.title()]
                     break
         
-        # Fallback: Pattern for lowercase names (2-3 words, each starting with a letter)
+        # Fallback: More restrictive pattern for lowercase names
+        # Only consider 2-word phrases that look like actual names (not technical terms)
         if not potential_names:
-            person_name_pattern_lower = r'\b[a-z]+\s+[a-z]+(?:\s+[a-z]+)?\b'
-            # Extract potential names (exclude common words like "the", "is", "who", etc.)
-            excluded_words = {'the', 'is', 'who', 'what', 'when', 'where', 'why', 'how', 'about', 'tell', 'me', 
-                             'information', 'detail', 'details', 'introduction', 'profile', 'biography', 'little', 'bit'}
+            person_name_pattern_lower = r'\b[a-z]+\s+[a-z]+\b'  # Only 2-word phrases
+            # Extract potential names (exclude common words, verbs, technical terms)
+            excluded_words = {'the', 'is', 'who', 'what', 'when', 'where', 'why', 'how', 'about', 'tell', 'me',
+                             'information', 'detail', 'details', 'introduction', 'profile', 'biography',
+                             'little', 'bit', 'explain', 'describe', 'what', 'how', 'why', 'when', 'where',
+                             'magnetic', 'field', 'fields', 'energy', 'force', 'physics', 'chemistry', 'math',
+                             'science', 'biology', 'history', 'geography', 'computer', 'programming', 'code',
+                             'data', 'system', 'process', 'method', 'theory', 'concept', 'principle', 'law'}
             all_words = re_module.findall(person_name_pattern_lower, query_lower)
-            # Filter out phrases that contain excluded words or are too short/common
-            potential_names_lower = [name for name in all_words if not any(word in excluded_words for word in name.split()) and len(name) > 5]
+            # Filter out phrases that contain excluded words, technical terms, or question words
+            # Also exclude if it looks like a technical/scientific phrase
+            potential_names_lower = []
+            for name in all_words:
+                words = name.split()
+                if (len(words) == 2 and  # Must be exactly 2 words
+                    len(name) > 6 and len(name) < 25 and  # Reasonable name length
+                    not any(word in excluded_words for word in words) and
+                    not name.endswith(('ing', 'ed', 'er', 'est', 'ly', 'tion', 'ment'))):  # Not verb forms or nouns
+                    potential_names_lower.append(name)
             if potential_names_lower:
                 # Convert to title case for consistency
-                potential_names = [name.title() for name in potential_names_lower[:3]]  # Limit to first 3 matches
+                potential_names = [name.title() for name in potential_names_lower[:2]]  # Limit to first 2 matches
     
     has_person_name = len(potential_names) > 0 and not any(name.lower() in ['Prakriti', 'School', 'Google', 'Classroom', 'Calendar'] for name in potential_names)
     
@@ -1540,7 +1669,13 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     
     # Note: is_coursework_query, is_homework_query, and is_assignment_query are already defined above
     is_course_query = any(kw in query_lower for kw in ['course', 'courses', 'class', 'classes', 'subject', 'subjects'])
-    is_calendar_query = any(kw in query_lower for kw in ['event', 'events', 'calendar', 'schedule', 'meeting', 'holiday'])
+    calendar_keywords = ['event', 'events', 'calendar', 'schedule', 'meeting', 'holiday',
+                       # Hindi calendar keywords (with common typos)
+                       'ko kya hai', 'ko kya hota hai', 'ko kaya hai',
+                       'ko kya hia', 'kya hai', 'kya hota hai', 'kya hia',
+                       'mere school', 'school me', 'schoolm me', 'mere schoolm',
+                       'merre schoolm', 'schoolm', 'mere', 'school']
+    is_calendar_query = any(kw in query_lower for kw in calendar_keywords)
     # Detect existence check queries
     is_existence_check_query = any(kw in query_lower for kw in ['exists', 'exist', 'check if', 'is there', 'is there a']) and \
                                (is_student_query or is_teacher_query)
@@ -1556,6 +1691,8 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     print(f"  - Course: {is_course_query}")
     print(f"  - Calendar: {is_calendar_query}")
     print(f"  - Existence Check: {is_existence_check_query}")
+    print(f"  - is_subject_faculty_query: {is_subject_faculty_query}")
+    print(f"  - is_classroom_related_query (early): {(is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query) and not is_subject_faculty_query}")
     
     # For person detail queries, use web crawler first (team page)
     web_enhanced_info = ""
@@ -1611,14 +1748,20 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             normalized_query = normalized_query.replace(typo, correct)
         
         should_use_web_crawling = any(keyword in normalized_query for keyword in web_enhancement_keywords) and not is_pure_academic_query and not is_translation_query and not is_classroom_related_query and not is_subject_faculty_query
-        
+
+        # For calendar queries with no events, skip web crawling to avoid showing generic fallback data
+        # Note: calendar_events will be checked later after admin_data is loaded
+
         # Log why web crawling was skipped for classroom queries
         if is_classroom_related_query and any(keyword in user_query.lower() for keyword in web_enhancement_keywords):
             print(f"[Chatbot] ⚠️ Web crawling skipped - Classroom-related query detected. Using Classroom/Calendar data instead.")
     
     # Check if frontend provided cached web data
     cached_web_data = getattr(request, 'cached_web_data', None)
-    
+
+    # Special handling for calendar queries with no events - check after admin_data is loaded
+    # This will be done later in the code after admin_data is available
+
     if should_use_web_crawling:
         # Use cached web data from browser if available (fastest)
         if cached_web_data and cached_web_data.strip():
@@ -1770,12 +1913,12 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                         
                         # Fuzzy matching for typos (e.g., "octomber" -> "october")
                         if not match and len(full_name) > 4:
-                            # Try to find month-like words near numbers - matches single or multiple dates
-                            potential_months = re_module.findall(r'\d{1,2}(?:\s*(?:,|\s+and\s+)\s*\d{1,2})*\s+([a-z]{4,})', query_lower)
+                            # Try to find month-like words near numbers - matches single or multiple dates (handles ordinals like 1st, 2nd, 3rd)
+                            potential_months = re_module.findall(r'\d{1,2}(?:st|nd|rd|th)?(?:\s*(?:,|\s+and\s+)\s*\d{1,2}(?:st|nd|rd|th)?)*\s+([a-z]{4,})', query_lower)
                             for pot_month in potential_months:
                                 if pot_month[:3] == full_name[:3] and len(pot_month) >= len(full_name) - 2:
-                                    # Extract all digits before the month word (handles both single and multiple dates)
-                                    days_match = re_module.search(rf'(\d{{1,2}}(?:\s*(?:,|\s+and\s+)\s*\d{{1,2}})*)\s+{re_module.escape(pot_month)}', query_lower, re_module.IGNORECASE)
+                                    # Extract all digits before the month word (handles ordinals like 1st, 2nd, 3rd)
+                                    days_match = re_module.search(rf'(\d{{1,2}}(?:st|nd|rd|th)?(?:\s*(?:,|\s+and\s+)\s*\d{{1,2}}(?:st|nd|rd|th)?)*)\s+{re_module.escape(pot_month)}', query_lower, re_module.IGNORECASE)
                                     if days_match:
                                         class MockMatch:
                                             def __init__(self, days_str):
@@ -1933,11 +2076,60 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                                                limit_coursework=limit_coursework)
                     except Exception as e:
                         print(f"[Chatbot] Error getting reference data from other admin: {e}")
-                
+
                 if admin_data.get('classroom_data') or admin_data.get('calendar_data'):
                     print(f"[Chatbot] ✅ Reference data loaded: {len(admin_data.get('classroom_data', []))} courses, {len(admin_data.get('calendar_data', []))} events")
                 else:
                     print(f"[Chatbot] ⚠️ No reference data available (no courses or events synced yet)")
+
+                # Special handling for calendar queries with no events
+                calendar_events = admin_data.get('calendar_data', [])
+                if is_calendar_query and len(calendar_events) == 0:
+                    print("[Chatbot] 📅 Calendar query with no events - providing clear 'no events' response")
+                    # Create a direct response for calendar queries with no events
+                    calendar_response = f"**School Calendar Events**\n\nI don't have any upcoming school events scheduled in the calendar at this time. The school calendar is regularly updated with important dates, holidays, and special events.\n\nIf you're looking for information about:\n- **Holidays**: Check the school's holiday calendar\n- **Exam schedules**: Contact your teacher or administration\n- **Sports events**: Check with the physical education department\n- **Cultural activities**: Look for announcements in your classroom\n\nFor the most current information, please check with your teachers or the school administration."
+
+                    # Add holiday context if today is a holiday
+                    if global_holiday_context:
+                        calendar_response += f"\n\n**Holiday Note**: Today is {global_holiday_context['message']} - {global_holiday_context['context']}"
+
+                    return calendar_response
+
+                # Special handling for date-specific calendar queries with no events on that date
+                if is_calendar_query and target_date_ranges_for_sql and len(calendar_events) > 0:
+                    # Check if any events fall within the requested date range
+                    events_on_date = []
+                    for event in calendar_events:
+                        event_start = event.get('start_time', '')
+                        if event_start:
+                            try:
+                                from datetime import datetime
+                                event_datetime = datetime.fromisoformat(event_start.replace('Z', '+00:00'))
+                                for date_start, date_end in target_date_ranges_for_sql:
+                                    if date_start <= event_datetime <= date_end:
+                                        events_on_date.append(event)
+                                        break
+                            except:
+                                continue
+
+                    # If no events on the requested date, provide concise response
+                    if len(events_on_date) == 0:
+                        print(f"[Chatbot] 📅 Date-specific calendar query with no events on requested date - providing concise 'no events' response")
+                        calendar_response = f"**School Calendar Events**\n\nI don't see any events scheduled specifically for the date you requested. The school calendar is regularly updated with important dates, holidays, and special events.\n\nFor the most current information, please check with your teachers or the school administration."
+
+                        # Only add holiday context if the requested date is today
+                        if global_holiday_context and target_date_ranges_for_sql:
+                            from datetime import datetime, timezone
+                            today = datetime.now(timezone.utc).date()
+                            # Check if any of the requested date ranges includes today
+                            is_today_query = any(
+                                date_start.date() == today or date_end.date() == today
+                                for date_start, date_end in target_date_ranges_for_sql
+                            )
+                            if is_today_query:
+                                calendar_response += f"\n\n**Holiday Note**: Today is {global_holiday_context['message']} - {global_holiday_context['context']}"
+
+                        return calendar_response
         except Exception as e:
             print(f"[Chatbot] ❌ Error getting reference data: {e}")
             import traceback
@@ -1958,8 +2150,8 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     print("=" * 80)
     print("[Chatbot] 🤖 MODEL SELECTION: Cost Optimization")
     print("[Chatbot] 📋 Strategy:")
-    print("[Chatbot]   • GPT-3.5-turbo: Used for ALL queries (cost optimization)")
-    print("[Chatbot] 💰 Expected cost: ~97% reduction vs using GPT-4 for all queries")
+    print("[Chatbot]   • GPT-4o-mini: Used for ALL queries (optimal cost-performance balance)")
+    print("[Chatbot] 💰 Expected cost: ~80% reduction vs using GPT-3.5-turbo for all queries")
     print("=" * 80)
     
     # Try multiple approaches to get complete response
@@ -2086,9 +2278,30 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 homework_instruction = "" if is_coursework_query else """ IMPORTANT: For homework/study help, remind guest users to sign in and connect Google Classroom for personalized help. Always ask for subject and topic if not provided."""
                 coursework_instruction = """ CRITICAL: For assignment/coursework queries, you MUST extract assignments from the provided Data section and show them immediately. DO NOT create fake assignments or generate examples like 'Topic: Algebra'. Use ONLY the actual assignment titles, descriptions, due dates, and links from the Data section. DO NOT ask for more information - the data is already provided. START your response directly with the assignments from the data, not with greetings or fake examples.""" if is_coursework_query else ""
                 system_content = """You are Prakriti School's AI assistant. Progressive K-12 school in Greater Noida. Philosophy: "Learning for happiness". Use Markdown. Never say "as an AI". Present data directly. Use provided data to answer questions.""" + homework_instruction + coursework_instruction
-            
+
+            # Detect query language for system prompt
+            query_language = detect_query_language(user_query)
+
+            # 🎄 ADD HOLIDAY CONTEXT TO SYSTEM PROMPT
+            # Use the globally detected holiday context
+            holiday_info_parts = []
+
+            if global_holiday_context:
+                holiday_info_parts.append(f"Today: {global_holiday_context['message']}")
+
+            if yesterday_holiday_context:
+                holiday_info_parts.append(f"Yesterday: {yesterday_holiday_context['message']}")
+
+            if holiday_info_parts:
+                holiday_summary = " | ".join(holiday_info_parts)
+                system_content += f"\n\n🎄 DATE CONTEXT: {holiday_summary}. When responding about specific dates, reference these holidays appropriately and maintain a celebratory tone where relevant."
+
+            # 🌍 ADD LANGUAGE CONTEXT TO SYSTEM PROMPT
+            if query_language != 'english':
+                system_content += f"\n\n🌍 LANGUAGE CONTEXT: The user asked in {query_language.upper()}. Respond in {query_language} language to match the user's preferred language. IMPORTANT: Start your response directly with the answer - DO NOT restate, repeat, or rephrase the user's question. Begin immediately with relevant information."
+
             messages = [{"role": "system", "content": system_content}]
-            
+
             # Detect query intent first (needed for history optimization)
             query_lower = user_query.lower()
             # Detect announcement queries (including common typos like "annunce", "announc", etc.)
@@ -2110,13 +2323,22 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                        (is_student_query or is_teacher_query)
             is_today_query = any(kw in query_lower for kw in ['today', 'todays', "today's"])
             is_yesterday_query = any(kw in query_lower for kw in ['yesterday', "yesterday's"])
-            is_calendar_query = any(kw in query_lower for kw in ['event', 'events', 'calendar', 'schedule', 'meeting', 'holiday'])
-            
+            calendar_keywords = ['event', 'events', 'calendar', 'schedule', 'meeting', 'holiday',
+                               # Hindi calendar keywords (with common typos)
+                               'ko kya hai', 'ko kya hota hai', 'ko kaya hai',
+                               'ko kya hia', 'kya hai', 'kya hota hai', 'kya hia',
+                               'mere school', 'school me', 'schoolm me', 'mere schoolm',
+                               'merre schoolm', 'schoolm', 'mere', 'school']
+            is_calendar_query = any(kw in query_lower for kw in calendar_keywords)
+
             # Detect translation/reference queries (need previous response context)
             translation_keywords = ['translate', 'translation', 'gujrati', 'gujarati', 'hindi', 'english', 'language', 'below response', 'previous response', 'that response', 'last response', 'above response', 'send me in', 'give me in']
             is_translation_query = any(keyword in query_lower for keyword in translation_keywords)
-            
-            # Skip conversation history for data queries (TOKEN OPTIMIZATION - saves ~100-200 tokens)
+
+            # 🌍 LANGUAGE LOGGING - Language already detected above for system prompt
+            print(f"[Chatbot] 🌍 DETECTED LANGUAGE: {query_language}")
+
+    # Skip conversation history for data queries (TOKEN OPTIMIZATION - saves ~100-200 tokens)
             # BUT include history for translation/reference queries (they need previous context)
             recent_history = []
             if is_translation_query:
@@ -3124,32 +3346,48 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 has_structured_data = True
                 data_sources.append("Web")
             
-            # Always use GPT-3.5-turbo for all queries to reduce costs
-            model_name = "gpt-3.5-turbo"  # Using GPT-3.5-turbo for all queries to reduce costs
+            # Use GPT-4o-mini as the default model (better performance than GPT-3.5-turbo)
+            model_name = get_default_gpt_model()  # Using GPT-4o-mini for better performance
+            model_display_name = "GPT-4o-mini" if model_name == "gpt-4o-mini" else model_name
+
             if has_structured_data:
-                print(f"[Chatbot] 🤖 MODEL SELECTION: GPT-3.5-turbo (Data-Enhanced Query)")
+                print(f"[Chatbot] 🤖 MODEL SELECTION: {model_display_name} (Data-Enhanced Query)")
                 print(f"[Chatbot] 📊 Data sources available: {', '.join(data_sources)}")
-                print(f"[Chatbot] 💰 Cost: ~$0.002-0.003 per query (GPT-3.5 can format existing data efficiently)")
+                print(f"[Chatbot] 💰 Cost: ~$0.0015-0.002 per query (GPT-4o-mini provides excellent performance)")
             else:
-                print(f"[Chatbot] 🤖 MODEL SELECTION: GPT-3.5-turbo (General Query - Using GPT-3.5 for cost savings)")
-                print(f"[Chatbot] 💰 Cost: ~$0.002-0.003 per query (GPT-3.5 for all queries)")
-            
-            print(f"[Chatbot] 🤖 DEBUG: Using model: {model_name}")
-            if model_name == "gpt-3.5-turbo":
-                print(f"[Chatbot] 💵 Pricing - Input: $0.0015/1K tokens, Output: $0.002/1K tokens")
+                print(f"[Chatbot] 🤖 MODEL SELECTION: {model_display_name} (General Query)")
+                print(f"[Chatbot] 💰 Cost: ~$0.0015-0.002 per query (GPT-4o-mini for all queries)")
+
+            # Model selection already logged at function level - proceeding with response generation
+
+            if model_name == "gpt-4o-mini":
+                print(f"[Chatbot] 💰 COST: GPT-4o-mini pricing - Input: $0.00015/1K tokens, Output: $0.0006/1K tokens")
+                print(f"[Chatbot] ⚡ PERFORMANCE: High-quality responses with 80% cost savings vs GPT-3.5-turbo")
+            elif model_name == "gpt-3.5-turbo":
+                print(f"[Chatbot] 💰 COST: GPT-3.5-turbo pricing - Input: $0.0015/1K tokens, Output: $0.002/1K tokens")
+                print(f"[Chatbot] ⚡ PERFORMANCE: Standard responses (fallback mode)")
             else:
-                print(f"[Chatbot] 💵 Pricing - Input: $0.03/1K tokens, Output: $0.06/1K tokens")
-            
+                print(f"[Chatbot] 💰 COST: GPT-4 pricing - Input: $0.03/1K tokens, Output: $0.06/1K tokens")
+                print(f"[Chatbot] ⚡ PERFORMANCE: Maximum quality responses")
+
             response = openai_client.chat.completions.create(
                 model=model_name,
                 messages=messages,
                 temperature=0.3,
             )
-            
-            # Log model used in response
-            print(f"[Chatbot] ✅ DEBUG: Response generated successfully using model: {model_name}")
+
+            # ✅ RESPONSE CONFIRMATION LOGGING
+            print(f"[Chatbot] ✅ RESPONSE GENERATED: Successfully used {model_name.upper()}")
             if hasattr(response, 'model') and response.model:
-                print(f"[Chatbot] ✅ DEBUG: OpenAI confirmed model used: {response.model}")
+                actual_model = response.model.upper()
+                print(f"[Chatbot] 🎯 OPENAI CONFIRMED: Response generated with {actual_model}")
+                # Check if actual model starts with requested model (handles version suffixes like gpt-4o-mini-2024-07-18)
+                if not actual_model.startswith(model_name.upper()):
+                    print(f"[Chatbot] ⚠️ MODEL MISMATCH: Requested {model_name.upper()} but OpenAI used {actual_model}")
+                else:
+                    print(f"[Chatbot] ✅ MODEL VERIFIED: OpenAI confirmed using {actual_model} (matches {model_name.upper()})")
+            else:
+                print(f"[Chatbot] 📝 RESPONSE: Generated with model {model_name.upper()} (confirmation not available)")
             
             content = response.choices[0].message.content
             finish_reason = response.choices[0].finish_reason
@@ -3159,7 +3397,10 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             output_tokens_approx = len(content) // 4 if content else 0
             
             # Calculate cost based on model used
-            if model_name == "gpt-3.5-turbo":
+            if model_name == "gpt-4o-mini":
+                estimated_cost = (input_tokens_approx * 0.00015 / 1000) + (output_tokens_approx * 0.0006 / 1000)
+                cost_model = "GPT-4o-mini"
+            elif model_name == "gpt-3.5-turbo":
                 estimated_cost = (input_tokens_approx * 0.0015 / 1000) + (output_tokens_approx * 0.002 / 1000)
                 cost_model = "GPT-3.5-turbo"
             else:  # GPT-4
@@ -3170,11 +3411,19 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             print(f"[Chatbot] 📏 Response length: {len(content) if content else 0} characters")
             print(f"[Chatbot] 📏 Estimated tokens: ~{input_tokens_approx} input + ~{output_tokens_approx} output = ~{input_tokens_approx + output_tokens_approx} total")
             print(f"[Chatbot] 💰 Estimated cost: ~${estimated_cost:.4f} ({cost_model})")
-            if has_structured_data and model_name == "gpt-3.5-turbo":
-                gpt4_estimated_cost = (input_tokens_approx * 0.03 / 1000) + (output_tokens_approx * 0.06 / 1000)
-                savings = gpt4_estimated_cost - estimated_cost
-                print(f"[Chatbot] 💵 Cost savings: ~${savings:.4f} (vs GPT-4 would cost ~${gpt4_estimated_cost:.4f})")
+            # Show cost comparison and savings
+            if model_name == "gpt-4o-mini":
+                gpt35_cost = (input_tokens_approx * 0.0015 / 1000) + (output_tokens_approx * 0.002 / 1000)
+                savings = gpt35_cost - estimated_cost
+                print(f"[Chatbot] 💵 SAVINGS: ~${savings:.4f} vs GPT-3.5-turbo (${gpt35_cost:.4f})")
+            elif model_name == "gpt-3.5-turbo":
+                gpt4o_mini_cost = (input_tokens_approx * 0.00015 / 1000) + (output_tokens_approx * 0.0006 / 1000)
+                savings = estimated_cost - gpt4o_mini_cost
+                print(f"[Chatbot] 💡 UPGRADE OPPORTUNITY: Save ~${savings:.4f} by using GPT-4o-mini (${gpt4o_mini_cost:.4f})")
+
+            print(f"[Chatbot] 🤖 FINAL CONFIRMATION: Response generated using {model_name.upper()}")
             print(f"[Chatbot] ✅ Finish reason: {finish_reason}")
+            print(f"[Chatbot] 🎯 MODEL VERIFICATION COMPLETE")
             
             # Log model confirmation
             if hasattr(response, 'model') and response.model:
@@ -3368,7 +3617,21 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                         else:
                             return f"I couldn't find any {subject_name.lower()} in your courses."
                 
-                return content.strip()
+                # Post-process response to remove repeated questions for Hindi queries
+                final_content = content.strip()
+                if query_language != 'english' and final_content:
+                    # Check if response starts with a rephrased question (common issue with Hindi responses)
+                    lines = final_content.split('\n')
+                    if len(lines) > 0:
+                        first_line = lines[0].strip()
+                        # Look for patterns like "**[date] को क्या है?**" or "**[date] ko kya hai**"
+                        question_pattern = r'^\*\*[^*]*\s+(को\s+क्या\s+है|ko\s+kya\s+hai|को\s+क्या\s+होता\s+है|ko\s+kya\s+hot.*hai)\?\*\*$'
+                        if re.match(question_pattern, first_line, re.IGNORECASE | re.UNICODE):
+                            # Remove the repeated question line
+                            final_content = '\n'.join(lines[1:]).strip()
+                            print(f"[Chatbot] Removed repeated question from Hindi response")
+
+                return final_content
             elif content and finish_reason == "length":
                 print(f"[Chatbot] Response truncated due to length on attempt {attempt + 1}")
                 # Try with a more focused prompt
@@ -3470,7 +3733,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
 
         response = openai_client.chat.completions.create(
 
-            model="gpt-3.5-turbo",
+            model=get_default_gpt_model(),
 
             messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
@@ -3537,7 +3800,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
 
         response = openai_client.chat.completions.create(
 
-            model="gpt-3.5-turbo",
+            model=get_default_gpt_model(),
 
             messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
@@ -3629,8 +3892,8 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     print("=" * 80)
     print("[Chatbot] 🤖 MODEL SELECTION: Cost Optimization")
     print("[Chatbot] 📋 Strategy:")
-    print("[Chatbot]   • GPT-3.5-turbo: Used for ALL queries (cost optimization)")
-    print("[Chatbot] 💰 Expected cost: ~97% reduction vs using GPT-4 for all queries")
+    print("[Chatbot]   • GPT-4o-mini: Used for ALL queries (optimal cost-performance balance)")
+    print("[Chatbot] 💰 Expected cost: ~80% reduction vs using GPT-3.5-turbo for all queries")
     print("=" * 80)
 
     
@@ -3824,7 +4087,21 @@ Remember: Every response should reflect Prakriti School's unique identity and ed
 
                 print(f"[Chatbot] Complete response received on attempt {attempt + 1}")
 
-                return content.strip()
+                # Post-process response to remove repeated questions for Hindi queries
+                final_content = content.strip()
+                if query_language != 'english' and final_content:
+                    # Check if response starts with a rephrased question (common issue with Hindi responses)
+                    lines = final_content.split('\n')
+                    if len(lines) > 0:
+                        first_line = lines[0].strip()
+                        # Look for patterns like "**[date] को क्या है?**" or "**[date] ko kya hai**"
+                        question_pattern = r'^\*\*[^*]*\s+(को\s+क्या\s+है|ko\s+kya\s+hai|को\s+क्या\s+होता\s+है|ko\s+kya\s+hot.*hai)\?\*\*$'
+                        if re.match(question_pattern, first_line, re.IGNORECASE | re.UNICODE):
+                            # Remove the repeated question line
+                            final_content = '\n'.join(lines[1:]).strip()
+                            print(f"[Chatbot] Removed repeated question from Hindi response")
+
+                return final_content
 
             elif content and finish_reason == "length":
 
@@ -3942,7 +4219,7 @@ Remember: Every response should reflect Prakriti School's unique identity and ed
 
         response = openai_client.chat.completions.create(
 
-            model="gpt-3.5-turbo",
+            model=get_default_gpt_model(),
 
             messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
@@ -4009,7 +4286,7 @@ Remember: Every response should reflect Prakriti School's unique identity and ed
 
         response = openai_client.chat.completions.create(
 
-            model="gpt-3.5-turbo",
+            model=get_default_gpt_model(),
 
             messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
                       {"role": "user", "content": prompt}],
@@ -4101,8 +4378,8 @@ Remember: Every response should reflect Prakriti School's unique identity and ed
     print("=" * 80)
     print("[Chatbot] 🤖 MODEL SELECTION: Cost Optimization")
     print("[Chatbot] 📋 Strategy:")
-    print("[Chatbot]   • GPT-3.5-turbo: Used for ALL queries (cost optimization)")
-    print("[Chatbot] 💰 Expected cost: ~97% reduction vs using GPT-4 for all queries")
+    print("[Chatbot]   • GPT-4o-mini: Used for ALL queries (optimal cost-performance balance)")
+    print("[Chatbot] 💰 Expected cost: ~80% reduction vs using GPT-3.5-turbo for all queries")
     print("=" * 80)
 
     
@@ -4296,7 +4573,21 @@ Remember: Every response should reflect Prakriti School's unique identity and ed
 
                 print(f"[Chatbot] Complete response received on attempt {attempt + 1}")
 
-                return content.strip()
+                # Post-process response to remove repeated questions for Hindi queries
+                final_content = content.strip()
+                if query_language != 'english' and final_content:
+                    # Check if response starts with a rephrased question (common issue with Hindi responses)
+                    lines = final_content.split('\n')
+                    if len(lines) > 0:
+                        first_line = lines[0].strip()
+                        # Look for patterns like "**[date] को क्या है?**" or "**[date] ko kya hai**"
+                        question_pattern = r'^\*\*[^*]*\s+(को\s+क्या\s+है|ko\s+kya\s+hai|को\s+क्या\s+होता\s+है|ko\s+kya\s+hot.*hai)\?\*\*$'
+                        if re.match(question_pattern, first_line, re.IGNORECASE | re.UNICODE):
+                            # Remove the repeated question line
+                            final_content = '\n'.join(lines[1:]).strip()
+                            print(f"[Chatbot] Removed repeated question from Hindi response")
+
+                return final_content
 
             elif content and finish_reason == "length":
 
