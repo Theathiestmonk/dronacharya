@@ -120,7 +120,7 @@ interface ChatbotProps {
 }
 
 const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ clearChat, externalQuery, onQueryProcessed }, ref) => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { 
     getActiveSession, 
     addMessage, 
@@ -366,7 +366,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     }
     
     // Ensure minimum display duration (3-4 seconds for all queries)
-    const minDisplayDuration = 2000; // 2 seconds - reduced for faster response feel
+    const minDisplayDuration = 3500; // 3.5 seconds (middle of 3-4 range)
     const elapsed = Date.now() - loadingStartTimeRef.current;
     const remainingTime = Math.max(0, minDisplayDuration - elapsed);
     
@@ -393,7 +393,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     }
     
     // Ensure minimum display duration (3-4 seconds for all queries)
-    const minDisplayDuration = 2000; // 2 seconds - reduced for faster response feel
+    const minDisplayDuration = 3500; // 3.5 seconds (middle of 3-4 range)
     const elapsed = Date.now() - loadingStartTimeRef.current;
     const remainingTime = Math.max(0, minDisplayDuration - elapsed);
     
@@ -628,57 +628,6 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       }
     }
   }, [externalQuery, loading, requestInProgress, isGenerating, user, conversationHistory.length, handleSuggestionClick, onQueryProcessed]);
-
-  // Helper function to create intelligent typing chunks
-  function createTypingChunks(text: string): string[] {
-    if (!text) return [];
-
-    const chunks: string[] = [];
-    const words = text.split(/(\s+)/); // Split preserving whitespace
-    let currentChunk = '';
-
-    for (const word of words) {
-      // Group 3-5 words per chunk (approximately 20-30 characters)
-      const potentialChunk = currentChunk + word;
-
-      if (potentialChunk.length <= 30 && chunks.length < 150) {
-        currentChunk = potentialChunk;
-      } else {
-        if (currentChunk.trim()) {
-          chunks.push(currentChunk);
-        }
-        currentChunk = word;
-      }
-    }
-
-    // Add remaining chunk
-    if (currentChunk.trim()) {
-      chunks.push(currentChunk);
-    }
-
-    // Fallback: if no chunks created, split by sentences
-    if (chunks.length === 0) {
-      return text.split(/([.!?]+\s*)/).filter(s => s.trim());
-    }
-
-    return chunks;
-  }
-
-  // Helper function for variable typing speed
-  function getTypingDelay(chunkIndex: number, totalChunks: number): number {
-    if (totalChunks === 0) return 20;
-
-    const progress = chunkIndex / totalChunks;
-
-    // Fast start (first 20% of chunks)
-    if (progress < 0.2) return 10;
-
-    // Medium speed (middle 60% of chunks)
-    if (progress < 0.8) return 20;
-
-    // Slower finish (last 20% of chunks) for natural feel
-    return 30;
-  }
 
   // Send message to backend /chatbot endpoint
   const sendMessage = async (messageText?: string) => {
@@ -958,10 +907,11 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       
       // CRITICAL: Use messageToSend (the parameter) instead of input state
       // This ensures the message is included even if input was cleared
-      const requestData = {
+      const requestData = { 
         message: messageToSend, // Use the parameter, not input state
         conversation_history: newHistory,
         user_id: user?.id || null,
+        user_profile: profile || null,  // Pass the complete user profile including gender
         cached_web_data: cachedWebData || null  // Send cached web data to backend if available
       };
       
@@ -987,7 +937,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       // Check for structured responses with type field
       if (data.type === 'calendar' && data.response && data.response.url) {
         // Calculate delay to ensure minimum display duration for typing animation
-        const minDisplayDuration = 2000; // 2 seconds - reduced for faster response feel
+        const minDisplayDuration = 3500; // 3.5 seconds (middle of 3-4 range)
         const elapsed = loadingStartTimeRef.current ? Date.now() - loadingStartTimeRef.current : 0;
         const delayBeforeShowing = Math.max(0, minDisplayDuration - elapsed);
         
@@ -1024,7 +974,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         return;
       } else if (data.type === 'map' && data.response && data.response.url) {
         // Calculate delay to ensure minimum display duration for typing animation
-        const minDisplayDuration = 2000; // 2 seconds - reduced for faster response feel
+        const minDisplayDuration = 3500; // 3.5 seconds (middle of 3-4 range)
         const elapsed = loadingStartTimeRef.current ? Date.now() - loadingStartTimeRef.current : 0;
         const delayBeforeShowing = Math.max(0, minDisplayDuration - elapsed);
         
@@ -1059,7 +1009,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         return;
       } else if (data.type === 'mixed' && Array.isArray(data.response)) {
         // Calculate delay to ensure minimum display duration for typing animation
-        const minDisplayDuration = 2000; // 2 seconds - reduced for faster response feel
+        const minDisplayDuration = 3500; // 3.5 seconds (middle of 3-4 range)
         const elapsed = loadingStartTimeRef.current ? Date.now() - loadingStartTimeRef.current : 0;
         const delayBeforeShowing = Math.max(0, minDisplayDuration - elapsed);
         
@@ -1096,7 +1046,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
         return;
       } else if (data.type === 'videos' && data.response && data.response.videos) {
         // Calculate delay to ensure minimum display duration for typing animation
-        const minDisplayDuration = 2000; // 2 seconds - reduced for faster response feel
+        const minDisplayDuration = 3500; // 3.5 seconds (middle of 3-4 range)
         const elapsed = loadingStartTimeRef.current ? Date.now() - loadingStartTimeRef.current : 0;
         const delayBeforeShowing = Math.max(0, minDisplayDuration - elapsed);
         
@@ -1135,23 +1085,21 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       // Handle regular text responses (including Markdown)
       const fullText = data.response;
       console.log('Frontend received response length:', fullText?.length);
-      console.log('Frontend received response preview:', fullText?.substring(0, 200));
-      console.log('Frontend received full response:', fullText);
-      console.log('Response contains Hindi characters:', /[\u0900-\u097F]/.test(fullText));
-      console.log('Response character codes (first 10):', (Array.from(fullText.substring(0, 10)) as string[]).map(c => c.charCodeAt(0)));
-      console.log('Response bytes length:', new TextEncoder().encode(fullText).length);
+      console.log('Frontend received response:', fullText);
       
       // Add bot response to conversation history
       setConversationHistory(prev => [...prev, { role: 'assistant', content: fullText }]);
       
-      // Remove artificial delay - start typing immediately
-      // Only wait for DOM readiness (minimal delay)
-      await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 10)));
+      // Calculate delay to ensure minimum display duration for typing animation
+      const minDisplayDuration = 3500; // 3.5 seconds (middle of 3-4 range)
+      const elapsed = loadingStartTimeRef.current ? Date.now() - loadingStartTimeRef.current : 0;
+      const delayBeforeTyping = Math.max(0, minDisplayDuration - elapsed);
+      
+      // Wait for minimum duration before starting to type
+      await new Promise(resolve => setTimeout(resolve, delayBeforeTyping));
       
       // Now start typing the response
-      // Create typing chunks
-      const chunks = createTypingChunks(fullText);
-      let chunkIndex = 0;
+      let idx = 0;
       setIsTyping(true);
       // Hide typing animation when response starts typing, but respect minimum duration
       // Note: responseStartedTypingRef will be set inside hideTypingAnimationWithMinDuration after minimum duration
@@ -1162,17 +1110,12 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       requestAnimationFrame(() => {
         setTimeout(() => setShouldAnimate(true), 50); // Trigger animation after a brief delay
       });
-      async function typeChunk() {
-        const displayedLength = chunks.slice(0, chunkIndex + 1).join('').length;
-        setDisplayedBotText(fullText.slice(0, displayedLength));
-
-        if (chunkIndex < chunks.length - 1) {
-          chunkIndex++;
-          const delay = getTypingDelay(chunkIndex, chunks.length);
-          setTimeout(typeChunk, delay);
+      async function typeChar() {
+        setDisplayedBotText(fullText.slice(0, idx + 1));
+        if (idx < fullText.length - 1) {
+          idx++;
+          setTimeout(typeChar, 8); // speed of typing
         } else {
-          // Ensure full text is displayed
-          setDisplayedBotText(fullText);
           setIsTyping(false);
           // Ensure typing animation is hidden when response completes (already hidden by hideTypingAnimationWithMinDuration)
           // Store the full Markdown text for rendering
@@ -1235,7 +1178,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           setHasFirstResponse(true);
         }
       }
-      await typeChunk();
+      await typeChar();
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         // Request was aborted, don't add error message
