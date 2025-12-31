@@ -120,7 +120,7 @@ interface ChatbotProps {
 }
 
 const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ clearChat, externalQuery, onQueryProcessed }, ref) => {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const { 
     getActiveSession, 
     addMessage, 
