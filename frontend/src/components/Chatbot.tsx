@@ -1086,6 +1086,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       const fullText = data.response;
       console.log('Frontend received response length:', fullText?.length);
       console.log('Frontend received response:', fullText);
+      console.log('About to start word-by-word typing animation...');
       
       // Add bot response to conversation history
       setConversationHistory(prev => [...prev, { role: 'assistant', content: fullText }]);
@@ -1098,8 +1099,11 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       // Wait for minimum duration before starting to type
       await new Promise(resolve => setTimeout(resolve, delayBeforeTyping));
       
-      // Now start typing the response
-      let idx = 0;
+      // Now start typing the response (paragraph by paragraph)
+      const paragraphs = fullText.split('\n\n').filter((p: string) => p.trim());
+      console.log('Paragraphs array created:', paragraphs);
+      console.log('Total paragraphs to type:', paragraphs.length);
+      let paragraphIdx = 0;
       setIsTyping(true);
       // Hide typing animation when response starts typing, but respect minimum duration
       // Note: responseStartedTypingRef will be set inside hideTypingAnimationWithMinDuration after minimum duration
@@ -1110,19 +1114,23 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       requestAnimationFrame(() => {
         setTimeout(() => setShouldAnimate(true), 50); // Trigger animation after a brief delay
       });
-      async function typeChar() {
-        setDisplayedBotText(fullText.slice(0, idx + 1));
-        if (idx < fullText.length - 1) {
-          idx++;
-          setTimeout(typeChar, 8); // speed of typing
+
+      // Start the paragraph-by-paragraph typing animation
+      async function typeParagraph() {
+        // Show text up to the end of the current paragraph
+        const textUpToParagraph = paragraphs.slice(0, paragraphIdx + 1).join('\n\n');
+        console.log(`Typing paragraph ${paragraphIdx + 1}/${paragraphs.length}: "${textUpToParagraph.substring(0, 50)}..."`);
+        setDisplayedBotText(textUpToParagraph);
+        if (paragraphIdx < paragraphs.length - 1) {
+          paragraphIdx++;
+          setTimeout(typeParagraph, 800); // faster speed - 800ms per paragraph
         } else {
+          console.log('Typing animation completed');
           setIsTyping(false);
-          // Ensure typing animation is hidden when response completes (already hidden by hideTypingAnimationWithMinDuration)
-          // Store the full Markdown text for rendering
-          // For inbuilt queries, preserve scroll position when adding bot message
-          // User message is already in state, so bot message will appear after it (correct order)
+
+          // Now add the complete bot message to the messages array
           const botMsg: Message = { sender: 'bot', text: fullText };
-          
+
           if (isInbuiltQueryRef.current && messagesContainerRef.current) {
             const savedScrollPosition = messagesContainerRef.current.scrollTop;
             // Append bot message after user message (correct order)
@@ -1146,24 +1154,24 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           } else {
             setMessages((msgs) => [...msgs, botMsg]);
           }
-          
+
           // Add to chat history
           console.log('=== BOT MESSAGE START ===');
           console.log('Adding bot text message to chat history...');
           console.log('Bot message text:', fullText.substring(0, 50) + '...');
-          
+
           await addMessage({
             sender: 'bot',
             text: fullText,
           });
-          
+
           console.log('✅ Bot text message added to chat history and saved to localStorage');
           console.log('=== BOT MESSAGE END ===');
-          
+
           // CRITICAL: Force a small delay to ensure localStorage is updated, then trigger sync
           // This ensures the useEffect picks up the new message count
           await new Promise(resolve => setTimeout(resolve, 100));
-          
+
           // Get fresh session to verify message was saved
           const freshSession = getActiveSession();
           if (freshSession) {
@@ -1173,12 +1181,17 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               lastMessage: freshSession.messages[freshSession.messages.length - 1]?.text?.substring(0, 50) + '...'
             });
           }
-          
+
           // Mark that we've had the first response
           setHasFirstResponse(true);
+
+          // Clear the displayed bot text since the message is now in the messages array
+          setDisplayedBotText('');
         }
       }
-      await typeChar();
+
+      // Start the typing animation
+      typeParagraph();
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         // Request was aborted, don't add error message
