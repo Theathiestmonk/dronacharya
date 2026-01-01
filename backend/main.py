@@ -1,5 +1,5 @@
-import uvicorn
-
 # AI School Automation System - Backend Server
-if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+# Import the FastAPI app from app.main for production deployment
+from app.main import app
+
+# This allows uvicorn to find the app when running: uvicorn main:app
