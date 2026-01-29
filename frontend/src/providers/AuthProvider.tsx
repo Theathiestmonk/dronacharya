@@ -45,6 +45,7 @@ interface UserProfile {
   country?: string;
   preferred_language?: string;
   timezone?: string;
+  agreed_to_terms_at?: string;
   onboarding_completed: boolean;
   created_at: string;
   updated_at: string;

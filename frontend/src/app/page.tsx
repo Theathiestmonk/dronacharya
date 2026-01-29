@@ -598,6 +598,25 @@ const AppContent: React.FC<{
                     Admin Panel
                   </button>
                 )}
+                <div className="border-t border-gray-100 my-1"></div>
+                <button
+                  onClick={() => {
+                    router.push('/privacy-policy');
+                    setIsProfileDropdownOpen(false);
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                >
+                  Privacy Policy
+                </button>
+                <button
+                  onClick={() => {
+                    router.push('/terms-of-service');
+                    setIsProfileDropdownOpen(false);
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                >
+                  Terms of Service
+                </button>
                 <button
                   onClick={(e) => {
                     e.preventDefault();

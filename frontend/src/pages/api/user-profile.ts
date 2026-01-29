@@ -147,12 +147,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         let userFriendlyError = error.message;
         
         if (error.message.includes('value too long for type character varying')) {
+          const match = error.message.match(/column "(.*?)"/);
+          const columnName = match ? match[1] : 'one of the fields';
+          
           if (error.message.includes('(20)')) {
-            userFriendlyError = 'One of the fields is too long. Please check phone numbers, postal code, or contact method fields and keep them under 20 characters.';
+            userFriendlyError = `The value for "${columnName}" is too long. Please keep it under 20 characters.`;
           } else if (error.message.includes('(50)')) {
-            userFriendlyError = 'Learning style field is too long. Please keep it under 50 characters.';
+            userFriendlyError = `The value for "${columnName}" is too long. Please keep it under 50 characters.`;
+          } else if (error.message.includes('(100)')) {
+            userFriendlyError = `The value for "${columnName}" is too long. Please keep it under 100 characters.`;
+          } else if (error.message.includes('(10)')) {
+            userFriendlyError = `The value for "${columnName}" is too long. Please keep it under 10 characters.`;
           } else {
-            userFriendlyError = 'One of the fields is too long. Please check all text fields and shorten them.';
+            userFriendlyError = `The value for "${columnName}" is too long. Please shorten it and try again.`;
           }
         } else if (error.message.includes('violates check constraint')) {
           userFriendlyError = 'Please select a valid role (Student, Teacher, or Parent).';

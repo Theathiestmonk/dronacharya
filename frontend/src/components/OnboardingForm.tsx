@@ -39,6 +39,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
     state: '',
     postal_code: '',
     preferred_language: 'en',
+    agreed_to_terms_at: null,
     // Student fields
     grade: '',
     student_id: '',
@@ -105,6 +106,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
               state: existingProfile.state || '',
               postal_code: existingProfile.postal_code || '',
               preferred_language: existingProfile.preferred_language || 'en',
+              agreed_to_terms_at: existingProfile.agreed_to_terms_at || null,
               // Student fields
               grade: existingProfile.grade || '',
               student_id: existingProfile.student_id || '',
@@ -166,14 +168,24 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
     const stringValue = String(value);
     
     // Check VARCHAR(20) fields
-    const varchar20Fields = ['phone', 'emergency_contact_phone', 'preferred_contact_method', 'postal_code'];
+    const varchar20Fields = ['grade', 'phone', 'emergency_contact_phone', 'preferred_contact_method', 'postal_code', 'gender', 'preferred_language'];
     if (varchar20Fields.includes(field) && stringValue.length > 20) {
-      return `${field.replace('_', ' ')} cannot exceed 20 characters`;
+      const label = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      return `${label} cannot exceed 20 characters`;
     }
     
     // Check VARCHAR(50) fields
-    if (field === 'learning_style' && stringValue.length > 50) {
-      return 'Learning style cannot exceed 50 characters';
+    const varchar50Fields = ['learning_style', 'student_id', 'employee_id', 'relationship_to_student', 'timezone'];
+    if (varchar50Fields.includes(field) && stringValue.length > 50) {
+      const label = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      return `${label} cannot exceed 50 characters`;
+    }
+
+    // Check VARCHAR(100) fields
+    const varchar100Fields = ['first_name', 'last_name', 'city', 'state', 'department', 'office_location', 'occupation', 'workplace', 'country'];
+    if (varchar100Fields.includes(field) && stringValue.length > 100) {
+      const label = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      return `${label} cannot exceed 100 characters`;
     }
     
     // Check phone number format
@@ -339,14 +351,14 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
       
       // Validate all fields before submission
       const newFieldErrors: Record<string, string> = {};
-      const fieldsToValidate = ['phone', 'emergency_contact_phone', 'preferred_contact_method', 'postal_code', 'learning_style'];
       
-      for (const field of fieldsToValidate) {
+      // Validate all fields in cleanFormData for length constraints
+      Object.keys(cleanFormData).forEach(field => {
         const error = validateField(field, cleanFormData[field]);
         if (error) {
           newFieldErrors[field] = error;
         }
-      }
+      });
       
       // Check role-specific required fields
       const baseRequiredFields = ['first_name', 'last_name'];
