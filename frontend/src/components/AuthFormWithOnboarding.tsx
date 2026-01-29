@@ -545,22 +545,22 @@ const AuthFormWithOnboarding: React.FC<AuthFormWithOnboardingProps> = ({ onBack 
           </section>
 
           <section>
-            <h5 className="font-bold text-base mb-2" style={{ color: 'var(--brand-primary)' }}>8. Termination and Suspension</h5>
+            <h5 className="font-bold text-base mb-2" style={{ color: 'var(--brand-primary)' }}>7. Termination and Suspension</h5>
             <p className="text-sm">We may terminate or suspend your account for breach of these Terms, school policies, or illegal activity.</p>
           </section>
 
           <section>
-            <h5 className="font-bold text-base mb-2" style={{ color: 'var(--brand-primary)' }}>9. Disclaimers and Limitation of Liability</h5>
+            <h5 className="font-bold text-base mb-2" style={{ color: 'var(--brand-primary)' }}>8. Disclaimers and Limitation of Liability</h5>
             <p className="text-sm mb-2">The Service is provided &quot;as is&quot;. Prakriti School shall not be liable for indirect, incidental, or special damages.</p>
           </section>
 
           <section>
-            <h5 className="font-bold text-base mb-2" style={{ color: 'var(--brand-primary)' }}>12. Governing Law</h5>
+            <h5 className="font-bold text-base mb-2" style={{ color: 'var(--brand-primary)' }}>9. Governing Law</h5>
             <p className="text-sm">These Terms shall be governed by the laws of India, specifically the National Capital Territory of Delhi.</p>
           </section>
 
           <section>
-            <h5 className="font-bold text-base mb-2" style={{ color: 'var(--brand-primary)' }}>15. Contact Information</h5>
+            <h5 className="font-bold text-base mb-2" style={{ color: 'var(--brand-primary)' }}>10. Contact Information</h5>
             <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-xs">
               <p className="font-bold">Prakriti School</p>
               <p>Noida Expressway, Greater Noida</p>
@@ -646,7 +646,7 @@ const AuthFormWithOnboarding: React.FC<AuthFormWithOnboardingProps> = ({ onBack 
           </section>
 
           <section>
-            <h5 className="font-bold text-base mb-2" style={{ color: 'var(--brand-primary)' }}>12. Contact Us</h5>
+            <h5 className="font-bold text-base mb-2" style={{ color: 'var(--brand-primary)' }}>8. Contact Us</h5>
             <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-xs">
               <p className="font-bold">Prakriti School</p>
               <p>Email: admission@prakriti.edu.in</p>
