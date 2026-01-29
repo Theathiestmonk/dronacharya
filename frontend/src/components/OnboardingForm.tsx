@@ -408,9 +408,14 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         email: user.email || '',
         onboarding_completed: true,
         is_active: true,
-        created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
+
+      // Ensure we don't overwrite agreed_to_terms_at with null if it's already set
+      if (!profileData.agreed_to_terms_at) {
+        // Try to get it from the original formData or use NOW as a fallback
+        profileData.agreed_to_terms_at = formData.agreed_to_terms_at || new Date().toISOString();
+      }
       
       // Set office_hours from the time inputs
       if (formData.office_hours_start && formData.office_hours_end) {
