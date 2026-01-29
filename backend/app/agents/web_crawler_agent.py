@@ -29,6 +29,18 @@ except ImportError:
     SUPABASE_AVAILABLE = False
     print("[WebCrawler] Supabase not available - will always crawl")
 
+# Try to import vector search service
+try:
+    from app.services.vector_search_service import VectorSearchService
+    VECTOR_SEARCH_AVAILABLE = True
+    def get_vector_search_service():
+        return VectorSearchService()
+except ImportError:
+    VECTOR_SEARCH_AVAILABLE = False
+    def get_vector_search_service():
+        return None
+    print("[WebCrawler] Vector search not available - using fallback methods")
+
 class WebCrawlerAgent:
     def __init__(self):
         self.session = requests.Session()
@@ -38,7 +50,7 @@ class WebCrawlerAgent:
         # Set default timeout for all requests
         self.session.timeout = 30
         
-        # PrakritSchool specific URLs to crawl (all 19 discovered pages)
+        # PrakritSchool specific URLs to crawl (all 19 discovered pages + Substack articles)
         self.prakriti_urls = [
             # Main pages
             "https://prakriti.edu.in",
@@ -77,7 +89,14 @@ class WebCrawlerAgent:
             "https://prakriti.edu.in/terms-and-conditions/",
             
             # Other
-            "https://prakriti.edu.in/cpp/"
+            "https://prakriti.edu.in/cpp/",
+
+            # Substack Articles (Roots of All Beings)
+            "https://rootsofallbeings.substack.com/p/can-we-save-the-planet-or-should",
+            "https://rootsofallbeings.substack.com/p/welcoming-new-members-to-prakriti",
+            "https://rootsofallbeings.substack.com/p/a-travelogue-on-our-recent-ole-at",
+            "https://rootsofallbeings.substack.com/p/outbound-learning-expedition-ole",
+            "https://rootsofallbeings.substack.com/p/student-voice-a-guide-for-shaping"
         ]
         
         # Cache for crawled content
@@ -2660,8 +2679,12 @@ class WebCrawlerAgent:
                 # Determine content_type based on query
                 content_type = None
                 is_substack_query = 'substack' in query_lower
-                
-                if self.is_team_related(query):
+
+                # SPECIAL CASE: If query mentions "prakriti" + "article", prioritize Roots of All Beings
+                if 'prakriti' in query_lower and 'article' in query_lower:
+                    content_type = 'article'  # Set to article to find Roots of All Beings content
+                    print(f"[WebCrawler] Special case: Prakriti article query - filtering by content_type: article")
+                elif self.is_team_related(query):
                     content_type = 'team'
                 elif self.is_calendar_related(query):
                     content_type = 'calendar'
@@ -2681,14 +2704,23 @@ class WebCrawlerAgent:
                 # Query Supabase with filtering (TOKEN OPTIMIZATION - only get relevant pages)
                 base_query = supabase.table('web_crawler_data').select('url, title, description, main_content, content_type, query_keywords').eq('is_active', True).gte('crawled_at', (datetime.utcnow() - timedelta(hours=24)).isoformat())
                 
-                # Filter by content_type if detected (but handle Substack queries specially)
-                if content_type and not is_substack_query:
-                    base_query = base_query.eq('content_type', content_type)
-                    print(f"[WebCrawler] Filtering by content_type: {content_type}")
+                # Filter by content_type if detected (handle special cases first)
+                if content_type:
+                    # Special case: Prakriti articles override substack logic
+                    if 'prakriti' in query_lower and 'article' in query_lower:
+                        base_query = base_query.eq('content_type', 'article')
+                        print(f"[WebCrawler] SPECIAL CASE: Prakriti article query - filtering ONLY by content_type: article")
+                    elif is_substack_query:
+                        # For Substack queries, search both 'news' and 'article' content types
+                        base_query = base_query.in_('content_type', ['news', 'article'])
+                        print(f"[WebCrawler] Filtering by content_type: news OR article (Substack query)")
+                    else:
+                        base_query = base_query.eq('content_type', content_type)
+                        print(f"[WebCrawler] Filtering by content_type: {content_type}")
                 elif is_substack_query:
-                    # For Substack queries, search both 'news' and 'article' content types
+                    # Fallback for substack queries without specific content_type
                     base_query = base_query.in_('content_type', ['news', 'article'])
-                    print(f"[WebCrawler] Filtering by content_type: news OR article (Substack query)")
+                    print(f"[WebCrawler] Filtering by content_type: news OR article (Substack query - fallback)")
                 
                 # Get all matching pages
                 result = base_query.execute()
@@ -2769,7 +2801,7 @@ class WebCrawlerAgent:
                 return cached_data
         
         crawled_content = []
-        
+
         # For specific person queries, ONLY crawl team page for efficiency
         if self.is_specific_person_query(query):
             print("[WebCrawler] Detected specific person query, crawling ONLY team page for efficiency")
@@ -2777,23 +2809,35 @@ class WebCrawlerAgent:
             urls_to_crawl = team_urls
         else:
             # Intelligently prioritize pages based on query type
+            query_lower = query.lower()  # Define query_lower for case-insensitive checks
             urls_to_crawl = self.prakriti_urls.copy()
-            
-            if self.is_team_related(query):
+
+            # SPECIAL CASE: If query mentions "prakriti" + "article", prioritize Roots of All Beings
+            if 'prakriti' in query_lower and 'article' in query_lower:
+                print("[WebCrawler] Detected Prakriti article query, prioritizing Roots of All Beings philosophy content")
+                article_urls = [url for url in self.prakriti_urls if 'roots-of-all-beings' in url]
+                urls_to_crawl = article_urls  # ONLY crawl roots/philosophy pages
+
+            elif self.is_team_related(query):
                 print("[WebCrawler] Detected team-related query, prioritizing team pages")
                 team_urls = [url for url in self.prakriti_urls if 'team' in url]
                 urls_to_crawl = team_urls  # ONLY crawl team pages
-                
+
             elif self.is_calendar_related(query):
                 print("[WebCrawler] Detected calendar-related query, prioritizing calendar pages")
                 calendar_urls = [url for url in self.prakriti_urls if 'calendar' in url]
                 urls_to_crawl = calendar_urls  # ONLY crawl calendar pages
-                
+
+            elif self.is_news_related(query):
+                print("[WebCrawler] Detected Prakriti article query, prioritizing Roots of All Beings philosophy content")
+                article_urls = [url for url in self.prakriti_urls if 'roots-of-all-beings' in url]
+                urls_to_crawl = article_urls  # ONLY crawl roots/philosophy pages
+
             elif self.is_news_related(query):
                 print("[WebCrawler] Detected news-related query, prioritizing news/blog pages")
                 news_urls = [url for url in self.prakriti_urls if any(news_word in url for news_word in ['blog', 'news', 'award', 'wins'])]
                 urls_to_crawl = news_urls  # ONLY crawl news pages
-                
+
             elif self.is_article_related(query):
                 print("[WebCrawler] Detected article-related query, prioritizing roots/philosophy pages")
                 article_urls = [url for url in self.prakriti_urls if 'roots-of-all-beings' in url]
@@ -2982,14 +3026,14 @@ class WebCrawlerAgent:
                 
                 if content.get('main_content'):
                     if is_article_query:
-                        # For article queries, return first paragraph or first 1500 chars
+                        # For article/blog queries, return FULL content (not truncated)
                         main_content = content['main_content'].strip()
                         if main_content:
-                            # Get first paragraph or first 1500 chars
-                            first_paragraph = main_content.split('\n\n')[0] if '\n\n' in main_content else main_content
-                            if len(first_paragraph) > 1500:
-                                first_paragraph = first_paragraph[:1500] + "..."
-                            info_parts.append(first_paragraph)
+                            # Return the full article content, not just first paragraph
+                            # Limit to reasonable size to avoid token overflow (8000 chars should be plenty for most articles)
+                            if len(main_content) > 8000:
+                                main_content = main_content[:8000] + "..."
+                            info_parts.append(main_content)
                     else:
                         # For other queries, extract ONLY 1 sentence that contains query words
                         sentences = content['main_content'].split('.')
@@ -3009,19 +3053,30 @@ class WebCrawlerAgent:
         # Sort by relevance score
         relevant_info.sort(key=lambda x: x['relevance_score'], reverse=True)
         
-        # Format the information (LIMIT TO TOP 1 RESULT - TOKEN OPTIMIZATION)
+        # Format the information (TOKEN OPTIMIZATION)
         if relevant_info:
-            top_result = relevant_info[0]  # Only top 1 result
-            formatted_info = f"{top_result['info']}"
-            if top_result['url']:
-                formatted_info += f"\n\nSource: [{top_result['url']}]({top_result['url']})"
+            if is_article_query:
+                # For article queries, return TOP 3 results for comprehensive information
+                top_results = relevant_info[:3]
+            else:
+                # For other queries, only top 1 result
+                top_results = relevant_info[:1]
+
+            formatted_parts = []
+            for i, result in enumerate(top_results):
+                result_info = result['info']
+                if result['url'] and i == 0:  # Add source for first result only
+                    result_info += f"\n\nSource: [{result['url']}]({result['url']})"
+                formatted_parts.append(result_info)
+
+            formatted_info = '\n\n---\n\n'.join(formatted_parts)
             
             # TRUNCATE based on query type
             if is_article_query:
-                # For article queries, allow up to 2000 chars
-                if len(formatted_info) > 2000:
-                    formatted_info = formatted_info[:2000] + "..."
-                    print(f"[WebCrawler] Truncated extract_relevant_info output to 2000 chars (article query)")
+                # For article queries, allow up to 8000 chars (increased for full content)
+                if len(formatted_info) > 8000:
+                    formatted_info = formatted_info[:8000] + "..."
+                    print(f"[WebCrawler] Truncated extract_relevant_info output to 8000 chars (article query)")
             else:
                 # For other queries, max 600 chars
                 if len(formatted_info) > 600:
@@ -3108,8 +3163,76 @@ class WebCrawlerAgent:
         """Get enhanced response with web crawling for PrakritSchool queries"""
         print(f"[WebCrawler] Getting enhanced response for: {query}")
         print(f"[WebCrawler] 🔍 Cache check priority: 1) team_member_data (for person queries) → 2) web_crawler_data table → 3) search_cache table → 4) Web crawl")
-        
+
         query_lower = query.lower()
+
+        # SPECIAL CASE: If query contains "article" or specific article titles, force crawl Roots of All Beings pages FIRST
+        is_article_query = ('article' in query_lower or 'student voice' in query_lower or
+                           'guide for shaping' in query_lower or 'roots of all beings' in query_lower or
+                           'green school' in query_lower or 'environment' in query_lower)
+
+        if is_article_query:
+            print(f"[WebCrawler] 🎯 ARTICLE QUERY DETECTED - Forcing direct crawl to Roots of All Beings pages")
+
+            # Article-specific URL mapping
+            article_url_mapping = {
+                'student voice': "https://rootsofallbeings.substack.com/p/student-voice-a-guide-for-shaping",
+                'guide for shaping': "https://rootsofallbeings.substack.com/p/student-voice-a-guide-for-shaping",
+                'green school': "https://rootsofallbeings.substack.com/p/can-we-save-the-planet-or-should",
+                'save the planet': "https://rootsofallbeings.substack.com/p/can-we-save-the-planet-or-should",
+                'welcoming new members': "https://rootsofallbeings.substack.com/p/welcoming-new-members-to-prakriti",
+                'travelogue': "https://rootsofallbeings.substack.com/p/a-travelogue-on-our-recent-ole-at",
+                'ole': "https://rootsofallbeings.substack.com/p/outbound-learning-expedition-ole"
+            }
+
+            # Determine which URLs to prioritize based on query content
+            prioritized_urls = []
+            fallback_urls = [
+                "https://prakriti.edu.in/roots-of-all-beings/",  # Main page
+                "https://rootsofallbeings.substack.com/p/student-voice-a-guide-for-shaping",
+                "https://rootsofallbeings.substack.com/p/can-we-save-the-planet-or-should",
+                "https://rootsofallbeings.substack.com/p/welcoming-new-members-to-prakriti",
+                "https://rootsofallbeings.substack.com/p/a-travelogue-on-our-recent-ole-at",
+                "https://rootsofallbeings.substack.com/p/outbound-learning-expedition-ole"
+            ]
+
+            # Check for specific article matches
+            for keyword, url in article_url_mapping.items():
+                if keyword in query_lower:
+                    prioritized_urls.append(url)
+
+            # If no specific matches, use all URLs
+            if not prioritized_urls:
+                prioritized_urls = fallback_urls
+
+            # Remove duplicates while preserving order
+            seen = set()
+            article_urls = [x for x in prioritized_urls if not (x in seen or seen.add(x))]
+
+            print(f"[WebCrawler] 📋 Will check {len(article_urls)} article URLs")
+
+            for url in article_urls:
+                try:
+                    print(f"[WebCrawler] 🌱 Directly crawling: {url}")
+
+                    # Get the page content using the same method as normal crawling
+                    content = self.extract_content_from_url(url, query)
+                    if content and 'error' not in content and 'main_content' in content and content['main_content'].strip():
+                        print(f"[WebCrawler] ✅ Found content ({len(content['main_content'])} chars) from {url}")
+
+                        # Extract relevant information for the query
+                        relevant_info = self.extract_relevant_info([content], query)
+                        if relevant_info and relevant_info.strip():
+                            print(f"[WebCrawler] ✅ Returning content for article query from {url}")
+                            return relevant_info
+
+                except Exception as e:
+                    print(f"[WebCrawler] Error crawling {url}: {e}")
+                    continue
+
+            print(f"[WebCrawler] ⚠️ No relevant content found on any Roots of All Beings pages")
+
+        # Continue with normal logic if article override didn't work or found no content
         
         # PRIORITY 0: Check if this is a role-based query (e.g., "French facilitator", "Math teacher")
         # This should be checked BEFORE person queries

@@ -613,50 +613,129 @@ def detect_query_language(query):
     # Default to English
     return 'english'
 
-def detect_holiday_context(date):
+def load_holiday_data():
     """
-    Detect if today is a special holiday or celebration day
-    Returns contextual information for the AI to use in responses
+    Load holiday data from g7_infosheet_data.json file
+    Returns a dictionary mapping (month, day) tuples to holiday information
     """
-    month, day = date.month, date.day
+    try:
+        import os
+        import json
+        from datetime import datetime
 
-    holidays = {
-        (12, 24): {
-            "name": "Christmas Eve",
-            "message": "Today is Christmas Eve! 🎄",
-            "context": "Christmas Eve is a magical time of anticipation and preparation for Christmas Day. It's a time for family gatherings, festive preparations, and reflecting on the joy of the holiday season."
-        },
+        # Path to the g7 infosheet data
+        data_path = os.path.join(os.path.dirname(__file__), '../../g7_infosheet_data.json')
+
+        if not os.path.exists(data_path):
+            print("[Holiday] g7_infosheet_data.json not found, using fallback holiday data")
+            return get_fallback_holidays()
+
+        with open(data_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        holidays = {}
+        holiday_sheet = data.get('sheet_data', {}).get('Holidays', [])
+
+        if not holiday_sheet:
+            print("[Holiday] No 'Holidays' sheet found in data, using fallback")
+            return get_fallback_holidays()
+
+        # Parse holiday data from the sheet
+        # Skip header rows and process data rows
+        for row in holiday_sheet:
+            if len(row) >= 4:  # Need at least S.No., Holiday, Date, Day
+                try:
+                    # Check if this is a data row (has S.No. as number)
+                    s_no = row[0].strip() if row[0] else ""
+                    if s_no and s_no.isdigit():
+                        holiday_name = row[1].strip() if len(row) > 1 and row[1] else ""
+                        date_str = row[2].strip() if len(row) > 2 and row[2] else ""
+                        day_name = row[3].strip() if len(row) > 3 and row[3] else ""
+
+                        if holiday_name and date_str:
+                            # Parse date string like "April 10" or "August 15"
+                            try:
+                                # Handle different date formats
+                                if " " in date_str:
+                                    parts = date_str.split(" ")
+                                    if len(parts) >= 2:
+                                        month_str = parts[0]
+                                        day_str = parts[1]
+
+                                        # Convert month name to number
+                                        month_names = {
+                                            'January': 1, 'February': 2, 'March': 3, 'April': 4,
+                                            'May': 5, 'June': 6, 'July': 7, 'August': 8,
+                                            'September': 9, 'October': 10, 'November': 11, 'December': 12
+                                        }
+
+                                        month = month_names.get(month_str)
+                                        if month:
+                                            # Extract day number (remove any non-numeric characters)
+                                            day_str_clean = ''.join(c for c in day_str if c.isdigit())
+                                            if day_str_clean:
+                                                day = int(day_str_clean)
+
+                                                holidays[(month, day)] = {
+                                                    "name": holiday_name,
+                                                    "message": f"Today is {holiday_name}! 🎉",
+                                                    "context": f"{holiday_name} is a special holiday. At Prakriti School, we celebrate this day with appropriate activities and respect for the occasion."
+                                                }
+                            except Exception as e:
+                                print(f"[Holiday] Error parsing holiday date '{date_str}': {e}")
+                                continue
+
+                except Exception as e:
+                    print(f"[Holiday] Error processing holiday row: {e}")
+                    continue
+
+        print(f"[Holiday] Loaded {len(holidays)} holidays from g7_infosheet_data.json")
+        return holidays
+
+    except Exception as e:
+        print(f"[Holiday] Error loading holiday data: {e}")
+        return get_fallback_holidays()
+
+def get_fallback_holidays():
+    """
+    Fallback holiday data when JSON file is not available
+    """
+    return {
         (12, 25): {
             "name": "Christmas",
             "message": "Today is Christmas Day! 🎄",
             "context": "Christmas is a joyful celebration of love, giving, and togetherness. At Prakriti School, we celebrate the spirit of Christmas through cultural activities, festive decorations, and special assemblies that emphasize the values of kindness and community."
         },
-        (1, 1): {
-            "name": "New Year",
-            "message": "Today is New Year's Day! 🎉",
-            "context": "New Year's Day marks the beginning of a fresh start and new possibilities. We celebrate with reflections on the past year and aspirations for the future."
+        (1, 26): {
+            "name": "Republic Day",
+            "message": "Today is Republic Day! 🇮🇳",
+            "context": "Republic Day celebrates the adoption of the Constitution of India. At Prakriti School, we commemorate this day with patriotic activities and reflection on our nation's values."
         },
-        (10, 31): {
-            "name": "Halloween",
-            "message": "Today is Halloween! 🎃",
-            "context": "Halloween is a fun celebration with costumes, treats, and creative activities that encourage imagination and community spirit."
+        (8, 15): {
+            "name": "Independence Day",
+            "message": "Today is Independence Day! 🇮🇳",
+            "context": "Independence Day marks India's freedom from colonial rule. At Prakriti School, we celebrate with patriotic fervor and appreciation for our nation's achievements."
         },
-        (11, 14): {
-            "name": "Children's Day",
-            "message": "Today is Children's Day! 🎈",
-            "context": "Children's Day celebrates the joy, creativity, and potential of every child. At Prakriti, we believe in nurturing each child's unique abilities."
-        },
-        (11, 26): {
-            "name": "Thanksgiving",
-            "message": "Today is Thanksgiving! 🦃",
-            "context": "Thanksgiving is a time to express gratitude for the blessings in our lives and appreciate the people who make our journey special."
-        },
-        (12, 31): {
-            "name": "New Year's Eve",
-            "message": "Today is New Year's Eve! 🥂",
-            "context": "As we prepare to welcome the new year, we reflect on our growth and look forward to new adventures and learning experiences."
+        (10, 2): {
+            "name": "Mahatma Gandhi's Birthday",
+            "message": "Today is Mahatma Gandhi's Birthday! 🇮🇳",
+            "context": "We celebrate the birth anniversary of Mahatma Gandhi, the Father of the Nation, remembering his principles of truth, non-violence, and service to humanity."
         }
     }
+
+def detect_holiday_context(date):
+    """
+    Detect if today is a special holiday or celebration day
+    Returns contextual information for the AI to use in responses
+    Uses holiday data from g7_infosheet_data.json file
+    """
+    month, day = date.month, date.day
+
+    # Load holidays from JSON file (cached for performance)
+    if not hasattr(detect_holiday_context, '_holidays_cache'):
+        detect_holiday_context._holidays_cache = load_holiday_data()
+
+    holidays = detect_holiday_context._holidays_cache
 
     if (month, day) in holidays:
         return holidays[(month, day)]
@@ -1648,7 +1727,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     should_use_web_crawling_first = is_person_detail_query  # Run web crawler for person queries regardless of name detection
     
     # Detect specific classroom data intent for optimized loading
-    is_announcement_query = any(kw in query_lower for kw in ['announcement', 'announce', 'notice', 'update', 'news'])
+    is_announcement_query = any(kw in query_lower for kw in ['announcement', 'announcements', 'announce', 'annuncement', 'notice', 'update', 'updates', 'news'])
     # Enhanced student query detection: includes "want", "list", "check", "exists" patterns
     is_student_query = any(kw in query_lower for kw in ['student', 'students', 'classmate', 'classmates', 'roster', 'enrollment']) or \
                        (any(kw in query_lower for kw in ['want', 'show', 'list', 'check']) and any(kw in query_lower for kw in ['classmate', 'student']))
@@ -1669,13 +1748,20 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     
     # Note: is_coursework_query, is_homework_query, and is_assignment_query are already defined above
     is_course_query = any(kw in query_lower for kw in ['course', 'courses', 'class', 'classes', 'subject', 'subjects'])
-    calendar_keywords = ['event', 'events', 'calendar', 'schedule', 'meeting', 'holiday',
-                       # Hindi calendar keywords (with common typos)
-                       'ko kya hai', 'ko kya hota hai', 'ko kaya hai',
-                       'ko kya hia', 'kya hai', 'kya hota hai', 'kya hia',
-                       'mere school', 'school me', 'schoolm me', 'mere schoolm',
-                       'merre schoolm', 'schoolm', 'mere', 'school']
-    is_calendar_query = any(kw in query_lower for kw in calendar_keywords)
+    # Separate holiday and event detection
+    holiday_keywords = ['holiday', 'holidays', 'vacation', 'school holidays', 'holiday calendar', 'vacation calendar', 'holidays calendar', 'show holidays', 'holiday list']
+    is_holiday_query = any(kw in query_lower for kw in holiday_keywords)
+
+    event_keywords = ['event', 'events', 'calendar', 'schedule', 'meeting',
+                      # Hindi calendar keywords (with common typos)
+                      'ko kya hai', 'ko kya hota hai', 'ko kaya hai',
+                      'ko kya hia', 'kya hai', 'kya hota hai', 'kya hia',
+                      'mere school', 'school me', 'schoolm me', 'mere schoolm',
+                      'merre schoolm', 'schoolm', 'mere', 'school']
+    is_event_query = any(kw in query_lower for kw in event_keywords)
+
+    # Combined calendar query for backward compatibility
+    is_calendar_query = is_holiday_query or is_event_query
     # Detect existence check queries
     is_existence_check_query = any(kw in query_lower for kw in ['exists', 'exist', 'check if', 'is there', 'is there a']) and \
                                (is_student_query or is_teacher_query)
@@ -1694,6 +1780,11 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     print(f"  - is_subject_faculty_query: {is_subject_faculty_query}")
     print(f"  - is_classroom_related_query (early): {(is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query) and not is_subject_faculty_query}")
     
+    # Detect exam-related queries for drive integration (HIGH PRIORITY - before classroom detection)
+    exam_keywords = ['exam', 'examination', 'test', 'assessment', 'schedule', 'timetable', 'time table', 'date sheet', 'syllabus', 'upcoming exam', 'exam date', 'exam schedule']
+    is_exam_query = any(kw in query_lower for kw in exam_keywords)
+    print(f"[Chatbot] 🧪 DEBUG: query_lower='{query_lower}', exam_keywords={exam_keywords}, is_exam_query={is_exam_query}")
+
     # For person detail queries, use web crawler first (team page)
     web_enhanced_info = ""
     should_use_web_crawling = False  # Initialize to avoid UnboundLocalError
@@ -1736,7 +1827,8 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         # CRITICAL: Skip web crawling for Classroom-related queries (announcements, coursework, students, teachers, courses, calendar)
         # These should use Classroom/Calendar data first, not web crawler
         # BUT exclude subject faculty queries (use team_member_data instead)
-        is_classroom_related_query = (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query) and not is_subject_faculty_query
+        # AND exclude exam queries (use drive integration instead)
+        is_classroom_related_query = (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query) and not is_subject_faculty_query and not is_exam_query
         
         # Normalize query to handle common typos (e.g., "addmission" -> "admission")
         normalized_query = user_query.lower()
@@ -1747,14 +1839,20 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         for typo, correct in typo_corrections.items():
             normalized_query = normalized_query.replace(typo, correct)
         
-        should_use_web_crawling = any(keyword in normalized_query for keyword in web_enhancement_keywords) and not is_pure_academic_query and not is_translation_query and not is_classroom_related_query and not is_subject_faculty_query
+        # SPECIAL CASE: Allow article queries to use web crawling even if they're classroom-related
+        # Trigger for any article query that might be philosophical/educational in nature
+        is_article_query_override = 'article' in normalized_query.lower() and any(word in normalized_query.lower() for word in ['prakriti', 'philosophy', 'learning', 'education', 'environment', 'shaping', 'guide', 'voice', 'student'])
+
+        should_use_web_crawling = any(keyword in normalized_query for keyword in web_enhancement_keywords) and not is_pure_academic_query and not is_translation_query and (not is_classroom_related_query or is_article_query_override) and not is_subject_faculty_query
 
         # For calendar queries with no events, skip web crawling to avoid showing generic fallback data
         # Note: calendar_events will be checked later after admin_data is loaded
 
-        # Log why web crawling was skipped for classroom queries
-        if is_classroom_related_query and any(keyword in user_query.lower() for keyword in web_enhancement_keywords):
+        # Log why web crawling was skipped for classroom queries (but not for article queries)
+        if is_classroom_related_query and any(keyword in user_query.lower() for keyword in web_enhancement_keywords) and not is_article_query_override:
             print(f"[Chatbot] ⚠️ Web crawling skipped - Classroom-related query detected. Using Classroom/Calendar data instead.")
+        elif is_article_query_override:
+            print(f"[Chatbot] 📝 Article query override - allowing web crawling for Prakriti/philosophy content despite classroom detection.")
     
     # Check if frontend provided cached web data
     cached_web_data = getattr(request, 'cached_web_data', None)
@@ -1784,14 +1882,99 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     else:
         print(f"[Chatbot] ⚠️ Web crawling NOT triggered. Query: '{user_query}' | Keywords checked: {web_enhancement_keywords}")
 
+    # Early detection of teacher/subject queries (needed before drive query check)
+    is_teacher_drive_query = False
+    is_teacher_subject_query = False
+    try:
+        from grade_exam_detector import GradeExamDetector
+        detector = GradeExamDetector()
+        analysis = detector.analyze_query(user_query)
+        print(f"[Chatbot] DEBUG: Analysis result: {analysis}")
+        is_teacher_drive_query = analysis.get('query_type') == 'teacher' and analysis.get('subject')
+        is_teacher_subject_query = analysis.get('query_type') == 'teacher_subject' and analysis.get('teacher_name')
+        print(f"[Chatbot] DEBUG: is_teacher_drive_query={is_teacher_drive_query}, is_teacher_subject_query={is_teacher_subject_query}")
+    except Exception as e:
+        print(f"[Chatbot] Error checking teacher queries: {e}")
+        is_teacher_drive_query = False
+        is_teacher_subject_query = False
+
+    # Check for exam queries and teacher queries - use drive integration (HIGH PRIORITY - bypass classroom logic)
+    drive_response = ""
+    print(f"[Chatbot] 🔍 DRIVE QUERY CHECK: is_exam_query={is_exam_query}, is_teacher_drive_query={is_teacher_drive_query}, is_teacher_subject_query={is_teacher_subject_query}, query='{user_query}'")
+    if is_exam_query or is_teacher_drive_query or is_teacher_subject_query:
+        print(f"[Chatbot] 📚 EXAM QUERY DETECTED: '{user_query}' - using Google Drive integration")
+        print(f"[Chatbot] 📊 is_exam_query: {is_exam_query}, exam_keywords: {exam_keywords}")
+        try:
+            # Import drive integration
+            import sys
+            import os
+            sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+            from drive_chatbot_integrator import DriveChatbotIntegrator
+
+            integrator = DriveChatbotIntegrator()
+            print(f"[Chatbot] 🧪 Calling drive integration with query='{user_query}', user_profile={user_profile}")
+            drive_response = integrator.get_exam_info(user_query, user_profile)
+            print(f"[Chatbot] 🧪 Drive integration returned: '{drive_response[:100]}...'")
+            print(f"[Chatbot] 🔍 Drive integration returned: {len(drive_response) if drive_response else 0} characters")
+            if drive_response:
+                print(f"[Chatbot] 📄 Response preview: {drive_response[:100]}...")
+
+            # Check if drive integration returned a "no data" error
+            if drive_response and (drive_response.lower().startswith("sorry") or drive_response.lower().startswith("i couldn't")):
+                print(f"[Chatbot] ⚠️ Drive integration returned no data error: {drive_response[:100]}")
+                # Return a simple message for no data instead of generic response
+                if is_teacher_drive_query:
+                    return f"I couldn't find teacher information for that subject in the timetable."
+                else:
+                    return "There are no upcoming exams scheduled at this time."
+            elif drive_response and drive_response.startswith("TEACHER_INFO:"):
+                print(f"[Chatbot] 👨‍🏫 Teacher info detected, enhancing with AI model")
+                # Extract the raw teacher info and enhance it with AI
+                teacher_info = drive_response.replace("TEACHER_INFO:", "").strip()
+                print(f"[Chatbot] 📝 Raw teacher info: {teacher_info}")
+
+                # Don't return directly - let it go through AI enhancement
+                # Store it for later use in the main response logic
+                teacher_enhanced_info = teacher_info
+                drive_response = ""  # Clear drive response so it continues to AI
+                print(f"[Chatbot] 🔄 Teacher info stored for AI enhancement")
+            elif drive_response and drive_response.startswith("TEACHER_SUBJECT:"):
+                print(f"[Chatbot] 📚 Teacher subject info detected, enhancing with AI model")
+                # Extract the raw teacher subject info and enhance it with AI
+                teacher_subject_info = drive_response.replace("TEACHER_SUBJECT:", "").strip()
+                print(f"[Chatbot] 📝 Raw teacher subject info: {teacher_subject_info}")
+
+                # Don't return directly - let it go through AI enhancement
+                # Store it for later use in the main response logic
+                teacher_enhanced_info = teacher_subject_info
+                drive_response = ""  # Clear drive response so it continues to AI
+                print(f"[Chatbot] 🔄 Teacher subject info stored for AI enhancement")
+            elif drive_response:
+                print(f"[Chatbot] ✅ Drive integration successful: {len(drive_response)} characters")
+                print(f"[Chatbot] 📤 RETURNING DRIVE RESPONSE NOW: {len(drive_response)} chars")
+                return drive_response
+            else:
+                print(f"[Chatbot] ⚠️ Drive integration returned no results or error: {drive_response[:100] if drive_response else 'None'}")
+                drive_response = ""  # Reset to empty if invalid
+        except Exception as e:
+            print(f"[Chatbot] ❌ Error in drive integration: {e}")
+            import traceback
+            traceback.print_exc()
+            exam_response = ""
+            return f"Sorry, there was an error accessing exam information: {str(e)}"
+
     # Get admin data for enhanced responses - BUT only if not a person detail query OR web-only query
     # IMPORTANT: Use admin data (synced Google Classroom/Calendar) as REFERENCE for ALL users
     # This data is a shared knowledge base - not restricted to admins only
     admin_data = {"classroom_data": [], "calendar_data": []}
-    
+
     # Check if this is a classroom/calendar/home related query
     # Exclude subject faculty queries from classroom-related (use team_member_data instead)
-    is_classroom_related_query = (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query) and not is_subject_faculty_query
+    # AND exclude exam queries (use drive integration instead)
+    # AND exclude holiday queries (use classroom data, not admin drive data)
+    # AND exclude teacher queries that should go to drive integration (timetable teacher lookup)
+
+    is_classroom_related_query = (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_event_query) and not is_subject_faculty_query and not is_exam_query and not is_holiday_query and not is_teacher_drive_query
     is_home_related_query = any(kw in query_lower for kw in ['home', 'homework', 'my assignments', 'my coursework', 'my classes', 'my courses'])
     
     # Check for teacher-specific queries (submissions, grading, student work)
@@ -1803,7 +1986,8 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     is_web_only_query = should_use_web_crawling and not (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query)
     
     # For guest users: Skip loading classroom data for classroom/home queries - they need to connect first
-    is_guest_classroom_query = not user_profile and (is_classroom_related_query or is_home_related_query)
+    # Include holiday queries in guest check (they need classroom connection for holiday info)
+    is_guest_classroom_query = not user_profile and (is_classroom_related_query or is_home_related_query or is_holiday_query)
     
     # For teachers: Check if they need their own classroom connection for teacher-specific features
     user_role = user_profile.get('role', '').lower() if user_profile else None
@@ -1883,7 +2067,11 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 
                 # Detect specific date(s) in query for SQL filtering
                 target_date_ranges_for_sql = []  # List of (start, end) tuples for SQL filtering
-                
+
+                # Check for week-related queries
+                is_past_week_query = any(kw in query_lower for kw in ['past week', 'last week', 'previous week'])
+                is_this_week_query = any(kw in query_lower for kw in ['this week', 'current week'])
+
                 if is_yesterday_query:
                     yesterday = now - timedelta(days=1)
                     target_date_start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -1893,6 +2081,20 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 elif is_today_query:
                     target_date_ranges_for_sql.append((today_start, today_end))
                     print(f"[Chatbot] SQL filtering for 'today': {now.date()}")
+                elif is_past_week_query:
+                    # Past week: from 7 days ago to yesterday
+                    week_ago = now - timedelta(days=7)
+                    week_start = week_ago.replace(hour=0, minute=0, second=0, microsecond=0)
+                    yesterday_end = (now - timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=999999)
+                    target_date_ranges_for_sql.append((week_start, yesterday_end))
+                    print(f"[Chatbot] SQL filtering for 'past week': {week_start.date()} to {yesterday_end.date()}")
+                elif is_this_week_query:
+                    # This week: from Monday of current week to today
+                    # Find Monday of current week (Monday = 0)
+                    monday = now - timedelta(days=now.weekday())
+                    week_start = monday.replace(hour=0, minute=0, second=0, microsecond=0)
+                    target_date_ranges_for_sql.append((week_start, today_end))
+                    print(f"[Chatbot] SQL filtering for 'this week': {week_start.date()} to {today_end.date()}")
                 else:
                     # Check for specific dates in query - handle "21 and 29 september" or "21, 24, 29 september"
                     month_names = ['january', 'february', 'march', 'april', 'may', 'june',
@@ -2483,6 +2685,14 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             
             # Add current user query - minimal format (TOKEN OPTIMIZATION)
             user_content = f"{user_query}\n"
+
+            # Add teacher information if available from drive integration
+            if 'teacher_enhanced_info' in locals() and teacher_enhanced_info:
+                user_content += f"\n👨‍🏫 TEACHER INFORMATION: {teacher_enhanced_info}\n"
+                user_content += "Provide a brief, friendly response introducing the teacher(s). Keep it concise and warm.\n"
+                user_content += "Example: 'Your Science teachers are Mrs. Krishna and Mr. Mohit. They're wonderful educators at Prakriti School!'\n\n"
+                # Skip web enhancement for teacher queries answered by drive integration
+                web_enhanced_info = ""
             
             # CRITICAL: For coursework queries, add immediate instruction BEFORE data section
             if is_coursework_query:
@@ -2539,7 +2749,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                     user_content += "\n✅ FACULTY QUERY: This is a query about a faculty member with a specific subject/role. Use team_member_data as the PRIMARY source. Do NOT check Classroom data for this - team_member_data contains the accurate information about faculty members and their roles/subjects. Provide information directly from team_member_data without mentioning Classroom data.\n"
             
             # Check again for guest classroom query and teacher connection requirements (re-check in this scope)
-            is_guest_classroom_query_local = not user_profile and (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query or any(kw in query_lower for kw in ['home', 'homework', 'my assignments', 'my coursework', 'my classes', 'my courses']))
+            is_guest_classroom_query_local = not user_profile and (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query or is_holiday_query or any(kw in query_lower for kw in ['home', 'homework', 'my assignments', 'my coursework', 'my classes', 'my courses']))
             user_role_local = user_profile.get('role', '').lower() if user_profile else None
             is_submission_query_local = any(kw in query_lower for kw in ['submission', 'submitted', 'submitted work', 'student submission', 'check submission', 'grade submission', 'review submission', 'view submission'])
             is_grading_query_local = any(kw in query_lower for kw in ['grade', 'grading', 'assign grade', 'student grade', 'check grade', 'review grade'])
@@ -3982,6 +4192,15 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
 - Be more specific and targeted in your responses based on their profile"""
 
 
+            # Check if we have exam response from drive integration
+            print(f"[Chatbot] 🔍 FINAL CHECK - exam_response: {len(exam_response) if exam_response else 0} characters")
+            print(f"[Chatbot] 🔍 exam_response content: {exam_response[:100] if exam_response else 'EMPTY'}")
+            if exam_response:
+                print(f"[Chatbot] 📚 RETURNING DRIVE RESPONSE NOW")
+                return exam_response
+            else:
+                print(f"[Chatbot] ⚠️ No exam response, continuing to OpenAI")
+
             # Build messages array with conversation history
 
             messages = [
@@ -4467,6 +4686,15 @@ Remember: Every response should reflect Prakriti School's unique identity and ed
 
 - Be more specific and targeted in your responses based on their profile"""
 
+
+            # Check if we have exam response from drive integration
+            print(f"[Chatbot] 🔍 FINAL CHECK - exam_response: {len(exam_response) if exam_response else 0} characters")
+            print(f"[Chatbot] 🔍 exam_response content: {exam_response[:100] if exam_response else 'EMPTY'}")
+            if exam_response:
+                print(f"[Chatbot] 📚 RETURNING DRIVE RESPONSE NOW")
+                return exam_response
+            else:
+                print(f"[Chatbot] ⚠️ No exam response, continuing to OpenAI")
 
             # Build messages array with conversation history
 

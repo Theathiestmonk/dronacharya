@@ -46,6 +46,14 @@ def get_db():
     finally:
         db.close()
 
+def get_db_session():
+    """Get database session (alias for get_db)."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 
 
 

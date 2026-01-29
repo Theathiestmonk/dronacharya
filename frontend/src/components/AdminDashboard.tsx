@@ -1,9 +1,10 @@
 "use client";
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/providers/AuthProvider';
-import { 
-  getCachedData, 
-  setCachedData, 
+import {
+  getCachedData,
+  setCachedData,
   clearCache
 } from '@/utils/adminCache';
 
@@ -37,6 +38,24 @@ interface WebsitePage {
   last_crawled: string | null;
 }
 
+interface GCDRToken {
+  id: number;
+  admin_id: number;
+  user_email: string;
+  access_token: string;
+  refresh_token: string | null;
+  token_expires_at: string;
+  scope: string;
+  token_type: string;
+  is_active: boolean;
+  last_used_at: string | null;
+  created_at: string;
+  updated_at: string;
+  client_id: string | null;
+  project_name: string;
+  notes: string | null;
+}
+
 
 const ESSENTIAL_PAGES = [
   "https://prakriti.edu.in/",
@@ -66,7 +85,7 @@ const PAGE_CONTENT_TYPES: Record<string, string> = {
   "https://prakriti.edu.in/what-our-parents-say-about-us/": "testimonial",
 };
 
-type TabType = 'classroom' | 'calendar' | 'website' | 'users';
+type TabType = 'classroom' | 'calendar' | 'website' | 'users' | 'drive';
 
 interface UserData {
   email: string;
@@ -87,6 +106,7 @@ interface UsersByGrade {
 
 const AdminDashboard: React.FC = () => {
   const { profile } = useAuth();
+  const searchParams = useSearchParams();
   const [classroomData, setClassroomData] = useState<ClassroomCourse[]>([]);
   const [calendarData, setCalendarData] = useState<CalendarEvent[]>([]);
   const [websitePages, setWebsitePages] = useState<WebsitePage[]>([]);
@@ -106,6 +126,8 @@ const AdminDashboard: React.FC = () => {
   const [roleFilter, setRoleFilter] = useState<string>('');
   const [serviceFilter, setServiceFilter] = useState<string>('');
   const [syncingGrade, setSyncingGrade] = useState<{ grade: string; service: string } | null>(null);
+  const [gcdrTokens, setGcdrTokens] = useState<GCDRToken[]>([]);
+  const [testingToken, setTestingToken] = useState<number | null>(null);
 
   const fetchClassroomData = useCallback(async (forceRefresh: boolean = false) => {
     try {
@@ -320,7 +342,7 @@ const AdminDashboard: React.FC = () => {
   const fetchUsersByGradeRole = useCallback(async (forceRefresh: boolean = false) => {
     try {
       const adminEmail = profile?.email;
-      
+
       // Check cache first (unless forcing refresh)
       if (!forceRefresh) {
         const cached = getCachedData<UsersByGrade>('admin_users_by_grade_role', adminEmail);
@@ -330,11 +352,11 @@ const AdminDashboard: React.FC = () => {
           return; // Don't fetch in background, only fetch when Refresh Status is clicked
         }
       }
-      
+
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
       const emailParam = profile?.email ? `?email=${encodeURIComponent(profile.email)}` : '';
       const response = await fetch(`${backendUrl}/api/admin/users/by-grade-role${emailParam}`);
-      
+
       if (response.ok) {
         const data = await response.json();
         const usersByGradeData = data || {};
@@ -352,6 +374,44 @@ const AdminDashboard: React.FC = () => {
       console.error('Error fetching users by grade/role:', err);
       setError(`Failed to fetch users: ${errorMessage}`);
       setUsersByGrade({});
+    }
+  }, [profile?.email]);
+
+  const fetchGcdrTokens = useCallback(async (forceRefresh: boolean = false) => {
+    try {
+      const adminEmail = profile?.email;
+
+      // Check cache first (unless forcing refresh)
+      if (!forceRefresh) {
+        const cached = getCachedData<GCDRToken[]>('admin_gcdr_tokens', adminEmail);
+        if (cached) {
+          console.log('🔍 [Cache] Using cached GCDR tokens');
+          setGcdrTokens(cached);
+          return;
+        }
+      }
+
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const emailParam = adminEmail ? `?email=${encodeURIComponent(adminEmail)}` : '';
+      const response = await fetch(`${backendUrl}/api/admin/gcdr/tokens${emailParam}`);
+
+      if (response.ok) {
+        const data = await response.json();
+        const tokens = data.tokens || [];
+        setGcdrTokens(tokens);
+        // Update cache
+        setCachedData('admin_gcdr_tokens', tokens, adminEmail);
+      } else {
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+        console.error('Error fetching GCDR tokens:', errorData);
+        setError(`Failed to fetch GCDR tokens: ${errorData.detail || errorData.error || 'Unknown error'}`);
+        setGcdrTokens([]);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      console.error('Error fetching GCDR tokens:', err);
+      setError(`Failed to fetch GCDR tokens: ${errorMessage}`);
+      setGcdrTokens([]);
     }
   }, [profile?.email]);
 
@@ -740,7 +800,81 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const deleteGcdrToken = async (tokenId: number) => {
+    if (!confirm('Are you sure you want to delete this Google Drive token? This action cannot be undone.')) {
+      return;
+    }
 
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${backendUrl}/api/admin/gcdr/tokens/${tokenId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: profile?.email })
+      });
+
+      if (response.ok) {
+        alert('Token deleted successfully');
+        fetchGcdrTokens(true);
+      } else {
+        const errorData = await response.json();
+        setError(errorData.detail || errorData.error || 'Failed to delete token');
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Failed to delete token: ${errorMessage}`);
+    }
+  };
+
+  const testGcdrToken = async (tokenId: number) => {
+    setTestingToken(tokenId);
+    setError(null);
+
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${backendUrl}/api/admin/gcdr/tokens/${tokenId}/test`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: profile?.email })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        let message = `✅ Token test successful!\n\n`;
+        message += `Total files accessible: ${data.files_count || 0}\n`;
+        message += `Exam-related files found: ${data.exam_files_count || 0}\n\n`;
+
+        if (data.sample_files && data.sample_files.length > 0) {
+          message += `📁 Recent files: ${data.sample_files.join(', ')}\n`;
+        }
+
+        if (data.exam_files && data.exam_files.length > 0) {
+          message += `📄 Exam files: ${data.exam_files.join(', ')}\n`;
+        }
+
+        alert(message);
+        fetchGcdrTokens(true); // Refresh to update last_used_at
+      } else {
+        const errorData = await response.json();
+        alert(`❌ Token test failed: ${errorData.detail || errorData.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      alert(`❌ Token test failed: ${errorMessage}`);
+    } finally {
+      setTestingToken(null);
+    }
+  };
+
+  const connectGoogleDrive = () => {
+    // This will redirect to Google OAuth flow
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    window.location.href = `${backendUrl}/api/admin/gcdr/connect?email=${encodeURIComponent(profile?.email || '')}`;
+  };
 
   useEffect(() => {
     console.log('🔍 [MOUNT] Component mounted');
@@ -750,7 +884,42 @@ const AdminDashboard: React.FC = () => {
     fetchSchedulerStatus();
     fetchDwdStatus();
     fetchUsersByGradeRole();
-  }, [fetchClassroomData, fetchCalendarData, fetchWebsitePages, fetchSchedulerStatus, fetchDwdStatus, fetchUsersByGradeRole]);
+    fetchGcdrTokens();
+  }, [fetchClassroomData, fetchCalendarData, fetchWebsitePages, fetchSchedulerStatus, fetchDwdStatus, fetchUsersByGradeRole, fetchGcdrTokens]);
+
+  // Handle URL parameters for tab switching and messages
+  useEffect(() => {
+    if (!searchParams) return;
+
+    const tab = searchParams.get('tab');
+    const success = searchParams.get('success');
+    const error = searchParams.get('error');
+    const email = searchParams.get('email');
+
+    // Switch to specified tab
+    if (tab && ['users', 'classroom', 'calendar', 'website', 'drive'].includes(tab)) {
+      setActiveTab(tab as TabType);
+    }
+
+    // Handle success messages
+    if (success) {
+      if (success === 'connected' && email) {
+        alert(`✅ Google Drive connected successfully!\n\nAccount: ${email}\n\nYou can now test the connection and access exam files.`);
+        // Refresh tokens to show the new connection
+        fetchGcdrTokens(true);
+      }
+    }
+
+    // Handle error messages
+    if (error) {
+      const message = searchParams.get('message');
+      if (error === 'connection_failed' && message) {
+        alert(`❌ Google Drive connection failed:\n\n${decodeURIComponent(message)}`);
+      } else if (error === 'oauth_error' && message) {
+        alert(`❌ OAuth Error:\n\n${decodeURIComponent(message)}`);
+      }
+    }
+  }, [searchParams, fetchGcdrTokens]);
 
   // Calculate sync status for display
   const getStatusBadge = (status: 'fresh' | 'stale' | 'outdated') => {
@@ -967,6 +1136,7 @@ const AdminDashboard: React.FC = () => {
                   fetchSchedulerStatus(true);
                   fetchDwdStatus(true);
                   fetchUsersByGradeRole(true);
+                  fetchGcdrTokens(true);
                 }}
                 className="hidden sm:inline-flex text-white px-4 sm:px-5 py-2 sm:py-2.5 rounded-lg font-medium text-xs sm:text-sm transition-all duration-300 transform hover:scale-105 hover:shadow-lg disabled:opacity-50 disabled:transform-none"
                 style={{ backgroundColor: 'var(--brand-primary)' }}
@@ -1047,12 +1217,26 @@ const AdminDashboard: React.FC = () => {
                   ? 'border-transparent'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
-              style={activeTab === 'website' ? { 
+              style={activeTab === 'website' ? {
                 color: 'var(--brand-primary)',
                 borderBottomColor: 'var(--brand-primary)'
               } : {}}
             >
               Website Pages
+            </button>
+            <button
+              onClick={() => setActiveTab('drive')}
+              className={`relative border-b-2 py-3 sm:py-4 px-1 text-xs sm:text-sm font-medium transition-all duration-300 whitespace-nowrap ${
+                activeTab === 'drive'
+                  ? 'border-transparent'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+              style={activeTab === 'drive' ? {
+                color: 'var(--brand-primary)',
+                borderBottomColor: 'var(--brand-primary)'
+              } : {}}
+            >
+              Google Drive
             </button>
           </nav>
           </div>
@@ -1696,6 +1880,196 @@ const AdminDashboard: React.FC = () => {
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* Google Drive Tab */}
+        {activeTab === 'drive' && (
+          <div className="mb-6 sm:mb-8">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0 mb-4">
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Google Drive Connections</h2>
+                <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                  {gcdrTokens.length} connected account{gcdrTokens.length !== 1 ? 's' : ''}
+                  {gcdrTokens.length > 0 && (
+                    <span className="hidden sm:inline"> • OAuth tokens for Drive access</span>
+                  )}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={connectGoogleDrive}
+                  className="px-4 sm:px-5 py-2 sm:py-2.5 bg-blue-600 text-white rounded-lg font-medium text-xs sm:text-sm transition-all duration-300 transform hover:scale-105 hover:shadow-lg disabled:opacity-50 disabled:transform-none disabled:hover:shadow-none flex items-center gap-2"
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                  </svg>
+                  Connect Google Drive
+                </button>
+
+                {gcdrTokens.length > 0 && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+                        const response = await fetch(`${backendUrl}/api/admin/gcdr/refresh-tokens`, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                          },
+                          body: JSON.stringify({ email: profile?.email })
+                        });
+
+                        if (response.ok) {
+                          alert('✅ Token refresh completed! Check the tokens for updated expiry times.');
+                          fetchGcdrTokens(true);
+                        } else {
+                          const errorData = await response.json();
+                          alert(`❌ Token refresh failed: ${errorData.detail || 'Unknown error'}`);
+                        }
+                      } catch (err) {
+                        alert(`❌ Token refresh failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+                      }
+                    }}
+                    className="px-4 sm:px-5 py-2 sm:py-2.5 bg-green-600 text-white rounded-lg font-medium text-xs sm:text-sm transition-all duration-300 transform hover:scale-105 hover:shadow-lg disabled:opacity-50 disabled:transform-none disabled:hover:shadow-none flex items-center gap-2"
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#059669'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#059669'}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Refresh Tokens
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {gcdrTokens.length === 0 ? (
+              <div className="bg-white rounded-lg sm:rounded-xl shadow-sm sm:shadow-md p-8 sm:p-12 text-center border border-gray-200">
+                <div className="w-16 h-16 mx-auto mb-4 bg-blue-100 rounded-full flex items-center justify-center">
+                  <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5a2 2 0 012-2h4a2 2 0 012 2v2H8V5z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">No Google Drive Connections</h3>
+                <p className="text-gray-500 text-sm sm:text-base mb-4">Connect your Google account to access exam-related files from Google Drive.</p>
+                <button
+                  onClick={connectGoogleDrive}
+                  className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+                >
+                  <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                  </svg>
+                  Connect Google Account
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4">
+                {gcdrTokens.map((token) => {
+                  const isExpired = new Date(token.token_expires_at) < new Date();
+                  const isTesting = testingToken === token.id;
+
+                  return (
+                    <div key={token.id} className="bg-white rounded-lg sm:rounded-xl shadow-sm sm:shadow-md border border-gray-200 p-4 sm:p-6">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                              <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5a2 2 0 012-2h4a2 2 0 012 2v2H8V5z" />
+                              </svg>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-semibold text-gray-900 truncate">{token.user_email}</h3>
+                              <p className="text-sm text-gray-500 truncate">{token.project_name}</p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-600">
+                            <div>
+                              <span className="font-medium">Expires:</span> {formatDateTime(token.token_expires_at)}
+                            </div>
+                            <div>
+                              <span className="font-medium">Last Used:</span> {token.last_used_at ? formatDateTime(token.last_used_at) : 'Never'}
+                            </div>
+                            <div>
+                              <span className="font-medium">Status:</span>
+                              <span className={`ml-1 px-2 py-1 rounded-full text-xs font-medium ${
+                                token.is_active && !isExpired
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-red-100 text-red-700'
+                              }`}>
+                                {token.is_active && !isExpired ? 'Active' : isExpired ? 'Expired' : 'Inactive'}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="font-medium">Scope:</span> {token.scope}
+                            </div>
+                          </div>
+
+                          {token.notes && (
+                            <p className="text-xs text-gray-500 mt-2 truncate">{token.notes}</p>
+                          )}
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                          <button
+                            onClick={() => testGcdrToken(token.id)}
+                            disabled={isTesting || isExpired || !token.is_active}
+                            className="flex-1 sm:flex-none px-3 py-2 text-xs font-medium border-2 rounded-lg transition-all duration-300 transform hover:scale-105 hover:shadow-sm disabled:opacity-50 disabled:transform-none disabled:hover:shadow-none flex items-center justify-center gap-2"
+                            style={isTesting ? {
+                              backgroundColor: 'var(--brand-primary)',
+                              borderColor: 'var(--brand-primary)',
+                              color: 'white'
+                            } : {
+                              borderColor: 'var(--brand-primary)',
+                              color: 'var(--brand-primary)'
+                            }}
+                          >
+                            {isTesting ? (
+                              <>
+                                <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Testing...
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                Test Access
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            onClick={() => deleteGcdrToken(token.id)}
+                            className="flex-1 sm:flex-none px-3 py-2 text-xs font-medium bg-red-600 text-white border-2 border-red-600 rounded-lg transition-all duration-300 transform hover:scale-105 hover:shadow-sm hover:bg-red-700 hover:border-red-700 flex items-center justify-center gap-2"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>

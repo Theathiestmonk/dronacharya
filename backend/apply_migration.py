@@ -10,11 +10,11 @@ supabase = supabase_config.get_supabase_client()
 if supabase:
     try:
         # Read the migration SQL
-        migration_path = os.path.join(os.path.dirname(__file__), 'migrations', 'fix_varchar_limits.sql')
+        migration_path = os.path.join(os.path.dirname(__file__), 'migrations', 'create_gcdr_table.sql')
         with open(migration_path, 'r') as f:
             sql_content = f.read()
 
-        print("Applying VARCHAR limits migration...")
+        print("Applying GCDR table migration...")
         print("SQL to execute:")
         print(sql_content)
         print("\n" + "="*50)
@@ -29,7 +29,7 @@ if supabase:
         print(f"❌ Error applying migration: {e}")
         print("You may need to run this SQL manually in Supabase SQL Editor:")
         print("\nCopy and paste this SQL:")
-        migration_path = os.path.join(os.path.dirname(__file__), 'migrations', 'fix_varchar_limits.sql')
+        migration_path = os.path.join(os.path.dirname(__file__), 'migrations', 'create_gcdr_table.sql')
         with open(migration_path, 'r') as f:
             print(f.read())
 

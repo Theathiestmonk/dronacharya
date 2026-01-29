@@ -262,9 +262,11 @@ class GoogleDWDService:
         # Even if _scopes is None, it might still add an empty 'scope' field to the JWT
         # We need to patch _make_authorization_grant_assertion to remove the scope field completely
         if not hasattr(service_account.Credentials, '_dwd_patched'):
-            # Patch _refresh_token to clear scopes before JWT creation
-            original_refresh_token_class = service_account.Credentials._refresh_token
-            
+            # Patch _refresh_token to clear scopes before JWT creation (only if it exists)
+            original_refresh_token_class = None
+            if hasattr(service_account.Credentials, '_refresh_token'):
+                original_refresh_token_class = service_account.Credentials._refresh_token
+
             def _refresh_token_class_patch(self, request):
                 """Class-level patch to clear scopes before JWT creation for DWD"""
                 # CRITICAL: Clear _scopes right before JWT is created
@@ -278,10 +280,14 @@ class GoogleDWDService:
                             print(f"✅ [CLASS PATCH] Cleared _scopes")
                         else:
                             print(f"✅ [CLASS PATCH] _scopes is already None")
-                
+
                 # Call original _refresh_token which will call _make_authorization_grant_assertion
-                return original_refresh_token_class(self, request)
-            
+                if original_refresh_token_class:
+                    return original_refresh_token_class(self, request)
+                else:
+                    # If no original method, just return success
+                    return request
+
             # Patch _make_authorization_grant_assertion to remove scope field from JWT
             original_make_assertion_class = service_account.Credentials._make_authorization_grant_assertion
             
@@ -379,10 +385,16 @@ class GoogleDWDService:
                 
                 return assertion
             
-            service_account.Credentials._refresh_token = _refresh_token_class_patch
+            # Only apply patches if original methods exist
+            if original_refresh_token_class:
+                service_account.Credentials._refresh_token = _refresh_token_class_patch
             service_account.Credentials._make_authorization_grant_assertion = _make_assertion_class_patch
             service_account.Credentials._dwd_patched = True
-            print(f"✅ Monkey-patched ServiceAccountCredentials class (_refresh_token + _make_authorization_grant_assertion)")
+            patch_info = []
+            if original_refresh_token_class:
+                patch_info.append("_refresh_token")
+            patch_info.append("_make_authorization_grant_assertion")
+            print(f"✅ Monkey-patched ServiceAccountCredentials class ({' + '.join(patch_info)})")
         
         # CRITICAL: Patch _token_endpoint_request to ADD authorized scopes to request body for DWD
         # Note: Scopes are primarily included in JWT assertion (see _make_assertion_class_patch above)
@@ -1100,6 +1112,10 @@ class GoogleDWDService:
             print(f"⚠️  Could not read Client ID from service account file: {e}")
         return 'Not found'
     
+    def get_delegated_credentials(self, user_email: str):
+        """Get delegated credentials for a specific user (public method)"""
+        return self._get_delegated_credentials(user_email)
+
     def is_available(self) -> bool:
         """Check if DWD service is available (credentials loaded)"""
         return self._base_credentials is not None

@@ -6,14 +6,15 @@
 const CACHE_PREFIX = 'admin_cache_';
 const DEFAULT_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
 
-export type CacheKey = 
+export type CacheKey =
   | 'admin_classroom_data'
   | 'admin_calendar_data'
   | 'admin_website_pages'
   | 'admin_integration_status'
   | 'admin_scheduler_status'
   | 'admin_dwd_status'
-  | 'admin_users_by_grade_role';
+  | 'admin_users_by_grade_role'
+  | 'admin_gcdr_tokens';
 
 interface CachedData<T> {
   data: T;

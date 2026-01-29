@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Query, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -9,12 +9,16 @@ from datetime import datetime, timedelta, timezone
 import os
 
 from ..core.database import get_db
-from ..models.admin import Admin, GoogleIntegration, ClassroomData, CalendarData
+from ..models.admin import Admin, GoogleIntegration, ClassroomData, CalendarData, GoogleCloudDriveRead
 # Auth functions removed - using Supabase authentication in frontend
 from ..services.supabase_admin import SupabaseAdminService
 from ..services.google_dwd_service import get_dwd_service
 from ..services.embedding_generator import get_embedding_generator
 from ..services.auto_sync_scheduler import get_auto_sync_scheduler
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from token_refresh_service import refresh_expired_tokens
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -93,6 +97,10 @@ GOOGLE_CLASSROOM_SCOPES = [
 GOOGLE_CALENDAR_SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/calendar.events.readonly"
+]
+
+GOOGLE_DRIVE_SCOPES = [
+    "https://www.googleapis.com/auth/drive.readonly",  # Access exam files shared with admin account
 ]
 
 
@@ -2064,6 +2072,391 @@ async def sync_grade_role(grade: str, role: str, request: GradeRoleSyncRequest):
         raise HTTPException(status_code=500, detail=f"Error syncing users: {str(e)}")
 
 
+# GCDR (Google Cloud Drive Read) Token Management Routes
+@router.get("/gcdr/tokens")
+async def get_gcdr_tokens(email: Optional[str] = None):
+    """Get all GCDR tokens for admin dashboard"""
+    try:
+        admin_service = SupabaseAdminService()
+
+        # Verify admin privileges
+        if email:
+            profile = admin_service.get_user_profile_by_email(email)
+            if not profile or not profile.get('admin_privileges'):
+                raise HTTPException(status_code=403, detail="Admin privileges required")
+
+        # Get admin ID
+        admin_profile = admin_service.get_user_profile_by_email(email)
+        if not admin_profile:
+            raise HTTPException(status_code=404, detail="Admin profile not found")
+
+        admin_id = admin_profile.get('user_id')
+
+        # Query GCDR tokens from Supabase
+        try:
+            from supabase_config import get_supabase_client
+            supabase = get_supabase_client()
+            try:
+                result = supabase.table('gcdr').select('*').eq('admin_id', admin_id).order('created_at', desc=True).execute()
+            except Exception as query_error:
+                print(f"[GCDR] Supabase query error: {query_error}")
+                # Try a simple query to check if table exists
+                try:
+                    test_result = supabase.table('gcdr').select('count').limit(1).execute()
+                    print(f"[GCDR] Table exists, but query failed: {query_error}")
+                except Exception as table_error:
+                    print(f"[GCDR] Table doesn't exist or connection issue: {table_error}")
+                raise query_error
+
+            tokens = result.data or []
+
+            return {
+                "success": True,
+                "tokens": tokens,
+                "total": len(tokens)
+            }
+
+        except Exception as e:
+            print(f"[GCDR] Error fetching tokens: {e}")
+            raise HTTPException(status_code=500, detail=f"Error fetching tokens: {str(e)}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching GCDR tokens: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching tokens: {str(e)}")
+
+@router.post("/gcdr/tokens")
+async def create_gcdr_token(request: dict, email: Optional[str] = None):
+    """Create/store a new GCDR token"""
+    try:
+        admin_service = SupabaseAdminService()
+
+        # Verify admin privileges
+        if email:
+            profile = admin_service.get_user_profile_by_email(email)
+            if not profile or not profile.get('admin_privileges'):
+                raise HTTPException(status_code=403, detail="Admin privileges required")
+
+        # Get admin ID
+        admin_profile = admin_service.get_user_profile_by_email(email)
+        if not admin_profile:
+            raise HTTPException(status_code=404, detail="Admin profile not found")
+
+        admin_id = admin_profile.get('user_id')
+
+        # Validate required fields
+        required_fields = ['user_email', 'access_token', 'token_expires_at', 'scope']
+        for field in required_fields:
+            if field not in request:
+                raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+
+            # Check if token already exists for this user in Supabase
+        try:
+            from supabase_config import get_supabase_client
+            supabase = get_supabase_client()
+            existing_result = supabase.table('gcdr').select('id').eq('admin_id', admin_id).eq('user_email', request['user_email']).execute()
+
+            if existing_result.data and len(existing_result.data) > 0:
+                # Update existing token
+                update_data = {
+                    'access_token': request['access_token'],
+                    'refresh_token': request.get('refresh_token'),
+                    'token_expires_at': request['token_expires_at'],
+                    'scope': request['scope'],
+                    'token_type': request.get('token_type', 'Bearer'),
+                    'client_id': request.get('client_id'),
+                    'project_name': request.get('project_name', 'Prakriti Drive Test'),
+                    'notes': request.get('notes'),
+                    'updated_at': 'now()'
+                }
+
+                result = supabase.table('gcdr').update(update_data).eq('id', existing_result.data[0]['id']).execute()
+                token_id = existing_result.data[0]['id']
+                action = "updated"
+
+            else:
+                # Create new token
+                insert_data = {
+                    'admin_id': admin_id,
+                    'user_email': request['user_email'],
+                    'access_token': request['access_token'],
+                    'refresh_token': request.get('refresh_token'),
+                    'token_expires_at': request['token_expires_at'],
+                    'scope': request['scope'],
+                    'token_type': request.get('token_type', 'Bearer'),
+                    'is_active': True,
+                    'client_id': request.get('client_id'),
+                    'project_name': request.get('project_name', 'Prakriti Drive Test'),
+                    'notes': request.get('notes')
+                }
+
+                result = supabase.table('gcdr').insert(insert_data).execute()
+                token_id = result.data[0]['id'] if result.data else None
+                action = "created"
+
+            return {
+                "success": True,
+                "message": f"GCDR token {action} successfully",
+                "token_id": token_id
+            }
+
+        finally:
+            pass  # No session to close when using Supabase
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error creating GCDR token: {e}")
+        raise HTTPException(status_code=500, detail=f"Error creating token: {str(e)}")
+
+@router.put("/gcdr/tokens/{token_id}")
+async def update_gcdr_token(token_id: int, request: dict, email: Optional[str] = None):
+    """Update an existing GCDR token"""
+    try:
+        admin_service = SupabaseAdminService()
+
+        # Verify admin privileges
+        if email:
+            profile = admin_service.get_user_profile_by_email(email)
+            if not profile or not profile.get('admin_privileges'):
+                raise HTTPException(status_code=403, detail="Admin privileges required")
+
+        # Get admin ID
+        admin_profile = admin_service.get_user_profile_by_email(email)
+        if not admin_profile:
+            raise HTTPException(status_code=404, detail="Admin profile not found")
+
+        admin_id = admin_profile.get('user_id')
+
+        from ..core.database import get_db_session
+        from datetime import datetime
+        session = next(get_db_session())
+
+        try:
+            # Find the token
+            token = session.query(GoogleCloudDriveRead).filter(
+                GoogleCloudDriveRead.id == token_id,
+                GoogleCloudDriveRead.admin_id == admin_id
+            ).first()
+
+            if not token:
+                raise HTTPException(status_code=404, detail="Token not found")
+
+            # Update fields
+            if 'access_token' in request:
+                token.access_token = request['access_token']
+            if 'refresh_token' in request:
+                token.refresh_token = request['refresh_token']
+            if 'token_expires_at' in request:
+                token.token_expires_at = datetime.fromisoformat(request['token_expires_at'])
+            if 'scope' in request:
+                token.scope = request['scope']
+            if 'token_type' in request:
+                token.token_type = request['token_type']
+            if 'is_active' in request:
+                token.is_active = request['is_active']
+            if 'client_id' in request:
+                token.client_id = request['client_id']
+            if 'project_name' in request:
+                token.project_name = request['project_name']
+            if 'notes' in request:
+                token.notes = request['notes']
+
+            token.updated_at = datetime.utcnow()
+            session.commit()
+
+            return {
+                "success": True,
+                "message": "GCDR token updated successfully"
+            }
+
+        finally:
+            pass  # No session to close when using Supabase
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating GCDR token: {e}")
+        raise HTTPException(status_code=500, detail=f"Error updating token: {str(e)}")
+
+@router.delete("/gcdr/tokens/{token_id}")
+async def delete_gcdr_token(token_id: int, email: Optional[str] = None):
+    """Delete a GCDR token"""
+    try:
+        admin_service = SupabaseAdminService()
+
+        # Verify admin privileges
+        if email:
+            profile = admin_service.get_user_profile_by_email(email)
+            if not profile or not profile.get('admin_privileges'):
+                raise HTTPException(status_code=403, detail="Admin privileges required")
+
+        # Get admin ID
+        admin_profile = admin_service.get_user_profile_by_email(email)
+        if not admin_profile:
+            raise HTTPException(status_code=404, detail="Admin profile not found")
+
+        admin_id = admin_profile.get('user_id')
+
+        # Delete token from Supabase
+        try:
+            from supabase_config import get_supabase_client
+            supabase = get_supabase_client()
+
+            # First check if token exists and belongs to admin
+            token_result = supabase.table('gcdr').select('id').eq('id', token_id).eq('admin_id', admin_id).execute()
+
+            if not token_result.data or len(token_result.data) == 0:
+                raise HTTPException(status_code=404, detail="Token not found")
+
+            # Delete the token
+            delete_result = supabase.table('gcdr').delete().eq('id', token_id).eq('admin_id', admin_id).execute()
+
+            return {
+                "success": True,
+                "message": "GCDR token deleted successfully"
+            }
+
+        finally:
+            pass  # No session to close when using Supabase
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting GCDR token: {e}")
+        raise HTTPException(status_code=500, detail=f"Error deleting token: {str(e)}")
+
+@router.post("/gcdr/tokens/{token_id}/test")
+async def test_gcdr_token(token_id: int, request: Request):
+    """Test if a GCDR token is working by making a Drive API call"""
+    try:
+        # Parse request body
+        body = await request.json()
+        email = body.get('email')
+
+        admin_service = SupabaseAdminService()
+
+        # Debug logging
+        print(f"[GCDR Test] Testing token {token_id} for email: {email}")
+
+        # Verify admin privileges
+        if email:
+            profile = admin_service.get_user_profile_by_email(email)
+            print(f"[GCDR Test] Profile lookup result: {profile}")
+            if not profile:
+                raise HTTPException(status_code=404, detail=f"User profile not found for email: {email}")
+            if not profile.get('admin_privileges'):
+                raise HTTPException(status_code=403, detail="Admin privileges required")
+
+        # Get admin ID
+        admin_profile = admin_service.get_user_profile_by_email(email)
+        if not admin_profile:
+            raise HTTPException(status_code=404, detail=f"Admin profile not found for email: {email}")
+
+        print(f"[GCDR Test] Admin profile found: {admin_profile.get('id')}")
+
+        admin_id = admin_profile.get('user_id')
+
+        # Get the token from Supabase
+        try:
+            from supabase_config import get_supabase_client
+            supabase = get_supabase_client()
+            token_result = supabase.table('gcdr').select('*').eq('id', token_id).eq('admin_id', admin_id).execute()
+
+            if not token_result.data or len(token_result.data) == 0:
+                raise HTTPException(status_code=404, detail="Token not found")
+
+            token = token_result.data[0]
+
+            # Check if token is expired
+            from datetime import datetime, timezone
+            token_expires_at = token.get('token_expires_at')
+            if token_expires_at:
+                # Parse the datetime string and make it offset-aware
+                if isinstance(token_expires_at, str):
+                    expires_dt = datetime.fromisoformat(token_expires_at.replace('Z', '+00:00'))
+                    if expires_dt.tzinfo is None:
+                        expires_dt = expires_dt.replace(tzinfo=timezone.utc)
+                else:
+                    expires_dt = token_expires_at
+
+                # Compare with offset-aware current time
+                now = datetime.now(timezone.utc)
+                if expires_dt < now:
+                    return {
+                        "success": False,
+                        "message": "Token is expired",
+                        "expired": True
+                    }
+
+            # Test the token by making a simple Drive API call
+            import requests
+
+            headers = {
+                'Authorization': f'{token.get("token_type", "Bearer")} {token["access_token"]}',
+                'Accept': 'application/json'
+            }
+
+            # Test by listing files (limited to 10 to get more info)
+            url = 'https://www.googleapis.com/drive/v3/files?pageSize=10&fields=files(id,name,mimeType,modifiedTime)&orderBy=modifiedTime desc'
+
+            response = requests.get(url, headers=headers)
+
+            if response.status_code == 200:
+                data = response.json()
+                all_files = data.get('files', [])
+                files_count = len(all_files)
+
+                # Count exam-related files using the same keywords as search_exam_files
+                exam_keywords = [
+                    'exam', 'examination', 'test', 'assessment', 'schedule', 'timetable',
+                    'results', 'marks', 'grades', 'score', 'paper', 'question paper',
+                    'final', 'midterm', 'quiz', 'evaluation', 'report card', 'infosheet',
+                    'info sheet', 'info', 'sheet', 'timetable', 'time table', 'date sheet',
+                    'syllabus', 'sa1', 'sa2', 'fa1', 'fa2', 'fa3', 'fa4',
+                    'g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'g7', 'g8', 'g9', 'g10', 'g11', 'g12',
+                    'grade1', 'grade2', 'grade3', 'grade4', 'grade5', 'grade6', 'grade7', 'grade8', 'grade9', 'grade10', 'grade11', 'grade12'
+                ]
+
+                exam_files = []
+                for file in all_files:
+                    file_name_lower = file.get('name', '').lower()
+                    if any(keyword.lower() in file_name_lower for keyword in exam_keywords):
+                        exam_files.append(file)
+
+                # Update last_used_at in Supabase
+                update_result = supabase.table('gcdr').update({
+                    'last_used_at': 'now()'
+                }).eq('id', token_id).execute()
+
+                return {
+                    "success": True,
+                    "message": f"Token is working correctly. Found {files_count} total files, {len(exam_files)} exam-related files.",
+                    "files_count": files_count,
+                    "exam_files_count": len(exam_files),
+                    "can_access_drive": True,
+                    "sample_files": [f.get('name', 'Unknown') for f in all_files[:3]],  # Show first 3 file names
+                    "exam_files": [f.get('name', 'Unknown') for f in exam_files[:3]]  # Show first 3 exam files
+                }
+            else:
+                error_data = response.json()
+                return {
+                    "success": False,
+                    "message": f"Token test failed: {error_data.get('error', {}).get('message', 'Unknown error')}",
+                    "status_code": response.status_code,
+                    "can_access_drive": False
+                }
+
+        finally:
+            pass  # No session to close when using Supabase
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error testing GCDR token: {e}")
+        raise HTTPException(status_code=500, detail=f"Error testing token: {str(e)}")
+
 @router.post("/regenerate-embeddings")
 async def regenerate_all_embeddings(email: Optional[str] = None):
     """
@@ -2103,4 +2496,210 @@ async def regenerate_all_embeddings(email: Optional[str] = None):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Embedding regeneration failed: {str(e)}")
+
+@router.get("/gcdr/connect")
+async def connect_google_drive(request: Request, email: str = Query(..., description="Admin email")):
+    """Redirect to Google OAuth for Drive access"""
+
+    # Get admin profile
+    admin_service = SupabaseAdminService()
+    admin_profile = admin_service.get_user_profile_by_email(email)
+
+    if not admin_profile:
+        raise HTTPException(status_code=404, detail="Admin profile not found")
+
+    # Google OAuth configuration
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    redirect_uri = os.getenv("GOOGLE_OAUTH_REDIRECT_URI", f"{request.base_url}api/admin/gcdr/callback")
+
+    if not client_id:
+        raise HTTPException(status_code=500, detail="Google OAuth client ID not configured")
+
+    # OAuth scopes for Drive read access + user info
+    scopes = [
+        "https://www.googleapis.com/auth/drive.readonly",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/userinfo.profile"
+    ]
+
+    # Build authorization URL
+    auth_url = (
+        "https://accounts.google.com/o/oauth2/v2/auth?"
+        f"client_id={client_id}&"
+        f"redirect_uri={redirect_uri}&"
+        f"scope={' '.join(scopes)}&"
+        f"response_type=code&"
+        f"access_type=offline&"
+        f"prompt=consent&"
+        f"state={email}"  # Pass email as state for callback
+    )
+
+    return RedirectResponse(url=auth_url)
+
+@router.get("/gcdr/callback")
+async def google_drive_oauth_callback(
+    code: str = Query(..., description="Authorization code"),
+    state: str = Query(..., description="State parameter (admin email)"),
+    error: Optional[str] = Query(None, description="Error if OAuth failed")
+):
+    """Handle Google OAuth callback for Drive access"""
+
+    if error:
+        return RedirectResponse(url=f"/admin?error=oauth_error&message={error}")
+
+    try:
+        # Exchange code for tokens
+        token_url = "https://oauth2.googleapis.com/token"
+        client_id = os.getenv("GOOGLE_CLIENT_ID")
+        client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+        redirect_uri = os.getenv("GOOGLE_OAUTH_REDIRECT_URI")
+
+        print(f"[GCDR OAuth] Client ID: {client_id[:20]}...")
+        print(f"[GCDR OAuth] Redirect URI: {redirect_uri}")
+        print(f"[GCDR OAuth] Code received: {code[:20]}...")
+
+        if not all([client_id, client_secret, redirect_uri]):
+            print(f"[GCDR OAuth] Missing config: client_id={bool(client_id)}, client_secret={bool(client_secret)}, redirect_uri={bool(redirect_uri)}")
+            raise HTTPException(status_code=500, detail="Google OAuth credentials not configured")
+
+        token_data = {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": redirect_uri
+        }
+
+        import requests
+        print(f"[GCDR OAuth] Exchanging code for tokens...")
+        token_response = requests.post(token_url, data=token_data)
+
+        if token_response.status_code != 200:
+            print(f"[GCDR OAuth] Token exchange failed: {token_response.status_code} - {token_response.text}")
+            raise HTTPException(status_code=400, detail=f"Token exchange failed: {token_response.text}")
+
+        token_info = token_response.json()
+        print(f"[GCDR OAuth] Token exchange successful, got access_token: {bool(token_info.get('access_token'))}")
+
+        access_token = token_info.get("access_token")
+        refresh_token = token_info.get("refresh_token")
+        expires_in = token_info.get("expires_in", 3600)
+
+        if not access_token:
+            raise HTTPException(status_code=400, detail="Failed to obtain access token")
+
+        # First, validate the token using tokeninfo endpoint
+        tokeninfo_url = f"https://www.googleapis.com/oauth2/v1/tokeninfo?access_token={access_token}"
+        print(f"[GCDR OAuth] Validating token...")
+        tokeninfo_response = requests.get(tokeninfo_url)
+
+        if tokeninfo_response.status_code != 200:
+            print(f"[GCDR OAuth] Token validation failed: {tokeninfo_response.status_code} - {tokeninfo_response.text}")
+            raise HTTPException(status_code=400, detail=f"Token validation failed: {tokeninfo_response.text}")
+
+        token_info = tokeninfo_response.json()
+        user_email = token_info.get('email')
+
+        if not user_email:
+            print(f"[GCDR OAuth] No email in token info: {token_info}")
+            raise HTTPException(status_code=400, detail="Failed to get user email from token")
+
+        print(f"[GCDR OAuth] Token validated for user: {user_email}")
+        user_info = {"email": user_email}  # Minimal user info
+
+        user_email = user_info.get("email")
+        if not user_email:
+            raise HTTPException(status_code=400, detail="Failed to get user email from token")
+
+        # Get admin profile
+        admin_service = SupabaseAdminService()
+        admin_profile = admin_service.get_user_profile_by_email(state)  # state contains admin email
+
+        if not admin_profile:
+            raise HTTPException(status_code=404, detail="Admin profile not found")
+
+        admin_id = admin_profile.get('user_id')
+
+        # Calculate token expiry
+        from datetime import datetime, timedelta
+        token_expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+
+        # Store token in Supabase
+        try:
+            from supabase_config import get_supabase_client
+            supabase = get_supabase_client()
+
+            # Check if token already exists for this admin and email
+            existing_result = supabase.table('gcdr').select('id').eq('admin_id', admin_id).eq('user_email', user_email).execute()
+
+            if existing_result.data and len(existing_result.data) > 0:
+                # Update existing token
+                update_data = {
+                    'access_token': access_token,
+                    'refresh_token': refresh_token,
+                    'token_expires_at': token_expires_at.isoformat(),
+                    'is_active': True,
+                    'updated_at': 'now()'
+                }
+                supabase.table('gcdr').update(update_data).eq('id', existing_result.data[0]['id']).execute()
+            else:
+                # Create new token
+                insert_data = {
+                    'admin_id': admin_id,
+                    'user_email': user_email,
+                    'access_token': access_token,
+                    'refresh_token': refresh_token,
+                    'token_expires_at': token_expires_at.isoformat(),
+                    'scope': "https://www.googleapis.com/auth/drive.readonly",
+                    'token_type': "Bearer",
+                    'is_active': True,
+                    'project_name': "Prakriti Drive Access"
+                }
+                supabase.table('gcdr').insert(insert_data).execute()
+
+            # Redirect back to admin dashboard with success
+            return RedirectResponse(url=f"/admin?tab=drive&success=connected&email={user_email}")
+
+        except Exception as e:
+            print(f"[GCDR OAuth] Database error: {e}")
+            return RedirectResponse(url=f"/admin?tab=drive&error=database_error&message={str(e)}")
+
+    except Exception as e:
+        print(f"[GCDR OAuth] Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        return RedirectResponse(url=f"/admin?tab=drive&error=unexpected_error&message={str(e)}")
+
+@router.post("/gcdr/refresh-tokens")
+async def refresh_all_gcdr_tokens(email: Optional[str] = None):
+    """Refresh all expired GCDR tokens"""
+    try:
+        admin_service = SupabaseAdminService()
+
+        # Verify admin privileges
+        if email:
+            profile = admin_service.get_user_profile_by_email(email)
+            if not profile or not profile.get('admin_privileges'):
+                raise HTTPException(status_code=403, detail="Admin privileges required")
+
+        # Import and run refresh function
+        from ..token_refresh_service import refresh_expired_tokens
+        refresh_expired_tokens()
+
+        return {
+            "success": True,
+            "message": "Token refresh process completed. Check logs for details."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[Admin] Error refreshing tokens: {e}")
+        raise HTTPException(status_code=500, detail=f"Token refresh failed: {str(e)}")
+
+    except Exception as e:
+        print(f"[GCDR OAuth] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return RedirectResponse(url=f"/admin?tab=drive&error=connection_failed&message={str(e)}")
 

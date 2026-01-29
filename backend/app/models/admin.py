@@ -58,7 +58,7 @@ class ClassroomData(Base):
 
 class CalendarData(Base):
     __tablename__ = "calendar_data"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     admin_id = Column(Integer, nullable=False, index=True)
     event_id = Column(String, nullable=False)
@@ -73,6 +73,28 @@ class CalendarData(Base):
     raw_data = Column(JSON)  # Store complete event data
     last_synced = Column(DateTime(timezone=True), server_default=func.now())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class GoogleCloudDriveRead(Base):
+    """Table for storing Google OAuth access tokens for Drive read operations (GCDR)"""
+    __tablename__ = "gcdr"
+
+    id = Column(Integer, primary_key=True, index=True)
+    admin_id = Column(String, nullable=False, index=True)  # UUID from user_profiles
+    user_email = Column(String, nullable=False, index=True)  # Email of the authenticated user
+    access_token = Column(Text, nullable=False)
+    refresh_token = Column(Text)
+    token_expires_at = Column(DateTime(timezone=True), nullable=False)
+    scope = Column(Text, nullable=False)  # OAuth scopes (should include drive.readonly)
+    token_type = Column(String, default="Bearer")
+    is_active = Column(Boolean, default=True)
+    last_used_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Additional metadata
+    client_id = Column(String)  # OAuth client ID used
+    project_name = Column(String, default="Prakriti Drive Test")  # Project identifier
+    notes = Column(Text)  # Optional notes about this token
 
 
 

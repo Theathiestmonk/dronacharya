@@ -1130,7 +1130,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
 
           // Now add the complete bot message to the messages array
           const botMsg: Message = { sender: 'bot', text: fullText };
-
+          
           if (isInbuiltQueryRef.current && messagesContainerRef.current) {
             const savedScrollPosition = messagesContainerRef.current.scrollTop;
             // Append bot message after user message (correct order)
@@ -1154,24 +1154,24 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           } else {
             setMessages((msgs) => [...msgs, botMsg]);
           }
-
+          
           // Add to chat history
           console.log('=== BOT MESSAGE START ===');
           console.log('Adding bot text message to chat history...');
           console.log('Bot message text:', fullText.substring(0, 50) + '...');
-
+          
           await addMessage({
             sender: 'bot',
             text: fullText,
           });
-
+          
           console.log('✅ Bot text message added to chat history and saved to localStorage');
           console.log('=== BOT MESSAGE END ===');
-
+          
           // CRITICAL: Force a small delay to ensure localStorage is updated, then trigger sync
           // This ensures the useEffect picks up the new message count
           await new Promise(resolve => setTimeout(resolve, 100));
-
+          
           // Get fresh session to verify message was saved
           const freshSession = getActiveSession();
           if (freshSession) {
@@ -1181,7 +1181,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               lastMessage: freshSession.messages[freshSession.messages.length - 1]?.text?.substring(0, 50) + '...'
             });
           }
-
+          
           // Mark that we've had the first response
           setHasFirstResponse(true);
 
