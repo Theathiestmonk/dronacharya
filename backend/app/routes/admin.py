@@ -568,6 +568,179 @@ async def get_dwd_status():
             "error": str(e)
         }
 
+# DWD Client ID Helper Endpoint
+@router.get("/dwd/client-id")
+async def get_dwd_client_id():
+    """Get the Client ID that needs to be authorized in Google Workspace Admin Console"""
+    try:
+        dwd_service = get_dwd_service()
+        if not dwd_service:
+            return {
+                "error": "DWD service not available",
+                "instructions": "Set GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_SERVICE_ACCOUNT_JSON environment variable"
+            }
+        
+        client_id = dwd_service._get_client_id()
+        service_account_email = None
+        project_id = None
+        
+        # Try to get service account email and project ID
+        try:
+            import json
+            service_account_path = dwd_service.service_account_path
+            if os.path.exists(service_account_path):
+                with open(service_account_path, 'r') as f:
+                    service_account_info = json.load(f)
+                    service_account_email = service_account_info.get('client_email')
+                    project_id = service_account_info.get('project_id')
+            elif os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON'):
+                service_account_info = json.loads(os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON'))
+                service_account_email = service_account_info.get('client_email')
+                project_id = service_account_info.get('project_id')
+        except Exception as e:
+            print(f"Warning: Could not read service account info: {e}")
+        
+        return {
+            "client_id": client_id,
+            "service_account_email": service_account_email,
+            "project_id": project_id,
+            "workspace_domain": dwd_service.workspace_domain,
+            "instructions": {
+                "step_1": "Go to https://admin.google.com",
+                "step_2": "Navigate to: Security → API Controls → Domain-wide Delegation",
+                "step_3": f"Click 'Add new' and enter Client ID: {client_id}",
+                "step_4": "Add these OAuth scopes (one per line, EXACT URLs):",
+                "scopes": [
+                    "https://www.googleapis.com/auth/classroom.courses.readonly",
+                    "https://www.googleapis.com/auth/classroom.rosters.readonly",
+                    "https://www.googleapis.com/auth/classroom.coursework.readonly",
+                    "https://www.googleapis.com/auth/classroom.student-submissions.students.readonly",
+                    "https://www.googleapis.com/auth/classroom.announcements.readonly",
+                    "https://www.googleapis.com/auth/admin.directory.user.readonly",
+                    "https://www.googleapis.com/auth/calendar.readonly",
+                    "https://www.googleapis.com/auth/calendar.events.readonly"
+                ],
+                "step_5": "Click 'Authorize'",
+                "step_6": "Wait 15-30 minutes for changes to propagate",
+                "note": "The Client ID must match EXACTLY (no spaces, no typos)"
+            }
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "instructions": "Check that GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_SERVICE_ACCOUNT_JSON is set correctly"
+        }
+
+# DWD Diagnostic Endpoint
+@router.get("/dwd/diagnose")
+async def diagnose_dwd():
+    """Comprehensive DWD diagnostic information"""
+    import json
+    from datetime import datetime
+
+    # Get Client ID for display
+    client_id = None
+    try:
+        dwd_service = get_dwd_service()
+        if dwd_service:
+            client_id = dwd_service._get_client_id()
+    except:
+        pass
+
+    result = {
+        "timestamp": datetime.now().isoformat(),
+        "environment": "production" if os.getenv("RENDER") else "localhost",
+        "client_id": client_id,
+        "client_id_authorization_url": "https://admin.google.com/ac/owl/domainwidedelegation?hl=en" if client_id else None,
+        "checks": {}
+    }
+
+    # Environment variables check
+    env_vars = [
+        'GOOGLE_APPLICATION_CREDENTIALS',
+        'GOOGLE_WORKSPACE_DOMAIN',
+        'GOOGLE_SERVICE_ACCOUNT_JSON',
+        'SUPABASE_URL',
+        'SUPABASE_SERVICE_ROLE_KEY'
+    ]
+
+    result["checks"]["environment_variables"] = {}
+    for var in env_vars:
+        value = os.getenv(var)
+        if value:
+            if any(sensitive in var.upper() for sensitive in ['KEY', 'SECRET', 'JSON']):
+                result["checks"]["environment_variables"][var] = f"SET (length: {len(value)})"
+            else:
+                result["checks"]["environment_variables"][var] = value
+        else:
+            result["checks"]["environment_variables"][var] = "NOT SET"
+
+    # Service account file check
+    result["checks"]["service_account_file"] = {}
+    file_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS', 'service-account-key.json')
+    result["checks"]["service_account_file"]["path"] = file_path
+    result["checks"]["service_account_file"]["exists"] = os.path.exists(file_path)
+
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+            result["checks"]["service_account_file"]["valid_json"] = True
+            result["checks"]["service_account_file"]["project_id"] = data.get('project_id')
+            result["checks"]["service_account_file"]["client_email"] = data.get('client_email')
+            result["checks"]["service_account_file"]["client_id"] = data.get('client_id')
+        except Exception as e:
+            result["checks"]["service_account_file"]["valid_json"] = False
+            result["checks"]["service_account_file"]["error"] = str(e)
+
+    # Domain configuration check
+    configured_domain = os.getenv('GOOGLE_WORKSPACE_DOMAIN', 'NOT SET')
+    result["checks"]["domain_config"] = {
+        "configured_domain": configured_domain,
+        "expected_domain": "learners.prakriti.org.in",
+        "matches": configured_domain == "learners.prakriti.org.in"
+    }
+
+    # DWD service initialization
+    result["checks"]["dwd_service"] = {}
+    try:
+        dwd_service = get_dwd_service()
+        result["checks"]["dwd_service"]["initialized"] = dwd_service is not None
+
+        if dwd_service:
+            result["checks"]["dwd_service"]["available"] = dwd_service.is_available()
+            result["checks"]["dwd_service"]["workspace_domain"] = dwd_service.workspace_domain
+            result["checks"]["dwd_service"]["service_account_path"] = dwd_service.service_account_path
+
+            # Test basic credentials
+            if hasattr(dwd_service, '_base_credentials'):
+                result["checks"]["dwd_service"]["base_credentials_loaded"] = dwd_service._base_credentials is not None
+            else:
+                result["checks"]["dwd_service"]["base_credentials_loaded"] = False
+        else:
+            result["checks"]["dwd_service"]["error"] = "DWD service initialization failed"
+    except Exception as e:
+        result["checks"]["dwd_service"]["error"] = str(e)
+
+    # Supabase connection
+    result["checks"]["supabase"] = {}
+    try:
+        supabase = get_supabase_client()
+        result["checks"]["supabase"]["client_created"] = supabase is not None
+
+        if supabase:
+            # Test simple query
+            try:
+                test_result = supabase.table('user_profiles').select('count').limit(1).execute()
+                result["checks"]["supabase"]["connection_successful"] = True
+            except Exception as e:
+                result["checks"]["supabase"]["connection_successful"] = False
+                result["checks"]["supabase"]["query_error"] = str(e)
+    except Exception as e:
+        result["checks"]["supabase"]["error"] = str(e)
+
+    return result
+
 # DWD Sync Endpoint
 class DWDSyncRequest(BaseModel):
     user_email: str
@@ -1130,13 +1303,16 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                 f"🔧 TROUBLESHOOTING STEPS:\n"
                 f"1. Go to: https://admin.google.com → Security → API Controls → Domain-wide Delegation\n"
                 f"2. Verify Client ID: {client_id_for_error} is authorized\n"
-                f"3. Ensure EXACTLY these 5 scopes are authorized (one per line, no typos):\n"
+                f"3. Ensure EXACTLY these 8 scopes are authorized (one per line, no typos):\n"
                 f"   • https://www.googleapis.com/auth/classroom.courses.readonly\n"
                 f"   • https://www.googleapis.com/auth/classroom.rosters.readonly\n"
+                f"   • https://www.googleapis.com/auth/classroom.coursework.readonly\n"
+                f"   • https://www.googleapis.com/auth/classroom.student-submissions.students.readonly\n"
                 f"   • https://www.googleapis.com/auth/classroom.announcements.readonly\n"
+                f"   • https://www.googleapis.com/auth/admin.directory.user.readonly\n"
                 f"   • https://www.googleapis.com/auth/calendar.readonly\n"
                 f"   • https://www.googleapis.com/auth/calendar.events.readonly\n"
-                f"4. Remove any other scopes (only these 5)\n"
+                f"4. Remove any other scopes (only these 8)\n"
                 f"5. Ensure API Access Control is set to 'Unrestricted'\n"
                 f"6. Wait 15-30 minutes after authorization for propagation\n\n"
                 f"📄 See: backend/DWD_ADMIN_CONSOLE_SETUP.md for detailed instructions"
@@ -1148,7 +1324,7 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                 f"🔧 TROUBLESHOOTING STEPS:\n"
                 f"1. Go to: https://admin.google.com → Security → API Controls → Domain-wide Delegation\n"
                 f"2. Verify Client ID: {client_id_for_error} matches exactly (no spaces, no typos)\n"
-                f"3. Ensure all 5 scopes are authorized exactly as shown\n"
+                f"3. Ensure all 8 scopes are authorized exactly as shown (see list below)\n"
                 f"4. Wait 15-30 minutes for propagation\n\n"
                 f"📄 See: backend/DWD_ADMIN_CONSOLE_SETUP.md for detailed instructions"
             )
@@ -1163,10 +1339,13 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                     f"🔧 TROUBLESHOOTING STEPS:\n"
                     f"1. Verify Client ID {client_id_for_error} is authorized in Google Workspace Admin Console\n"
                     f"   (Security → API Controls → Domain-wide Delegation)\n"
-                    f"2. Ensure these 5 scopes are authorized (one per line, EXACT URLs):\n"
+                    f"2. Ensure these 8 scopes are authorized (one per line, EXACT URLs):\n"
                     f"   • https://www.googleapis.com/auth/classroom.courses.readonly\n"
                     f"   • https://www.googleapis.com/auth/classroom.rosters.readonly\n"
+                    f"   • https://www.googleapis.com/auth/classroom.coursework.readonly\n"
+                    f"   • https://www.googleapis.com/auth/classroom.student-submissions.students.readonly\n"
                     f"   • https://www.googleapis.com/auth/classroom.announcements.readonly\n"
+                    f"   • https://www.googleapis.com/auth/admin.directory.user.readonly\n"
                     f"   • https://www.googleapis.com/auth/calendar.readonly\n"
                     f"   • https://www.googleapis.com/auth/calendar.events.readonly\n"
                     f"3. Ensure Admin SDK API is enabled in Google Cloud Console\n"
@@ -1181,10 +1360,13 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
                     f"🔧 TROUBLESHOOTING STEPS:\n"
                     f"1. Verify Client ID {client_id_for_error} is authorized in Google Workspace Admin Console\n"
                     f"   (Security → API Controls → Domain-wide Delegation)\n"
-                    f"2. Ensure these 5 scopes are authorized (one per line, EXACT URLs):\n"
+                    f"2. Ensure these 8 scopes are authorized (one per line, EXACT URLs):\n"
                     f"   • https://www.googleapis.com/auth/classroom.courses.readonly\n"
                     f"   • https://www.googleapis.com/auth/classroom.rosters.readonly\n"
+                    f"   • https://www.googleapis.com/auth/classroom.coursework.readonly\n"
+                    f"   • https://www.googleapis.com/auth/classroom.student-submissions.students.readonly\n"
                     f"   • https://www.googleapis.com/auth/classroom.announcements.readonly\n"
+                    f"   • https://www.googleapis.com/auth/admin.directory.user.readonly\n"
                     f"   • https://www.googleapis.com/auth/calendar.readonly\n"
                     f"   • https://www.googleapis.com/auth/calendar.events.readonly\n"
                     f"3. Ensure Admin SDK API is enabled in Google Cloud Console\n"

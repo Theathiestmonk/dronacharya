@@ -41,6 +41,23 @@ async def startup_event():
         print(f"[App] Warning: Failed to start auto-sync scheduler: {e}")
         import traceback
         traceback.print_exc()
+    
+    # Log DWD status for production debugging
+    try:
+        from app.services.google_dwd_service import get_dwd_service
+        dwd_service = get_dwd_service()
+        if dwd_service and dwd_service.is_available():
+            client_id = dwd_service._get_client_id()
+            workspace_domain = dwd_service.workspace_domain
+            print(f"[DWD] ✅ Service available")
+            print(f"[DWD] Client ID: {client_id}")
+            print(f"[DWD] Workspace Domain: {workspace_domain}")
+            print(f"[DWD] ⚠️  Verify Client ID is authorized in Google Admin Console:")
+            print(f"[DWD]    https://admin.google.com → Security → API Controls → Domain-wide Delegation")
+        else:
+            print(f"[DWD] ❌ Service not available - check GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_SERVICE_ACCOUNT_JSON")
+    except Exception as e:
+        print(f"[DWD] ⚠️  Could not check DWD status: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():

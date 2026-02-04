@@ -17,7 +17,7 @@ export default function TermsOfService() {
             </svg>
             <span>Back to Dashboard</span>
           </Link>
-        </div>
+      </div>
 
         <div className="max-w-5xl mx-auto p-3 md:p-6 py-0 md:py-4">
           <div className="bg-white rounded-lg shadow-md border border-gray-200 p-4 md:p-8 text-gray-900 text-justify">
@@ -231,9 +231,9 @@ export default function TermsOfService() {
             <p className="mb-2">Contact: Visit our website for contact forms and information</p>
           </div>
 
-            <p className="text-sm text-gray-600 mt-8">
+          <p className="text-sm text-gray-600 mt-8">
               These Terms of Service are designed to comply with applicable laws including Indian contract law, education regulations, and consumer protection laws. Last reviewed: January 29, 2026.
-            </p>
+          </p>
           </div>
         </div>
       </main>

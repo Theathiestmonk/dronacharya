@@ -293,95 +293,213 @@ class GoogleDWDService:
             
             def _make_assertion_class_patch(self):
                 """Class-level patch to ensure JWT has correct format for DWD"""
+                # Log that patch is being called
+                is_dwd = hasattr(self, '_subject') and self._subject
+                api_type = getattr(_thread_local, 'dwd_api_type', None)
+                if is_dwd:
+                    print(f"   🔍 [CLASS PATCH] _make_assertion_class_patch called for DWD (API: {api_type})")
+                
                 # Call original to get the JWT
                 assertion = original_make_assertion_class(self)
                 
                 # If this is a DWD request (has subject), ensure JWT format is correct
-                if hasattr(self, '_subject') and self._subject:
+                if is_dwd:
                     try:
+                        print(f"   🔍 [CLASS PATCH] Processing DWD JWT (API: {api_type})...")
                         # Decode JWT without verification
                         decoded = jwt.decode(assertion, options={"verify_signature": False})
+                        print(f"   🔍 [CLASS PATCH] JWT decoded successfully, keys: {list(decoded.keys())}")
                         
-                        # CRITICAL: For DWD, Google might require scopes in BOTH JWT and request body
-                        # OR it might require scopes in JWT but NOT in request body
-                        # The error "Empty or missing scope not allowed" suggests Google is checking JWT for scopes
-                        # Let's try adding authorized scopes to JWT assertion for DWD
+                        # CRITICAL: For Domain-Wide Delegation, Google REQUIRES scope field in JWT
+                        # The scope must match EXACTLY what's authorized in Admin Console
+                        # IMPORTANT: Use API-specific scopes (Calendar worked with 2 scopes, not all 8)
+                        # This matches the pattern that worked for Calendar API
                         
-                        # Determine which scopes to include based on API type
                         api_type = getattr(_thread_local, 'dwd_api_type', None)
                         
-                        if api_type == 'classroom':
-                            scopes_for_jwt = [
-                                'https://www.googleapis.com/auth/classroom.courses.readonly',
-                                'https://www.googleapis.com/auth/classroom.rosters.readonly',
-                                'https://www.googleapis.com/auth/classroom.announcements.readonly',
-                                'https://www.googleapis.com/auth/classroom.coursework.students.readonly',
-                                'https://www.googleapis.com/auth/classroom.student-submissions.students.readonly',
-                                'https://www.googleapis.com/auth/classroom.student-submissions.me.readonly'
-                            ]
-                        elif api_type == 'calendar':
-                            scopes_for_jwt = [
-                                'https://www.googleapis.com/auth/calendar.readonly',
-                                'https://www.googleapis.com/auth/calendar.events.readonly'
-                            ]
-                        else:
-                            # Fallback: use all authorized scopes
-                            scopes_for_jwt = [
-                                'https://www.googleapis.com/auth/classroom.courses.readonly',
-                                'https://www.googleapis.com/auth/classroom.rosters.readonly',
-                                'https://www.googleapis.com/auth/classroom.announcements.readonly',
-                                'https://www.googleapis.com/auth/classroom.coursework.students.readonly',
-                                'https://www.googleapis.com/auth/classroom.student-submissions.students.readonly',
-                                'https://www.googleapis.com/auth/classroom.student-submissions.me.readonly',
-                                'https://www.googleapis.com/auth/calendar.readonly',
-                                'https://www.googleapis.com/auth/calendar.events.readonly'
-                            ]
+                        # Define authorized scopes (must match Admin Console exactly)
+                        # CRITICAL: According to admin.py, classroom.coursework.readonly is DEPRECATED
+                        # Using only VALID scopes that Google still supports
+                        # Note: admin.py says coursework.readonly and student-submissions.readonly are deprecated
+                        # But we're using student-submissions.students.readonly (different scope)
+                        CLASSROOM_SCOPES = [
+                            'https://www.googleapis.com/auth/classroom.courses.readonly',
+                            'https://www.googleapis.com/auth/classroom.rosters.readonly',
+                            'https://www.googleapis.com/auth/classroom.coursework.students.readonly',  # For assignment details
+                            'https://www.googleapis.com/auth/classroom.student-submissions.students.readonly',  # For submission status (all students, can filter by student)
+                            'https://www.googleapis.com/auth/classroom.announcements.readonly'
+                        ]
+                        print(f"   ✅ [CLASS PATCH] Using 5 valid Classroom scopes (including coursework.students.readonly)")
                         
-                        # Check if JWT already has scope
-                        if 'scope' not in decoded or not decoded.get('scope'):
-                            print(f"   🔍 [CLASS PATCH] JWT has no scope - adding authorized scopes for DWD...")
-                            print(f"   🔍 [CLASS PATCH] API type: {api_type or 'unknown'}, adding {len(scopes_for_jwt)} scopes to JWT")
-                            print(f"   🔍 [CLASS PATCH] Scopes to add: {', '.join([s.split('/')[-1] for s in scopes_for_jwt])}")
+                        CALENDAR_SCOPES = [
+                            'https://www.googleapis.com/auth/calendar.readonly',
+                            'https://www.googleapis.com/auth/calendar.events.readonly'
+                        ]
+                        
+                        DIRECTORY_SCOPES = [
+                            'https://www.googleapis.com/auth/admin.directory.user.readonly'
+                        ]
+                        
+                        # Use API-specific scopes (Calendar works with this approach)
+                        # For Classroom, use ONLY Classroom scopes (5 scopes) - matching Calendar's approach
+                        if api_type == 'classroom':
+                            # Use ONLY Classroom scopes (5 scopes) - matching Calendar's approach of using only API-specific scopes
+                            scopes_for_jwt = CLASSROOM_SCOPES
+                            scope_type_name = "Classroom (API-specific only)"
+                            print(f"   🔍 [CLASS PATCH] Using ONLY Classroom scopes (5 scopes) - matching Calendar's approach")
+                        elif api_type == 'calendar':
+                            # Calendar works with API-specific scopes
+                            scopes_for_jwt = CALENDAR_SCOPES
+                            scope_type_name = "Calendar"
+                        else:
+                            # Fallback: use all scopes
+                            scopes_for_jwt = CLASSROOM_SCOPES + CALENDAR_SCOPES + DIRECTORY_SCOPES
+                            scope_type_name = "All"
+                        
+                        # Log scope list for debugging (fixed to show correct API type)
+                        print(f"   🔍 [CLASS PATCH] {scope_type_name} scopes to use: {len(scopes_for_jwt)} scopes")
+                        for i, scope in enumerate(scopes_for_jwt, 1):
+                            print(f"      {i}. {scope}")
+                        
+                        existing_scope = decoded.get('scope', '')
+                        existing_scope_list = existing_scope.split() if existing_scope else []
+                        # Ensure scope string is clean: single space between scopes, no leading/trailing spaces
+                        scope_string = ' '.join(scopes_for_jwt).strip()
+                        
+                        # Validate scope string format
+                        if not scope_string or len(scope_string.split()) != len(scopes_for_jwt):
+                            print(f"⚠️  [CLASS PATCH] WARNING: Scope string validation failed!")
+                            print(f"   Scope count: expected {len(scopes_for_jwt)}, got {len(scope_string.split())}")
+                            print(f"   Scope string length: {len(scope_string)}")
+                            print(f"   Scope string: {scope_string[:100]}...")
+                        
+                        # For all APIs, continue with re-signing to ensure correct scopes
+                        # Check if credentials already have correct scopes set
+                        # If so, the JWT should already be correct - don't re-sign
+                        credentials_has_scopes = False
+                        if hasattr(self, 'scopes'):
+                            cred_scopes = getattr(self, 'scopes', None)
+                            if cred_scopes and api_type == 'classroom':
+                                # Check if credentials have Classroom scopes
+                                classroom_scope_list = [
+                                    'https://www.googleapis.com/auth/classroom.courses.readonly',
+                                    'https://www.googleapis.com/auth/classroom.rosters.readonly',
+                                    'https://www.googleapis.com/auth/classroom.coursework.students.readonly',  # For assignment details
+                                    'https://www.googleapis.com/auth/classroom.student-submissions.students.readonly',
+                                    'https://www.googleapis.com/auth/classroom.announcements.readonly'
+                                ]
+                                if set(cred_scopes) == set(classroom_scope_list):
+                                    print(f"   ✅ [CLASS PATCH] Credentials already have correct Classroom scopes - using original JWT")
+                                    credentials_has_scopes = True
+                                    return assertion  # Use original JWT - it should be correct
+        
+                        # Always ensure JWT has scope field with ONLY authorized scopes
+                        if existing_scope != scope_string and not credentials_has_scopes:
+                            print(f"   🔍 [CLASS PATCH] JWT scope mismatch detected!")
+                            if existing_scope:
+                                print(f"   🔍 [CLASS PATCH] Existing scopes ({len(existing_scope_list)}): {', '.join([s.split('/')[-1] for s in existing_scope_list[:5]])}...")
+                            else:
+                                print(f"   🔍 [CLASS PATCH] JWT has no scope field - adding authorized scopes")
+                            print(f"   🔍 [CLASS PATCH] Replacing with API-specific authorized scopes ({len(scopes_for_jwt)}): {', '.join([s.split('/')[-1] for s in scopes_for_jwt[:5]])}...")
                             
                             # Get the signer from credentials
                             if hasattr(self, '_signer') and self._signer:
                                 import time
+                                from google.auth import jwt as google_jwt
                                 
-                                # Create new JWT WITH scope (space-separated string)
+                                # Create new JWT using Google's official JWT encoding library
+                                # This ensures the JWT format exactly matches what Google expects
                                 now = int(time.time())
-                                header = {'alg': 'RS256', 'typ': 'JWT'}
                                 
-                                # Build payload WITH scope for DWD
-                                scope_string = ' '.join(scopes_for_jwt)
-                                payload = {
-                                    'iss': decoded.get('iss'),
-                                    'sub': decoded.get('sub'),
-                                    'aud': decoded.get('aud'),
-                                    'iat': decoded.get('iat', now),
-                                    'exp': decoded.get('exp', now + 3600),
-                                    'scope': scope_string  # Add scope to JWT for DWD
-                                }
+                                # Build payload using OrderedDict to preserve field order (might matter for Google)
+                                # Use the exact same field order as the original JWT
+                                from collections import OrderedDict
                                 
-                                # Sign the JWT
-                                segments = []
-                                segments.append(base64.urlsafe_b64encode(json.dumps(header).encode('utf-8')).decode('utf-8').rstrip('='))
-                                segments.append(base64.urlsafe_b64encode(json.dumps(payload).encode('utf-8')).decode('utf-8').rstrip('='))
+                                # Get original field order from decoded JWT
+                                original_keys = list(decoded.keys())
                                 
-                                signing_input = '.'.join(segments)
-                                signature = self._signer.sign(signing_input.encode('utf-8'))
-                                segments.append(base64.urlsafe_b64encode(signature).decode('utf-8').rstrip('='))
+                                # Build payload preserving original order, only changing scope
+                                payload = OrderedDict()
+                                for key in original_keys:
+                                    if key == 'scope':
+                                        payload['scope'] = scope_string  # Replace with authorized scopes
+                                    elif key == 'aud':
+                                        payload['aud'] = 'https://oauth2.googleapis.com/token'  # Ensure correct aud
+                                    else:
+                                        payload[key] = decoded.get(key)
                                 
-                                assertion = '.'.join(segments).encode('utf-8')
-                                print(f"✅ [CLASS PATCH] Re-signed JWT WITH scope field for DWD ({len(scopes_for_jwt)} scopes)")
+                                # If scope wasn't in original, add it at the end
+                                if 'scope' not in payload:
+                                    payload['scope'] = scope_string
+                                
+                                # Ensure aud is correct
+                                payload['aud'] = 'https://oauth2.googleapis.com/token'
+                                
+                                # Convert OrderedDict to regular dict (Google's library might not handle OrderedDict)
+                                payload_dict = dict(payload)
+                                
+                                print(f"   🔍 [CLASS PATCH] Payload field order: {list(payload_dict.keys())}")
+                                
+                                # Use Google's official JWT encoding library
+                                # This ensures proper formatting and signature that Google will accept
+                                try:
+                                    # Log payload details for debugging
+                                    print(f"   🔍 [CLASS PATCH] JWT payload details:")
+                                    print(f"      iss: {payload_dict['iss']}")
+                                    print(f"      sub: {payload_dict['sub']}")
+                                    print(f"      aud: {payload_dict['aud']}")
+                                    print(f"      scope count: {len(scopes_for_jwt)}")
+                                    print(f"      scope string length: {len(scope_string)}")
+                                    print(f"      scope string (exact): {repr(scope_string)}")
+                                    print(f"      scope string (hex): {scope_string.encode('utf-8').hex()}")
+                                    # Verify each scope individually
+                                    for i, scope in enumerate(scopes_for_jwt, 1):
+                                        print(f"      Scope {i}: {repr(scope)} (length: {len(scope)})")
+                                    
+                                    assertion = google_jwt.encode(self._signer, payload_dict)
+                                    if isinstance(assertion, str):
+                                        assertion = assertion.encode('utf-8')
+                                    
+                                    # Verify the re-signed JWT can be decoded (signature check)
+                                    try:
+                                        decoded_check = jwt.decode(assertion, options={"verify_signature": False})
+                                        if decoded_check.get('scope') == scope_string:
+                                            print(f"✅ [CLASS PATCH] Re-signed JWT verified - has correct scopes")
+                                        else:
+                                            print(f"⚠️  [CLASS PATCH] Re-signed JWT scope mismatch!")
+                                    except Exception as verify_err:
+                                        print(f"⚠️  [CLASS PATCH] Could not verify re-signed JWT: {verify_err}")
+                                    
+                                    print(f"✅ [CLASS PATCH] Re-signed JWT using Google's JWT library with {len(scopes_for_jwt)} scopes")
+                                except Exception as jwt_error:
+                                    print(f"⚠️  [CLASS PATCH] Google JWT encoding failed: {jwt_error}")
+                                    print(f"⚠️  [CLASS PATCH] Falling back to manual encoding...")
+                                    # Fallback to manual encoding if Google's library fails
+                                    header = {'alg': 'RS256', 'typ': 'JWT'}
+                                    header_b64 = base64.urlsafe_b64encode(
+                                        json.dumps(header, separators=(',', ':')).encode('utf-8')
+                                    ).decode('utf-8').rstrip('=')
+                                    payload_b64 = base64.urlsafe_b64encode(
+                                        json.dumps(payload, separators=(',', ':')).encode('utf-8')
+                                    ).decode('utf-8').rstrip('=')
+                                    signing_input = f"{header_b64}.{payload_b64}".encode('utf-8')
+                                    signature = self._signer.sign(signing_input)
+                                    signature_b64 = base64.urlsafe_b64encode(signature).decode('utf-8').rstrip('=')
+                                    assertion = f"{header_b64}.{payload_b64}.{signature_b64}".encode('utf-8')
+                                    print(f"✅ [CLASS PATCH] Re-signed JWT manually with {len(scopes_for_jwt)} scopes")
                             else:
                                 print(f"⚠️  [CLASS PATCH] Cannot re-sign JWT - no signer available")
                         else:
-                            existing_scope = decoded.get('scope', '')
-                            print(f"   🔍 [CLASS PATCH] JWT already has scope: '{existing_scope[:100]}...'")
+                            print(f"   ✅ [CLASS PATCH] JWT already has correct authorized scopes ({len(scopes_for_jwt)} scopes)")
                     except Exception as e:
-                        print(f"⚠️  [CLASS PATCH] Could not process JWT: {e}")
+                        print(f"❌ [CLASS PATCH] ERROR: Could not process JWT: {e}")
+                        print(f"   🔍 [CLASS PATCH] Exception type: {type(e).__name__}")
                         import traceback
+                        print(f"   🔍 [CLASS PATCH] Full traceback:")
                         traceback.print_exc()
+                        # Return original assertion if we can't process it
+                        print(f"   ⚠️  [CLASS PATCH] Returning original JWT (unmodified)")
+                        return assertion
                 
                 return assertion
             
@@ -396,20 +514,20 @@ class GoogleDWDService:
             patch_info.append("_make_authorization_grant_assertion")
             print(f"✅ Monkey-patched ServiceAccountCredentials class ({' + '.join(patch_info)})")
         
-        # CRITICAL: Patch _token_endpoint_request to ADD authorized scopes to request body for DWD
-        # Note: Scopes are primarily included in JWT assertion (see _make_assertion_class_patch above)
-        # We also add them to request body for compatibility
+        # CRITICAL: Patch _token_endpoint_request to REMOVE scope from request body for DWD
+        # Note: For Domain-Wide Delegation, Google requires scopes ONLY in JWT assertion, NOT in request body
+        # Adding scope to request body causes "Invalid downscoping" error
         if not hasattr(oauth2_client, '_original_token_endpoint_request'):
             original_token_endpoint_request = oauth2_client._token_endpoint_request
             
-            # Define scopes for each API type (must match Admin Console)
+            # Define scopes for each API type (must match Admin Console exactly)
+            # NOTE: classroom.coursework.readonly is DEPRECATED - using coursework.students.readonly instead
             DWD_CLASSROOM_SCOPES = [
                 'https://www.googleapis.com/auth/classroom.courses.readonly',
                 'https://www.googleapis.com/auth/classroom.rosters.readonly',
-                'https://www.googleapis.com/auth/classroom.announcements.readonly',
-                'https://www.googleapis.com/auth/classroom.coursework.students.readonly',
-                'https://www.googleapis.com/auth/classroom.student-submissions.students.readonly',
-                'https://www.googleapis.com/auth/classroom.student-submissions.me.readonly'
+                'https://www.googleapis.com/auth/classroom.coursework.students.readonly',  # For assignment details
+                'https://www.googleapis.com/auth/classroom.student-submissions.students.readonly',  # For submission status (all students, can filter by student)
+                'https://www.googleapis.com/auth/classroom.announcements.readonly'
             ]
             
             DWD_CALENDAR_SCOPES = [
@@ -417,12 +535,18 @@ class GoogleDWDService:
                 'https://www.googleapis.com/auth/calendar.events.readonly'
             ]
             
+            DWD_DIRECTORY_SCOPES = [
+                'https://www.googleapis.com/auth/admin.directory.user.readonly'
+            ]
+            
             # All authorized scopes (for fallback)
-            DWD_ALL_SCOPES = DWD_CLASSROOM_SCOPES + DWD_CALENDAR_SCOPES
+            DWD_ALL_SCOPES = DWD_CLASSROOM_SCOPES + DWD_CALENDAR_SCOPES + DWD_DIRECTORY_SCOPES
             
             def _token_endpoint_request_intercept(request, token_uri, body, **kwargs):
-                """Intercept _token_endpoint_request to ADD authorized scopes to request body for DWD"""
-                # Check if this is a DWD request by looking at the assertion in the body
+                """Intercept _token_endpoint_request to REMOVE scope from request body for DWD"""
+                # CRITICAL: For Domain-Wide Delegation, Google does NOT want scope in request body
+                # Scopes should ONLY be in the JWT assertion, not as a request parameter
+                # This prevents "Invalid downscoping" errors
                 if isinstance(body, dict) and 'assertion' in body:
                     try:
                         assertion = body['assertion']
@@ -430,45 +554,36 @@ class GoogleDWDService:
                             assertion = assertion.decode('utf-8')
                         decoded = jwt.decode(assertion, options={"verify_signature": False})
                         
-                        # If JWT has 'sub' but no 'scope' or empty 'scope', it's a DWD request
-                        if 'sub' in decoded and ('scope' not in decoded or not decoded.get('scope')):
-                            print(f"   🔍 [TOKEN_REQUEST INTERCEPT] DWD request detected, adding authorized scopes to request body...")
-                            print(f"   🔍 [TOKEN_REQUEST INTERCEPT] Request body keys (before): {list(body.keys())}")
+                        # If JWT has 'sub', it's a DWD request - REMOVE scope from request body
+                        if 'sub' in decoded:
+                            print(f"   🔍 [TOKEN_REQUEST INTERCEPT] DWD request detected - removing scope from request body...")
                             
-                            # Determine which scopes to send based on API type
-                            # Get API type from thread-local storage (set when service is built)
+                            # Get API type for logging
                             api_type = getattr(_thread_local, 'dwd_api_type', None)
                             
-                            # CRITICAL: For DWD, send only the scopes relevant to the API being called
-                            # This prevents sending invalid scopes that might cause Google to reject
-                            if api_type == 'classroom':
-                                scopes_to_send = DWD_CLASSROOM_SCOPES
-                                print(f"   🔍 [TOKEN_REQUEST INTERCEPT] Classroom API detected - sending {len(scopes_to_send)} Classroom scopes")
-                            elif api_type == 'calendar':
-                                scopes_to_send = DWD_CALENDAR_SCOPES
-                                print(f"   🔍 [TOKEN_REQUEST INTERCEPT] Calendar API detected - sending {len(scopes_to_send)} Calendar scopes")
+                            # Check if scope exists in request body
+                            if 'scope' in body:
+                                removed_scope = body.get('scope', '')
+                                print(f"   🔍 [TOKEN_REQUEST INTERCEPT] Removing scope parameter from request body")
+                                print(f"   🔍 [TOKEN_REQUEST INTERCEPT] Removed scope: {removed_scope[:100] if removed_scope else 'None'}...")
+                                
+                                # Create a new dict without the scope parameter
+                                modified_body = dict(body)
+                                del modified_body['scope']
+                                body = modified_body
+                                
+                                print(f"✅ [TOKEN_REQUEST INTERCEPT] Removed scope from request body (scopes are in JWT only)")
                             else:
-                                # Fallback: if we can't determine, send all scopes
-                                scopes_to_send = DWD_ALL_SCOPES
-                                print(f"   ⚠️  [TOKEN_REQUEST INTERCEPT] API type not detected - sending all {len(scopes_to_send)} scopes as fallback")
-                            
-                            # Create a new dict to ensure modifications are preserved
-                            modified_body = dict(body)
-                            scope_string = ' '.join(scopes_to_send)
-                            modified_body['scope'] = scope_string
-                            body = modified_body
-                            
-                            print(f"✅ [TOKEN_REQUEST INTERCEPT] Added {len(scopes_to_send)} authorized scopes to request body")
-                            print(f"   🔍 [TOKEN_REQUEST INTERCEPT] Scopes: {scope_string[:150]}...")
-                            
-                            print(f"✅ [TOKEN_REQUEST INTERCEPT] Added authorized scopes to request body")
-                            print(f"   🔍 [TOKEN_REQUEST INTERCEPT] Scope string: {scope_string}")
-                            print(f"   🔍 [TOKEN_REQUEST INTERCEPT] Full scope string length: {len(scope_string)}")
-                            print(f"   🔍 [TOKEN_REQUEST INTERCEPT] Request body keys (after): {list(body.keys())}")
-                            print(f"   🔍 [TOKEN_REQUEST INTERCEPT] Scope value in body: {body.get('scope', 'NOT FOUND')[:200]}...")
+                                print(f"   ✅ [TOKEN_REQUEST INTERCEPT] Request body already has no scope parameter (correct)")
                             
                             # Log the JWT payload for debugging
-                            print(f"   🔍 [TOKEN_REQUEST INTERCEPT] JWT payload: {decoded}")
+                            jwt_scope = decoded.get('scope', '')
+                            jwt_scope_count = len(jwt_scope.split()) if jwt_scope else 0
+                            if jwt_scope_count > 0:
+                                print(f"   ✅ [TOKEN_REQUEST INTERCEPT] JWT has {jwt_scope_count} authorized scopes (required for DWD)")
+                            else:
+                                print(f"   ⚠️  [TOKEN_REQUEST INTERCEPT] JWT has no scopes - this will cause 'Empty or missing scope not allowed' error")
+                            print(f"   🔍 [TOKEN_REQUEST INTERCEPT] API type: {api_type or 'unknown'}")
                             print(f"   🔍 [TOKEN_REQUEST INTERCEPT] Service account: {decoded.get('iss')}")
                             print(f"   🔍 [TOKEN_REQUEST INTERCEPT] Impersonating user: {decoded.get('sub')}")
                             print(f"   🔍 [TOKEN_REQUEST INTERCEPT] Token URI: {token_uri}")
@@ -504,7 +619,7 @@ class GoogleDWDService:
             
             oauth2_client._original_token_endpoint_request = original_token_endpoint_request
             oauth2_client._token_endpoint_request = _token_endpoint_request_intercept
-            print(f"✅ Monkey-patched _token_endpoint_request to ADD authorized scopes to request body for DWD")
+            print(f"✅ Monkey-patched _token_endpoint_request to REMOVE scope from request body for DWD (scopes in JWT only)")
         
         # CRITICAL: Also patch jwt_grant at the module level to intercept ALL JWT assertions
         # This is for logging/debugging only - scope is added in _token_endpoint_request
@@ -542,9 +657,13 @@ class GoogleDWDService:
                     import traceback
                     traceback.print_exc()
                 
-                # Note: Scope will be added in _token_endpoint_request intercept
+                # Note: For DWD, scope MUST be in JWT and match Admin Console authorization
                 if is_dwd:
-                    print(f"   🔍 [JWT_GRANT INTERCEPT] DWD request - scopes will be added in _token_endpoint_request")
+                    if 'scope' in decoded:
+                        jwt_scope_count = len(decoded.get('scope', '').split())
+                        print(f"   ✅ [JWT_GRANT INTERCEPT] DWD request has scope in JWT ({jwt_scope_count} scopes)")
+                    else:
+                        print(f"   ⚠️  [JWT_GRANT INTERCEPT] DWD request missing scope in JWT - should have authorized scopes")
                 
                 print(f"   🔍 [JWT_GRANT INTERCEPT] Calling original jwt_grant()...")
                 result = original_jwt_grant(request, token_uri, assertion)
@@ -855,27 +974,60 @@ class GoogleDWDService:
         # This ensures the JWT creation can detect which API is being used
         _thread_local.dwd_api_type = 'classroom'
         
+        # EXPERIMENTAL: For Classroom, try setting scopes on credentials BEFORE JWT creation
+        # This might allow Google's library to create the JWT naturally with correct scopes
         credentials = self._get_delegated_credentials(user_email)
+        
+        # Try setting Classroom scopes temporarily on credentials
+        # This might allow Google to create JWT with correct scopes naturally
+        classroom_scopes = [
+            'https://www.googleapis.com/auth/classroom.courses.readonly',
+            'https://www.googleapis.com/auth/classroom.rosters.readonly',
+            'https://www.googleapis.com/auth/classroom.coursework.students.readonly',  # For assignment details
+            'https://www.googleapis.com/auth/classroom.student-submissions.students.readonly',
+            'https://www.googleapis.com/auth/classroom.announcements.readonly'
+        ]
+        
+        print(f"   🔍 [CLASSROOM SERVICE] Attempting to set scopes on credentials before JWT creation...")
+        try:
+            # Set scopes on credentials - this might allow Google to create JWT with correct scopes
+            credentials = credentials.with_scopes(classroom_scopes)
+            print(f"   ✅ [CLASSROOM SERVICE] Set {len(classroom_scopes)} scopes on credentials")
+        except Exception as scope_err:
+            print(f"   ⚠️  [CLASSROOM SERVICE] Could not set scopes: {scope_err}")
+            # Continue without setting scopes - the patch will handle it
         # Mark API type in credentials object as well
         if hasattr(credentials, '_dwd_api_type'):
             credentials._dwd_api_type = 'classroom'
         
-        # Final check: ensure credentials have no scopes before building service
-        # CRITICAL: build() might add scopes, so we need to prevent that
+        # EXPERIMENTAL: For Classroom, keep the scopes we just set
+        # Don't clear them - let Google create JWT with these scopes naturally
+        # Check if we successfully set scopes
+        has_classroom_scopes = False
         if hasattr(credentials, 'scopes'):
             scope_val = getattr(credentials, 'scopes', None)
-            if scope_val:
-                print(f"⚠️  WARNING: Credentials have scopes before building Classroom service: {scope_val}")
-                print(f"⚠️  Attempting to clear scopes...")
-                try:
-                    credentials = credentials.with_scopes(None)
-                except:
-                    pass
-        # Also check and clear private _scopes
-        if hasattr(credentials, '_scopes'):
-            if credentials._scopes:
-                print(f"⚠️  WARNING: Credentials have _scopes before building: {credentials._scopes}")
-                credentials._scopes = None
+            if scope_val and len(scope_val) == len(classroom_scopes):
+                print(f"   ✅ [CLASSROOM SERVICE] Credentials have Classroom scopes set - keeping them")
+                has_classroom_scopes = True
+            elif scope_val:
+                print(f"   ⚠️  [CLASSROOM SERVICE] Credentials have unexpected scopes: {scope_val}")
+        
+        # Only clear scopes if we didn't successfully set Classroom scopes
+        if not has_classroom_scopes:
+            if hasattr(credentials, 'scopes'):
+                scope_val = getattr(credentials, 'scopes', None)
+                if scope_val:
+                    print(f"⚠️  WARNING: Credentials have scopes before building Classroom service: {scope_val}")
+                    print(f"⚠️  Attempting to clear scopes...")
+                    try:
+                        credentials = credentials.with_scopes(None)
+                    except:
+                        pass
+            # Also check and clear private _scopes
+            if hasattr(credentials, '_scopes'):
+                if credentials._scopes:
+                    print(f"⚠️  WARNING: Credentials have _scopes before building: {credentials._scopes}")
+                    credentials._scopes = None
         
         # Build service - explicitly don't pass any scopes
         # The credentials object should have no scopes, so build() shouldn't add any
@@ -939,8 +1091,36 @@ class GoogleDWDService:
             error_str = str(e)
             print(f"❌ DWD: Failed to fetch courses for {user_email}: {error_str}")
             
+            # Check for "is not a valid audience string" error - this usually means scope not authorized
+            if 'invalid_scope' in error_str.lower() and 'is not a valid audience string' in error_str.lower():
+                print(f"   ⚠️  'invalid_scope: ... is not a valid audience string' error detected!")
+                print(f"   This error means one or more Classroom scopes are NOT authorized in Admin Console.")
+                print(f"   The error message mentions a scope that Google doesn't recognize as authorized.")
+                print(f"   ")
+                print(f"   SOLUTION:")
+                print(f"   1. Go to: https://admin.google.com")
+                print(f"   2. Navigate to: Security > API Controls > Domain-wide Delegation")
+                print(f"   3. Find your Client ID: {self._get_client_id()}")
+                print(f"   4. Click 'Edit' or delete and re-add the authorization")
+                print(f"   5. Make sure VALID Classroom scopes are listed:")
+                print(f"      https://www.googleapis.com/auth/classroom.courses.readonly")
+                print(f"      https://www.googleapis.com/auth/classroom.rosters.readonly")
+                print(f"      https://www.googleapis.com/auth/classroom.coursework.students.readonly")
+                print(f"      https://www.googleapis.com/auth/classroom.student-submissions.students.readonly")
+                print(f"      https://www.googleapis.com/auth/classroom.announcements.readonly")
+                print(f"      NOTE: classroom.coursework.readonly is DEPRECATED - use coursework.students.readonly instead")
+                print(f"   6. Also include the 2 Calendar scopes (Calendar works, so these are correct):")
+                print(f"      https://www.googleapis.com/auth/calendar.readonly")
+                print(f"      https://www.googleapis.com/auth/calendar.events.readonly")
+                print(f"   7. And the Directory scope:")
+                print(f"      https://www.googleapis.com/auth/admin.directory.user.readonly")
+                print(f"   8. Click 'Authorize' and wait 15-30 minutes for changes to propagate")
+                print(f"   ")
+                print(f"   NOTE: Calendar API works, which means your Client ID IS authorized.")
+                print(f"   The issue is that Classroom scopes specifically are missing or incorrect.")
+            
             # Check for different error types
-            if 'invalid_scope' in error_str.lower() and 'empty or missing scope not allowed' in error_str.lower():
+            elif 'invalid_scope' in error_str.lower() and 'empty or missing scope not allowed' in error_str.lower():
                 print(f"   ⚠️  'invalid_scope: Empty or missing scope not allowed' error detected!")
                 print(f"   This usually means:")
                 print(f"   1. Client ID not properly authorized in Google Workspace Admin Console")
