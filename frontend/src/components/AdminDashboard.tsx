@@ -1,4 +1,5 @@
 "use client";
+// Admin Dashboard Component - Updated for redeploy
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/providers/AuthProvider';
