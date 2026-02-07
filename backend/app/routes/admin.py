@@ -1870,6 +1870,18 @@ async def sync_individual_website(url: str, email: Optional[str] = None):
         if 'error' in content:
             raise HTTPException(status_code=400, detail=f"Error crawling URL: {content['error']}")
         
+        # For calendar pages, always extract and store calendar events (even if page content is cached)
+        if 'calendar' in url.lower():
+            print(f"[Admin] Calendar page detected, extracting calendar events...")
+            try:
+                calendar_info = crawler.extract_calendar_events_with_selenium(url, query="")
+                if calendar_info:
+                    print(f"[Admin] ✅ Calendar events extracted and stored")
+                    content['main_content'] += "\n\n" + calendar_info
+            except Exception as e:
+                print(f"[Admin] ⚠️ Warning: Failed to extract calendar events: {e}")
+                # Don't fail the sync if calendar extraction fails, just log it
+        
         # Extract keywords
         keywords = []
         if content.get('title'):

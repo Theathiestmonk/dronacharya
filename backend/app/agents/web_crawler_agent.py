@@ -1395,15 +1395,34 @@ class WebCrawlerAgent:
             print(f"[WebCrawler] Current date: {current_date}")
             
             def parse_event_date(event_text: str) -> date:
-                """Parse date from event text and return date object"""
+                """Parse date from event text and return date object. Handles date ranges too."""
                 try:
+                    # First, try to parse date ranges (e.g., "MON 16 MAR - SUN 05 APR")
+                    date_range_pattern = r'(MON|TUE|WED|THU|FRI|SAT|SUN)?\s*(\d{1,2})\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s*-\s*(MON|TUE|WED|THU|FRI|SAT|SUN)?\s*(\d{1,2})\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)'
+                    range_match = re.search(date_range_pattern, event_text.upper())
+                    if range_match:
+                        # For date ranges, use the start date
+                        day = int(range_match.group(2))
+                        month_abbr = range_match.group(3)
+                        month_map = {
+                            'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4, 'MAY': 5, 'JUN': 6,
+                            'JUL': 7, 'AUG': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12
+                        }
+                        month = month_map.get(month_abbr)
+                        if month:
+                            year = current_date.year
+                            # If the month is before current month, assume next year
+                            if month < current_date.month:
+                                year += 1
+                            return date(year, month, day)
+                    
                     # Look for date patterns like "MON 20 OCT", "20 OCT", "OCT 20", "20/10", etc.
                     date_patterns = [
+                        r'(MON|TUE|WED|THU|FRI|SAT|SUN)\s+(\d{1,2})\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)',  # MON 20 OCT
                         r'(\d{1,2})\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)',  # 20 OCT
                         r'(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+(\d{1,2})',  # OCT 20
                         r'(\d{1,2})/(\d{1,2})',  # 20/10
                         r'(\d{1,2})-(\d{1,2})',  # 20-10
-                        r'(MON|TUE|WED|THU|FRI|SAT|SUN)\s+(\d{1,2})\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)',  # MON 20 OCT
                     ]
                     
                     month_map = {
@@ -1426,13 +1445,17 @@ class WebCrawlerAgent:
                                     day = int(groups[0])
                                     month = int(groups[1])
                                 
-                                # Assume current year for now
+                                # Assume current year, but if month is before current month, use next year
                                 year = current_date.year
+                                if month < current_date.month:
+                                    year += 1
                                 return date(year, month, day)
                             elif len(groups) == 3:  # Day name + day + month (MON 20 OCT)
                                 day = int(groups[1])
                                 month = month_map[groups[2]]
                                 year = current_date.year
+                                if month < current_date.month:
+                                    year += 1
                                 return date(year, month, day)
                 except Exception as e:
                     pass
@@ -1503,38 +1526,134 @@ class WebCrawlerAgent:
             
             try:
                 driver.get(url)
-                time.sleep(2)  # Wait for page to load
+                time.sleep(3)  # Wait for page to load
                 
                 calendar_events = []
+                all_extracted_events = []  # Store all events from all months
                 
-                # Look for event elements with various selectors
-                event_selectors = [
-                    ".event", ".events", ".calendar-event", ".event-item",
-                    ".event-title", ".event-date", ".event-description",
-                    "[class*='event']", "[id*='event']", "[data-event]",
-                    ".schedule", ".agenda", ".program", ".activity",
-                    ".fc-event", ".calendar-item", ".event-card"
-                ]
+                # Get current year from the page
+                current_year = current_date.year
+                months_to_check = 12  # Check next 12 months from current month
                 
-                for selector in event_selectors:
+                print(f"[WebCrawler] Starting calendar extraction for year {current_year}, checking {months_to_check} months")
+                
+                # Function to extract events from current page view
+                def extract_events_from_current_view():
+                    """Extract all events visible on the current calendar view"""
+                    page_events = []
+                    
+                    # Look for event elements with various selectors
+                    event_selectors = [
+                        ".event", ".events", ".calendar-event", ".event-item",
+                        ".event-title", ".event-date", ".event-description",
+                        "[class*='event']", "[id*='event']", "[data-event]",
+                        ".schedule", ".agenda", ".program", ".activity",
+                        ".fc-event", ".calendar-item", ".event-card",
+                        "[class*='card']", "[class*='item']"  # More generic selectors
+                    ]
+                    
+                    for selector in event_selectors:
+                        try:
+                            elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                            for element in elements:
+                                try:
+                                    event_text = element.text.strip()
+                                    if event_text and len(event_text) > 5:
+                                        # Filter out navigation elements
+                                        if not any(nav_word in event_text.lower() for nav_word in 
+                                                 ['jump months', 'current month', 'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december']):
+                                            # Check if this is an upcoming event
+                                            if is_upcoming_event(event_text, query):
+                                                page_events.append(f"UPCOMING_EVENT: {event_text}")
+                                            else:
+                                                page_events.append(f"PAST_EVENT: {event_text}")
+                                except Exception as e:
+                                    continue
+                        except Exception as e:
+                            continue
+                    
+                    return page_events
+                
+                # Extract events from current month (initial view)
+                print(f"[WebCrawler] Extracting events from current month view...")
+                current_events = extract_events_from_current_view()
+                all_extracted_events.extend(current_events)
+                print(f"[WebCrawler] Found {len(current_events)} events in current view")
+                
+                # Navigate through upcoming months
+                month_names = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
+                              'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER']
+                
+                # Try to navigate using month buttons
+                for month_idx in range(months_to_check):
                     try:
-                        elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                        for element in elements:
+                        # Calculate target month
+                        target_month_idx = (current_date.month - 1 + month_idx) % 12
+                        target_month_name = month_names[target_month_idx]
+                        
+                        # Skip current month (already extracted)
+                        if month_idx == 0:
+                            continue
+                        
+                        print(f"[WebCrawler] Navigating to {target_month_name}...")
+                        
+                        # Try to find and click the month button
+                        month_button = None
+                        try:
+                            # Try exact text match
+                            month_button = driver.find_element(By.XPATH, f"//button[contains(text(), '{target_month_name}')]")
+                        except:
                             try:
-                                event_text = element.text.strip()
-                                if event_text and len(event_text) > 5:
-                                    # Filter out navigation elements
-                                    if not any(nav_word in event_text.lower() for nav_word in 
-                                             ['jump months', 'current month', 'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december']):
-                                        # Check if this is an upcoming event
-                                        if is_upcoming_event(event_text, query):
-                                            calendar_events.append(f"UPCOMING_EVENT: {event_text}")
-                                        else:
-                                            calendar_events.append(f"PAST_EVENT: {event_text}")
+                                # Try case-insensitive
+                                month_button = driver.find_element(By.XPATH, f"//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{target_month_name.lower()}')]")
+                            except:
+                                # Try using navigation arrows
+                                try:
+                                    next_button = driver.find_element(By.CSS_SELECTOR, "button[aria-label*='next'], button[aria-label*='Next'], .next, [class*='next']")
+                                    if next_button and next_button.is_displayed():
+                                        next_button.click()
+                                        time.sleep(2)  # Wait for page to update
+                                except:
+                                    pass
+                        
+                        if month_button and month_button.is_displayed():
+                            driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", month_button)
+                            time.sleep(0.5)
+                            month_button.click()
+                            time.sleep(2)  # Wait for calendar to update
+                            
+                            # Extract events from this month
+                            month_events = extract_events_from_current_view()
+                            if month_events:
+                                print(f"[WebCrawler] Found {len(month_events)} events in {target_month_name}")
+                                all_extracted_events.extend(month_events)
+                            else:
+                                print(f"[WebCrawler] No events found in {target_month_name}")
+                        else:
+                            # If month button not found, try using navigation arrows
+                            try:
+                                next_button = driver.find_element(By.CSS_SELECTOR, "button[aria-label*='next'], button[aria-label*='Next'], .next, [class*='next'], button:has(> .fa-chevron-right), button:has(> .fa-angle-right)")
+                                if next_button and next_button.is_displayed():
+                                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", next_button)
+                                    time.sleep(0.5)
+                                    next_button.click()
+                                    time.sleep(2)  # Wait for calendar to update
+                                    
+                                    # Extract events from this month
+                                    month_events = extract_events_from_current_view()
+                                    if month_events:
+                                        print(f"[WebCrawler] Found {len(month_events)} events after navigation")
+                                        all_extracted_events.extend(month_events)
                             except Exception as e:
-                                continue
+                                print(f"[WebCrawler] Could not navigate to {target_month_name}: {e}")
+                                break  # Stop if navigation fails
                     except Exception as e:
+                        print(f"[WebCrawler] Error navigating to month {month_idx}: {e}")
                         continue
+                
+                # Use all extracted events
+                calendar_events = all_extracted_events
+                print(f"[WebCrawler] Total events extracted from all months: {len(calendar_events)}")
                 
                 # Look for clickable calendar elements that might reveal events
                 try:
@@ -1579,18 +1698,103 @@ class WebCrawlerAgent:
                 upcoming_events = []
                 past_events = []
                 seen_events = set()
+                structured_events = []  # For storing in database
                 
                 for event in calendar_events:
                     if event.startswith("UPCOMING_EVENT"):
                         # Extract the actual event text for deduplication
-                        event_text = event.replace("UPCOMING_EVENT: ", "").strip()
+                        event_text = event.replace("UPCOMING_EVENT: ", "").replace("UPCOMING_EVENT_DETAILS: ", "").strip()
+                        
+                        # Clean up event text: remove newlines, normalize whitespace
+                        event_text_clean = re.sub(r'\s+', ' ', event_text).strip()
+                        
                         # Create a normalized key for deduplication
-                        normalized_key = re.sub(r'\s+', ' ', event_text.upper())
+                        normalized_key = re.sub(r'\s+', ' ', event_text_clean.upper())
                         if normalized_key not in seen_events:
                             upcoming_events.append(event)
                             seen_events.add(normalized_key)
+                            
+                            # Parse event for database storage
+                            event_date = parse_event_date(event_text_clean)
+                            if event_date:
+                                # Check if it's an all-day event
+                                is_all_day = 'all day' in event_text_clean.lower() or '(all day:' in event_text_clean.lower()
+                                
+                                # Extract time if present (look for patterns like "10:00 AM", "14:30", etc.)
+                                event_time = None
+                                if not is_all_day:
+                                    time_match = re.search(r'(\d{1,2}):(\d{2})\s*(AM|PM)?', event_text_clean, re.IGNORECASE)
+                                    if time_match:
+                                        hours = int(time_match.group(1))
+                                        minutes = int(time_match.group(2))
+                                        am_pm = time_match.group(3)
+                                        if am_pm and am_pm.upper() == 'PM' and hours != 12:
+                                            hours += 12
+                                        elif am_pm and am_pm.upper() == 'AM' and hours == 12:
+                                            hours = 0
+                                        event_time = f"{hours:02d}:{minutes:02d}:00"
+                                
+                                # Extract event title (remove date/time info and "All Day" text)
+                                # Try to extract just the event name
+                                title = event_text_clean
+                                # Remove date patterns
+                                title = re.sub(r'(MON|TUE|WED|THU|FRI|SAT|SUN)\s+\d{1,2}\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)', '', title, flags=re.IGNORECASE)
+                                title = re.sub(r'\d{1,2}\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)', '', title, flags=re.IGNORECASE)
+                                title = re.sub(r'(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+\d{1,2}', '', title, flags=re.IGNORECASE)
+                                # Remove "All Day" text
+                                title = re.sub(r'\(?\s*all\s+day[^)]*\)?', '', title, flags=re.IGNORECASE)
+                                # Remove time patterns
+                                title = re.sub(r'\d{1,2}:\d{2}\s*(AM|PM)?', '', title, flags=re.IGNORECASE)
+                                # Clean up extra whitespace
+                                title = re.sub(r'\s+', ' ', title).strip()
+                                
+                                # If title is too short or empty, use original cleaned text
+                                if len(title) < 5:
+                                    title = event_text_clean
+                                
+                                # Determine event type
+                                event_lower = event_text_clean.lower()
+                                event_type = 'upcoming'
+                                if any(fest in event_lower for fest in ['holiday', 'festival', 'diwali', 'holi', 'eid', 'christmas', 'dussehra', 'rakhi']):
+                                    event_type = 'festival'
+                                elif any(word in event_lower for word in ['sports', 'game', 'match', 'tournament', 'athletic']):
+                                    event_type = 'sports'
+                                elif any(word in event_lower for word in ['exam', 'test', 'assessment', 'evaluation']):
+                                    event_type = 'academic'
+                                
+                                # Use cleaned title for description too
+                                description = event_text_clean
+                                
+                                event_data = {
+                                    'event_title': title[:500] if len(title) <= 500 else title[:497] + '...',  # Limit to 500 chars
+                                    'event_date': event_date.isoformat(),
+                                    'event_time': event_time,  # None for all-day events
+                                    'event_description': description[:10000] if len(description) > 500 else description,  # Limit description
+                                    'event_type': event_type,
+                                    'source_url': url,
+                                    'is_active': True
+                                }
+                                structured_events.append(event_data)
+                                print(f"[WebCrawler] 📅 Prepared event for storage: '{event_data['event_title']}' on {event_data['event_date']} (type: {event_data['event_type']})")
                     elif event.startswith("PAST_EVENT"):
                         past_events.append(event)
+                
+                # Store events in calendar_event_data table
+                if structured_events and SUPABASE_AVAILABLE:
+                    try:
+                        supabase = get_supabase_client()
+                        for event_data in structured_events:
+                            try:
+                                # Upsert to avoid duplicates
+                                supabase.table('calendar_event_data').upsert(
+                                    event_data,
+                                    on_conflict='event_title,event_date,source_url'
+                                ).execute()
+                                print(f"[WebCrawler] ✅ Stored calendar event: {event_data['event_title'][:50]}...")
+                            except Exception as e:
+                                print(f"[WebCrawler] ⚠️ Error storing calendar event: {e}")
+                    except Exception as e:
+                        print(f"[WebCrawler] ⚠️ Error connecting to Supabase for calendar storage: {e}")
                 
                 if upcoming_events:
                     print(f"[WebCrawler] Found {len(upcoming_events)} upcoming events")

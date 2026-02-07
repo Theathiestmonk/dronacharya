@@ -348,9 +348,11 @@ def get_admin_data(user_email: str = None,
             if classroom_check.data and len(classroom_check.data) > 0:
                 user_id = classroom_check.data[0]['user_id']
             else:
-                calendar_check = supabase.table('google_calendar_events').select('user_id').limit(1).execute()
-                if calendar_check.data and len(calendar_check.data) > 0:
-                    user_id = calendar_check.data[0]['user_id']
+                # calendar_event_data is global (no user_id), so we just check if it exists
+                # but we can't extract user_id from it - this is just to verify table exists
+                calendar_check = supabase.table('calendar_event_data').select('id').limit(1).execute()
+                # Note: calendar_event_data doesn't have user_id, so we can't use it to find user_id
+                # This check just verifies the table has data
             
             if user_id:
                 print(f"[Chatbot] Using reference data from user ID: {user_id}")
@@ -537,26 +539,43 @@ def get_admin_data(user_email: str = None,
                 course_data["section"] = course.get('section', '')
             formatted_classroom_data.append(course_data)
             
-        # Get calendar data (upcoming events) from normalized table - only if requested
+        # Get calendar data (upcoming events) from website calendar page (calendar_event_data table) - only if requested
         formatted_calendar_data = []
         calendar_events = []  # Initialize to empty list
         if load_calendar:
-            now = datetime.utcnow().isoformat()
-            events_result = supabase.table('google_calendar_events').select('*').eq('user_id', user_id).gte('start_time', now).order('start_time', desc=False).limit(10).execute()
+            from datetime import date, datetime, timezone
+            today = date.today()
+            
+            # Fetch from calendar_event_data table (from website calendar page)
+            events_result = supabase.table('calendar_event_data').select('*').gte('event_date', today.isoformat()).eq('is_active', True).order('event_date', desc=False).order('event_time', desc=False).limit(20).execute()
             calendar_events = events_result.data if events_result.data else []
             
-            print(f"[Chatbot] Found {len(calendar_events)} upcoming calendar events")
+            print(f"[Chatbot] Found {len(calendar_events)} upcoming calendar events from website calendar")
             
-            # Format calendar data
+            # Format calendar data to match expected structure
             for event in calendar_events:
+                # Combine date and time for start_time
+                event_date = event.get('event_date')
+                event_time = event.get('event_time')
+                start_time = None
+                if event_date:
+                    if event_time:
+                        # Combine date and time
+                        start_time = f"{event_date}T{event_time}"
+                    else:
+                        # Just date, assume start of day
+                        start_time = f"{event_date}T00:00:00"
+                
                 formatted_calendar_data.append({
-                        "eventId": event.get('event_id', ''),
-                        "summary": event.get('summary', ''),
-                        "description": event.get('description', ''),
-                        "startTime": event.get('start_time', ''),
-                        "endTime": event.get('end_time', ''),
-                        "location": event.get('location', ''),
-                        "hangoutLink": event.get('hangout_link', '')
+                        "eventId": str(event.get('id', '')),  # Use database ID
+                        "summary": event.get('event_title', ''),
+                        "description": event.get('event_description', ''),
+                        "startTime": start_time,
+                        "endTime": start_time,  # Use same as start if no end time
+                        "location": "",  # Not available from website calendar
+                        "hangoutLink": "",  # Not available from website calendar
+                        "eventType": event.get('event_type', 'upcoming'),  # Add event type
+                        "sourceUrl": event.get('source_url', '')  # Add source URL
                     })
         else:
             print(f"[Chatbot] Skipping calendar data (not requested)")
@@ -1753,12 +1772,37 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     is_holiday_query = any(kw in query_lower for kw in holiday_keywords)
 
     event_keywords = ['event', 'events', 'calendar', 'schedule', 'meeting',
+                      # Date/time question patterns
+                      'when is', 'when will', 'when does', 'when do', 'when are',
+                      'what date', 'what day', 'which date', 'which day',
+                      'date of', 'day of', 'when', 'date', 'dates',
+                      # Week/month patterns
+                      'first week', 'second week', 'third week', 'fourth week', 'last week',
+                      'this week', 'next week', 'upcoming week',
+                      'events in', 'events on', 'events for', 'events during',
+                      'held on', 'held in', 'scheduled on', 'scheduled in',
                       # Hindi calendar keywords (with common typos)
                       'ko kya hai', 'ko kya hota hai', 'ko kaya hai',
                       'ko kya hia', 'kya hai', 'kya hota hai', 'kya hia',
                       'mere school', 'school me', 'schoolm me', 'mere schoolm',
                       'merre schoolm', 'schoolm', 'mere', 'school']
     is_event_query = any(kw in query_lower for kw in event_keywords)
+    
+    # Also check for common event names (sports day, spring break, etc.)
+    # This helps detect queries like "when is sports day" even without explicit event keywords
+    common_event_names = ['sports day', 'spring break', 'book swap', 'session begins', 
+                         'holiday', 'holidays', 'festival', 'festivals', 'diwali', 'holi',
+                         'eid', 'christmas', 'vacation', 'break', 'semester', 'term']
+    has_event_name = any(event_name in query_lower for event_name in common_event_names)
+    
+    # Check for "upcoming events" patterns (even with typos like "even s")
+    upcoming_event_patterns = ['upcoming event', 'upcoming even', 'coming event', 'coming even',
+                              'future event', 'future even', 'next event', 'next even']
+    has_upcoming_pattern = any(pattern in query_lower for pattern in upcoming_event_patterns)
+    
+    # If query has event name, date/time question pattern, or upcoming events pattern, treat as event query
+    if has_event_name or has_upcoming_pattern or any(pattern in query_lower for pattern in ['when is', 'when will', 'what date', 'what day', 'which date', 'which event', 'events on', 'events in', 'held on', 'held in']):
+        is_event_query = True
 
     # Combined calendar query for backward compatibility
     is_calendar_query = is_holiday_query or is_event_query
@@ -1993,7 +2037,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     # AND exclude holiday queries (use classroom data, not admin drive data)
     # AND exclude teacher queries that should go to drive integration (timetable teacher lookup)
 
-    is_classroom_related_query = (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_event_query) and not is_subject_faculty_query and not is_exam_query and not is_holiday_query and not is_teacher_drive_query
+    is_classroom_related_query = (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_event_query or is_calendar_query) and not is_subject_faculty_query and not is_exam_query and not is_holiday_query and not is_teacher_drive_query
     is_home_related_query = any(kw in query_lower for kw in ['home', 'homework', 'my assignments', 'my coursework', 'my classes', 'my courses'])
     
     # Check for teacher-specific queries (submissions, grading, student work)
@@ -2047,7 +2091,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             should_load_students = is_student_query
             should_load_announcements = is_announcement_query
             should_load_coursework = is_coursework_query
-            should_load_calendar = is_calendar_query
+            should_load_calendar = is_calendar_query or is_event_query  # Load calendar for event queries too
             
             # If no specific classroom data is needed, don't load anything
             if not (should_load_teachers or should_load_students or should_load_announcements or should_load_coursework or should_load_calendar):
@@ -2122,15 +2166,18 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                     'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
                     
                     for i, (full_name, abbrev) in enumerate(zip(month_names, month_abbrevs)):
-                        # Pattern 1: Handles both single date ("21 september") and multiple dates ("21 and 29 september" or "21, 24, 29 september")
-                        # Matches: one or more digits, optionally followed by (comma or "and" + more digits), then month name
-                        pattern1 = rf'\b(\d{{1,2}}(?:\s*(?:,|\s+and\s+)\s*\d{{1,2}})*)\s+({full_name}|{abbrev})\b'
-                        # Pattern 2: "september 21" or "september 21 and 29" or "september 21, 24, 29"
-                        pattern2 = rf'\b({full_name}|{abbrev})\s+(\d{{1,2}}(?:\s*(?:,|\s+and\s+)\s*\d{{1,2}})*)\b'
+                        # Pattern 1: Handles both single date ("21 september", "21st september", "21st feb") and multiple dates
+                        # Matches: one or more digits with optional ordinal suffix (st, nd, rd, th), optionally followed by (comma or "and" + more digits), then month name
+                        pattern1 = rf'\b(\d{{1,2}}(?:st|nd|rd|th)?(?:\s*(?:,|\s+and\s+)\s*\d{{1,2}}(?:st|nd|rd|th)?)*)\s+({full_name}|{abbrev})\b'
+                        # Pattern 2: "september 21" or "september 21st" or "feb 21st" or "september 21 and 29"
+                        pattern2 = rf'\b({full_name}|{abbrev})\s+(\d{{1,2}}(?:st|nd|rd|th)?(?:\s*(?:,|\s+and\s+)\s*\d{{1,2}}(?:st|nd|rd|th)?)*)\b'
                         
                         match = re_module.search(pattern1, query_lower, re_module.IGNORECASE)
                         if not match:
                             match = re_module.search(pattern2, query_lower, re_module.IGNORECASE)
+                        
+                        if match:
+                            print(f"[Chatbot] 📅 Date pattern matched: pattern1/pattern2 found '{full_name}' or '{abbrev}' in query")
                         
                         # Fuzzy matching for typos (e.g., "octomber" -> "october")
                         if not match and len(full_name) > 4:
@@ -2163,9 +2210,14 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                 pass
                             
                             if days_str:
-                                # Extract all numbers (handles both comma and "and" separators)
-                                days = [int(d.strip()) for d in re_module.findall(r'\d+', days_str)]
+                                # Extract all numbers (handles both comma and "and" separators, and ordinal suffixes like 21st, 22nd)
+                                # Remove ordinal suffixes (st, nd, rd, th) before extracting numbers
+                                days_str_clean = re_module.sub(r'(st|nd|rd|th)\b', '', days_str, flags=re_module.IGNORECASE)
+                                days = [int(d.strip()) for d in re_module.findall(r'\d+', days_str_clean)]
                                 year = now.year
+                                # If month is in the past (e.g., we're in March but query is for February), use next year
+                                if month_num < now.month:
+                                    year += 1
                                 for day in days:
                                     try:
                                         parsed_date = datetime(year, month_num, day, tzinfo=timezone.utc)
@@ -2253,11 +2305,10 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                         from supabase_config import get_supabase_client
                         supabase = get_supabase_client()
                         
-                        # Find any admin who has synced classroom or calendar data
+                        # Find any admin who has synced classroom data
                         # IMPORTANT: user_id in google_classroom_courses is auth.users.id, not user_profiles.id
+                        # Note: calendar_event_data is global (no user_id), so we can't use it to find user_id
                         result = supabase.table('google_classroom_courses').select('user_id').limit(1).execute()
-                        if not result.data or len(result.data) == 0:
-                            result = supabase.table('google_calendar_events').select('user_id').limit(1).execute()
                         
                         if result.data and len(result.data) > 0:
                             user_with_data_id = result.data[0]['user_id']  # This is auth.users.id
@@ -2320,21 +2371,57 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 if is_calendar_query and target_date_ranges_for_sql and len(calendar_events) > 0:
                     # Check if any events fall within the requested date range
                     events_on_date = []
+                    print(f"[Chatbot] 🔍 Filtering {len(calendar_events)} events for date range: {target_date_ranges_for_sql[0][0].date()} to {target_date_ranges_for_sql[0][1].date()}")
                     for event in calendar_events:
-                        event_start = event.get('start_time', '')
+                        # Try both 'startTime' (formatted) and 'start_time' (raw) field names
+                        event_start = event.get('startTime') or event.get('start_time', '')
+                        event_title = event.get('summary', 'Unknown')
                         if event_start:
                             try:
                                 from datetime import datetime
-                                event_datetime = datetime.fromisoformat(event_start.replace('Z', '+00:00'))
+                                # Handle both ISO format and date-only format
+                                if 'T' in event_start:
+                                    event_datetime = datetime.fromisoformat(event_start.replace('Z', '+00:00'))
+                                else:
+                                    # Date-only format, assume start of day
+                                    event_datetime = datetime.fromisoformat(event_start).replace(hour=0, minute=0, second=0, microsecond=0)
+                                
+                                # Make timezone-aware if not already
+                                if event_datetime.tzinfo is None:
+                                    from datetime import timezone
+                                    event_datetime = event_datetime.replace(tzinfo=timezone.utc)
+                                
+                                event_date = event_datetime.date()
+                                print(f"[Chatbot] 📅 Checking event '{event_title}': {event_date}")
+                                
                                 for date_start, date_end in target_date_ranges_for_sql:
-                                    if date_start <= event_datetime <= date_end:
+                                    # Compare dates (ignore time for date-only queries)
+                                    range_start_date = date_start.date()
+                                    range_end_date = date_end.date()
+                                    
+                                    print(f"[Chatbot]   Comparing: {event_date} with range {range_start_date} to {range_end_date}")
+                                    
+                                    if range_start_date <= event_date <= range_end_date:
+                                        print(f"[Chatbot]   ✅ MATCH! Event '{event_title}' is on {event_date}")
                                         events_on_date.append(event)
                                         break
-                            except:
+                                    else:
+                                        print(f"[Chatbot]   ❌ No match: {event_date} not in range {range_start_date} to {range_end_date}")
+                            except Exception as e:
+                                print(f"[Chatbot] Error parsing event date '{event_start}' for event '{event_title}': {e}")
+                                import traceback
+                                traceback.print_exc()
                                 continue
 
+                    print(f"[Chatbot] 📊 Found {len(events_on_date)} events on requested date")
+                    # If events found on the requested date, filter calendar_events to only show those events
+                    if len(events_on_date) > 0:
+                        print(f"[Chatbot] ✅ Filtering calendar events to show only {len(events_on_date)} event(s) on requested date")
+                        # Update calendar_events to only include events on the requested date
+                        admin_data['calendar_data'] = events_on_date
+                        calendar_events = events_on_date  # Also update local variable for consistency
                     # If no events on the requested date, provide concise response
-                    if len(events_on_date) == 0:
+                    elif len(events_on_date) == 0:
                         print(f"[Chatbot] 📅 Date-specific calendar query with no events on requested date - providing concise 'no events' response")
                         calendar_response = f"**School Calendar Events**\n\nI don't see any events scheduled specifically for the date you requested. The school calendar is regularly updated with important dates, holidays, and special events.\n\nFor the most current information, please check with your teachers or the school administration."
 
@@ -3447,17 +3534,57 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                         user_content += "Fix time ranges (add 'to' between times), grammar, use Markdown. Process data, don't copy-paste.\n"
                         user_content += "If empty: Say 'No announcements for requested date(s)'.\nDO NOT say 'no access'!\n\n"
                     
-                if admin_data.get('calendar_data') and is_calendar_query:
-                    # Only include calendar if explicitly requested
-                    calendar_events = admin_data.get('calendar_data', [])[:10]
-                    # Compact format: only essential fields
-                    compact_events = [{
-                        "title": e.get("summary", ""),
-                        "start": e.get("startTime", ""),
-                        "end": e.get("endTime", ""),
-                        "location": e.get("location", "")
-                    } for e in calendar_events]
-                    user_content += f"Calendar Events:\n{json.dumps(compact_events, separators=(',', ':'))}\n\n"
+                if admin_data.get('calendar_data') and (is_calendar_query or is_event_query):
+                    # Include calendar for both calendar and event queries
+                    calendar_events = admin_data.get('calendar_data', [])[:20]
+                    print(f"[Chatbot] 📋 Formatting {len(calendar_events)} calendar events for AI prompt")
+                    for idx, e in enumerate(calendar_events):
+                        print(f"[Chatbot]   Event {idx+1}: {e.get('summary', 'Unknown')} on {e.get('startTime', 'No date')}")
+                    if calendar_events:
+                        # Format events with clear date information
+                        user_content += "\n📅 **UPCOMING CALENDAR EVENTS (REAL DATA FROM SCHOOL CALENDAR):**\n"
+                        user_content += "⚠️ CRITICAL: The events listed below are ALREADY filtered for the user's requested date/query.\n"
+                        user_content += "If you see events listed below, they MATCH the user's query and you MUST mention them in your response!\n"
+                        user_content += "DO NOT say 'no events' if events are listed below - they ARE the answer to the user's question!\n\n"
+                        for e in calendar_events:
+                            title = e.get("summary", "")
+                            start_time = e.get("startTime", "")
+                            
+                            # Parse date from ISO format (e.g., "2026-02-21T00:00:00")
+                            event_date_str = ""
+                            event_date_obj = None
+                            if start_time:
+                                try:
+                                    from datetime import datetime
+                                    dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                                    # Format as readable date
+                                    event_date_str = dt.strftime("%B %d, %Y")  # e.g., "February 21, 2026"
+                                    event_date_obj = dt.date()
+                                except:
+                                    event_date_str = start_time.split('T')[0]  # Fallback to YYYY-MM-DD
+                            
+                            # Also include day of week and week number for better filtering
+                            day_of_week = ""
+                            week_info = ""
+                            if event_date_obj:
+                                try:
+                                    day_of_week = event_date_obj.strftime("%A")  # Monday, Tuesday, etc.
+                                    # Calculate week of month (1st week = days 1-7, 2nd week = 8-14, etc.)
+                                    week_num = (event_date_obj.day - 1) // 7 + 1
+                                    week_names = {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth"}
+                                    week_info = f" ({week_names.get(week_num, '')} week of {event_date_obj.strftime('%B')})"
+                                except:
+                                    pass
+                            
+                            user_content += f"- **{title}**: {event_date_str}{day_of_week and f' ({day_of_week})' or ''}{week_info}\n"
+                        user_content += "\n⚠️ CRITICAL RULES:\n"
+                        user_content += "1. ONLY list events from the calendar above. DO NOT invent, make up, or generate fake events!\n"
+                        user_content += "2. When asked about specific dates (e.g., 'when is sports day', 'events on 21st feb'), you MUST list ALL events shown above that match that date.\n"
+                        user_content += "3. The events listed above are ALREADY filtered for the requested date - if you see events above, they ARE on the requested date!\n"
+                        user_content += "4. When asked about weeks (e.g., 'first week of April'), only show events that actually fall in that week from the calendar above.\n"
+                        user_content += "5. If the calendar above shows events, you MUST mention them in your response. Do NOT say 'no events' if events are listed above!\n"
+                        user_content += "6. Do NOT say 'the date can vary' or 'check with your teacher' - provide the actual date from the calendar data.\n"
+                        user_content += "7. Do NOT include event type (sports, festival, upcoming) in your response - just show the event name and date.\n\n"
             
             # Add detailed data processing instructions for coursework
             if is_coursework_query:

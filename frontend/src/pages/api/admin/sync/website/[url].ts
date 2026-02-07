@@ -23,26 +23,56 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     // URL encode the URL parameter
     const encodedUrl = encodeURIComponent(url);
-    const response = await fetch(`${backendUrl}/api/admin/sync/website/${encodedUrl}?email=${encodeURIComponent(adminEmail)}`, {
+    const fetchUrl = `${backendUrl}/api/admin/sync/website/${encodedUrl}?email=${encodeURIComponent(adminEmail)}`;
+    
+    console.log(`[Sync Website] Fetching from backend: ${fetchUrl}`);
+    
+    // Create abort controller for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
+    
+    const response = await fetch(fetchUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
+      signal: controller.signal,
     });
-
-    const data = await response.json();
+    
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ 
+        detail: `Backend returned status ${response.status}` 
+      }));
+      console.error(`[Sync Website] Backend error: ${response.status}`, errorData);
       return res.status(response.status).json({ 
-        error: data.detail || data.message || 'Failed to sync website page' 
+        error: errorData.detail || errorData.message || `Failed to sync website page (Status: ${response.status})` 
       });
     }
 
+    const data = await response.json();
     return res.status(200).json(data);
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error syncing individual website page:', error);
+    
+    // Provide more specific error messages
+    const err = error as { code?: string; cause?: { code?: string }; name?: string; message?: string };
+    
+    if (err.code === 'ECONNREFUSED' || err.cause?.code === 'ECONNREFUSED') {
+      return res.status(503).json({ 
+        error: `Cannot connect to backend server at ${backendUrl}. Please ensure the backend server is running.` 
+      });
+    }
+    
+    if (err.name === 'AbortError' || err.name === 'TimeoutError') {
+      return res.status(504).json({ 
+        error: 'Request timed out. The website sync is taking too long. Please try again later.' 
+      });
+    }
+    
     return res.status(500).json({ 
-      error: 'Internal server error while syncing website page' 
+      error: err.message || 'Internal server error while syncing website page' 
     });
   }
 }
