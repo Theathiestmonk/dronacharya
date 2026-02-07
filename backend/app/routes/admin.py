@@ -2800,8 +2800,13 @@ async def google_drive_oauth_callback(
         if not admin_profile:
             raise HTTPException(status_code=404, detail="Admin profile not found")
 
-        admin_id = admin_profile.get('user_id')
-
+        # Use 'id' from user_profiles (not 'user_id' which is auth.users.id)
+        # google_integrations.admin_id references user_profiles.id
+        admin_id = admin_profile.get('id')
+        
+        if not admin_id:
+            raise HTTPException(status_code=400, detail="User profile ID not found")
+        
         # Calculate token expiry
         from datetime import datetime, timedelta
         token_expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
@@ -2884,4 +2889,476 @@ async def refresh_all_gcdr_tokens(email: Optional[str] = None):
         import traceback
         traceback.print_exc()
         return RedirectResponse(url=f"/admin?tab=drive&error=connection_failed&message={str(e)}")
+
+# =============================================
+# GOOGLE CLASSROOM OAUTH ENDPOINTS (FOR ASSIGNMENTS)
+# =============================================
+
+@router.get("/classroom/connect")
+async def connect_google_classroom(request: Request, email: str = Query(..., description="Teacher email")):
+    """Redirect to Google OAuth for Classroom assignment access"""
+    
+    # Get admin/teacher profile
+    admin_service = SupabaseAdminService()
+    admin_profile = admin_service.get_user_profile_by_email(email)
+    
+    if not admin_profile:
+        raise HTTPException(status_code=404, detail="User profile not found")
+    
+    # Google OAuth configuration
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    # Use separate redirect URI for Classroom (since GOOGLE_OAUTH_REDIRECT_URI is for Drive)
+    # Construct from request or use environment variable
+    redirect_uri = os.getenv("GOOGLE_CLASSROOM_OAUTH_REDIRECT_URI")
+    if not redirect_uri:
+        # Construct from request base URL
+        base_url = str(request.base_url).rstrip('/')
+        redirect_uri = f"{base_url}/api/admin/classroom/callback"
+    
+    if not client_id:
+        raise HTTPException(status_code=500, detail="Google OAuth client ID not configured")
+    
+    # OAuth scopes for Classroom - ONLY for assignments (courses, rosters, announcements handled by DWD)
+    scopes = [
+        "https://www.googleapis.com/auth/classroom.courses.readonly",  # Needed to list courses
+        "https://www.googleapis.com/auth/classroom.coursework.me.readonly",  # For own assignments
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/userinfo.profile"
+    ]
+    
+    # Build authorization URL
+    auth_url = (
+        "https://accounts.google.com/o/oauth2/v2/auth?"
+        f"client_id={client_id}&"
+        f"redirect_uri={redirect_uri}&"
+        f"scope={' '.join(scopes)}&"
+        f"response_type=code&"
+        f"access_type=offline&"
+        f"prompt=consent&"
+        f"state={email}"  # Pass email as state for callback
+    )
+    
+    return RedirectResponse(url=auth_url)
+
+@router.get("/classroom/callback")
+async def google_classroom_oauth_callback(
+    code: str = Query(..., description="Authorization code"),
+    state: str = Query(..., description="State parameter (teacher email)"),
+    error: Optional[str] = Query(None, description="Error if OAuth failed")
+):
+    """Handle Google OAuth callback for Classroom assignment access"""
+    
+    if error:
+        return RedirectResponse(url=f"/admin?tab=classroom&error=oauth_error&message={error}")
+    
+    try:
+        # Exchange code for tokens
+        token_url = "https://oauth2.googleapis.com/token"
+        client_id = os.getenv("GOOGLE_CLIENT_ID")
+        client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+        # Use separate redirect URI for Classroom, or fallback to constructing from request
+        # Since GOOGLE_OAUTH_REDIRECT_URI is for Drive, we need a separate one for Classroom
+        redirect_uri = os.getenv("GOOGLE_CLASSROOM_OAUTH_REDIRECT_URI")
+        if not redirect_uri:
+            # Construct from request if not set
+            from fastapi import Request as FastAPIRequest
+            # Note: In callback, we need to reconstruct the redirect URI that was used in /connect
+            # Default to localhost:8000 for development, or use the same pattern as Drive
+            base_url = os.getenv("BACKEND_URL", "http://localhost:8000")
+            redirect_uri = f"{base_url}/api/admin/classroom/callback"
+        
+        if not all([client_id, client_secret]):
+            raise HTTPException(status_code=500, detail="Google OAuth credentials not configured")
+        
+        token_data = {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": redirect_uri
+        }
+        
+        import requests
+        print(f"[Classroom OAuth] Exchanging code for tokens...")
+        token_response = requests.post(token_url, data=token_data)
+        
+        if token_response.status_code != 200:
+            print(f"[Classroom OAuth] Token exchange failed: {token_response.status_code} - {token_response.text}")
+            raise HTTPException(status_code=400, detail=f"Token exchange failed: {token_response.text}")
+        
+        token_info = token_response.json()
+        access_token = token_info.get("access_token")
+        refresh_token = token_info.get("refresh_token")
+        expires_in = token_info.get("expires_in", 3600)
+        
+        if not access_token:
+            raise HTTPException(status_code=400, detail="Failed to obtain access token")
+        
+        # Validate token and get user email
+        tokeninfo_url = f"https://www.googleapis.com/oauth2/v1/tokeninfo?access_token={access_token}"
+        tokeninfo_response = requests.get(tokeninfo_url)
+        
+        if tokeninfo_response.status_code != 200:
+            raise HTTPException(status_code=400, detail="Token validation failed")
+        
+        token_info_data = tokeninfo_response.json()
+        user_email = token_info_data.get('email')
+        
+        if not user_email:
+            raise HTTPException(status_code=400, detail="Failed to get user email from token")
+        
+        print(f"[Classroom OAuth] Token validated for user: {user_email}")
+        
+        # Get admin/teacher profile
+        admin_service = SupabaseAdminService()
+        admin_profile = admin_service.get_user_profile_by_email(state)
+        
+        if not admin_profile:
+            raise HTTPException(status_code=404, detail="User profile not found")
+        
+        # Use 'id' from user_profiles (not 'user_id' which is auth.users.id)
+        # google_integrations.admin_id references user_profiles.id
+        admin_id = admin_profile.get('id')
+        
+        if not admin_id:
+            raise HTTPException(status_code=400, detail="User profile ID not found")
+        
+        # Calculate token expiry
+        from datetime import datetime, timedelta
+        token_expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+        
+        # Store token in Supabase (using google_integrations table)
+        from supabase_config import get_supabase_client
+        supabase = get_supabase_client()
+        
+        scope_string = " ".join([
+            "https://www.googleapis.com/auth/classroom.courses.readonly",
+            "https://www.googleapis.com/auth/classroom.coursework.me.readonly"
+        ])
+        
+        # Check if token already exists
+        existing_result = supabase.table('google_integrations').select('id').eq('admin_id', admin_id).eq('service_type', 'classroom').execute()
+        
+        if existing_result.data and len(existing_result.data) > 0:
+            # Update existing token
+            update_data = {
+                'access_token': access_token,
+                'refresh_token': refresh_token,
+                'token_expires_at': token_expires_at.isoformat(),
+                'scope': scope_string,
+                'is_active': True,
+                'updated_at': datetime.utcnow().isoformat()
+            }
+            supabase.table('google_integrations').update(update_data).eq('id', existing_result.data[0]['id']).execute()
+        else:
+            # Create new token
+            insert_data = {
+                'admin_id': admin_id,
+                'service_type': 'classroom',
+                'access_token': access_token,
+                'refresh_token': refresh_token,
+                'token_expires_at': token_expires_at.isoformat(),
+                'scope': scope_string,
+                'is_active': True
+            }
+            supabase.table('google_integrations').insert(insert_data).execute()
+        
+        # Redirect back to admin dashboard
+        return RedirectResponse(url=f"/admin?tab=classroom&success=connected&email={user_email}")
+        
+    except Exception as e:
+        print(f"[Classroom OAuth] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return RedirectResponse(url=f"/admin?tab=classroom&error=oauth_error&message={str(e)}")
+
+@router.get("/classroom/oauth-token")
+async def get_classroom_oauth_token(email: Optional[str] = None):
+    """Get Classroom OAuth token for the admin"""
+    try:
+        admin_service = SupabaseAdminService()
+        
+        # Verify admin privileges
+        if email:
+            profile = admin_service.get_user_profile_by_email(email)
+            if not profile or not profile.get('admin_privileges'):
+                raise HTTPException(status_code=403, detail="Admin privileges required")
+            # Use 'id' from user_profiles (not 'user_id' which is auth.users.id)
+            admin_id = profile.get('id')
+        else:
+            raise HTTPException(status_code=400, detail="Email is required")
+        
+        if not admin_id:
+            raise HTTPException(status_code=400, detail="User profile ID not found")
+        
+        # Get token from database
+        from supabase_config import get_supabase_client
+        supabase = get_supabase_client()
+        
+        token_result = supabase.table('google_integrations').select(
+            'id, admin_id, service_type, access_token, refresh_token, token_expires_at, scope, is_active, created_at, updated_at'
+        ).eq('admin_id', admin_id).eq('service_type', 'classroom').eq('is_active', True).maybe_single().execute()
+        
+        if token_result.data:
+            return {
+                "success": True,
+                "token": token_result.data
+            }
+        else:
+            return {
+                "success": True,
+                "token": None
+            }
+    except Exception as e:
+        print(f"[Classroom OAuth] Error fetching token: {e}")
+        return {
+            "success": False,
+            "token": None,
+            "error": str(e)
+        }
+
+@router.post("/classroom/sync-assignments")
+async def sync_assignments_oauth(email: str = Query(..., description="Teacher email")):
+    """Sync assignments using OAuth token and store in google_classroom_coursework table"""
+    try:
+        from supabase_config import get_supabase_client
+        supabase = get_supabase_client()
+        
+        # Get teacher profile
+        admin_service = SupabaseAdminService()
+        admin_profile = admin_service.get_user_profile_by_email(email)
+        
+        if not admin_profile:
+            raise HTTPException(status_code=404, detail="Teacher profile not found")
+        
+        # Use 'id' from user_profiles for admin_id (references user_profiles.id)
+        admin_id = admin_profile.get('id')
+        # Use 'user_id' for user_id (references auth.users.id) - needed for google_classroom_courses
+        user_id = admin_profile.get('user_id')
+        
+        if not admin_id:
+            raise HTTPException(status_code=400, detail="User profile ID not found")
+        
+        # Get OAuth token from database
+        token_result = supabase.table('google_integrations').select(
+            'access_token, refresh_token, token_expires_at'
+        ).eq('admin_id', admin_id).eq('service_type', 'classroom').eq('is_active', True).single().execute()
+        
+        if not token_result.data:
+            raise HTTPException(status_code=404, detail="No active Classroom OAuth token found. Please connect Google Classroom first.")
+        
+        access_token = token_result.data['access_token']
+        token_expires_at = token_result.data.get('token_expires_at')
+        
+        # Check if token is expired and refresh if needed
+        import requests
+        if token_expires_at:
+            expires_dt = datetime.fromisoformat(token_expires_at.replace('Z', '+00:00'))
+            # Use timezone-aware datetime for comparison
+            if expires_dt < datetime.now(timezone.utc):
+                # Refresh token
+                refresh_token = token_result.data.get('refresh_token')
+                if refresh_token:
+                    refresh_response = requests.post(
+                        "https://oauth2.googleapis.com/token",
+                        data={
+                            "client_id": os.getenv("GOOGLE_CLIENT_ID"),
+                            "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
+                            "refresh_token": refresh_token,
+                            "grant_type": "refresh_token"
+                        }
+                    )
+                    if refresh_response.status_code == 200:
+                        refresh_data = refresh_response.json()
+                        access_token = refresh_data['access_token']
+                        new_expires_at = datetime.now(timezone.utc) + timedelta(seconds=refresh_data.get('expires_in', 3600))
+                        # Update token in database
+                        supabase.table('google_integrations').update({
+                            'access_token': access_token,
+                            'token_expires_at': new_expires_at.isoformat()
+                        }).eq('admin_id', admin_id).eq('service_type', 'classroom').execute()
+        
+        # Fetch all courses using OAuth token
+        headers = {"Authorization": f"Bearer {access_token}"}
+        courses_response = requests.get(
+            "https://classroom.googleapis.com/v1/courses",
+            headers=headers
+        )
+        
+        if courses_response.status_code != 200:
+            raise HTTPException(status_code=400, detail=f"Failed to fetch courses: {courses_response.text}")
+        
+        courses = courses_response.json().get('courses', [])
+        print(f"[Classroom OAuth Sync] Found {len(courses)} courses")
+        
+        # Sync stats
+        assignments_synced = 0
+        assignments_updated = 0
+        assignments_created = 0
+        
+        def parse_google_timestamp(timestamp: str = None) -> str:
+            """Parse Google timestamp to ISO format"""
+            if not timestamp:
+                return None
+            try:
+                return datetime.fromisoformat(timestamp.replace('Z', '+00:00')).isoformat()
+            except:
+                return None
+        
+        def parse_max_points(max_points_value):
+            """Parse maxPoints - can be int, float, or dict with 'value' key"""
+            if not max_points_value:
+                return None
+            try:
+                if isinstance(max_points_value, (int, float)):
+                    return float(max_points_value)
+                elif isinstance(max_points_value, dict):
+                    value = max_points_value.get('value')
+                    if value is not None:
+                        return float(value)
+                return None
+            except (ValueError, TypeError):
+                return None
+        
+        # Fetch assignments for each course
+        for course in courses:
+            course_id = course.get('id')
+            course_name = course.get('name', 'Unknown')
+            
+            if not course_id:
+                continue
+            
+            print(f"[Classroom OAuth Sync] Processing course: {course_name} ({course_id})")
+            
+            # Get or create course in database
+            existing_course = supabase.table('google_classroom_courses').select('id').eq('course_id', course_id).limit(1).execute()
+            
+            db_course_id = None
+            if existing_course.data and len(existing_course.data) > 0:
+                db_course_id = existing_course.data[0]['id']
+            else:
+                # Create course entry if it doesn't exist
+                course_data = {
+                    "user_id": user_id,
+                    "course_id": course_id,
+                    "name": course.get('name', ''),
+                    "description": course.get('description'),
+                    "section": course.get('section'),
+                    "room": course.get('room'),
+                    "alternate_link": course.get('alternateLink'),
+                    "last_synced_at": datetime.now(timezone.utc).isoformat()
+                }
+                result = supabase.table('google_classroom_courses').insert(course_data).execute()
+                if result.data and len(result.data) > 0:
+                    db_course_id = result.data[0].get('id')
+            
+            if not db_course_id:
+                print(f"⚠️ [Classroom OAuth Sync] Could not get database course ID for {course_id}")
+                continue
+            
+            # Fetch coursework (assignments) for this course
+            coursework_response = requests.get(
+                f"https://classroom.googleapis.com/v1/courses/{course_id}/courseWork",
+                headers=headers
+            )
+            
+            if coursework_response.status_code == 200:
+                coursework_list = coursework_response.json().get('courseWork', [])
+                print(f"[Classroom OAuth Sync] Found {len(coursework_list)} assignments in {course_name}")
+                
+                for assignment in coursework_list:
+                    cw_id = assignment.get('id')
+                    if not cw_id:
+                        continue
+                    
+                    # Parse due date
+                    due_date = None
+                    due_time = None
+                    if assignment.get('dueDate'):
+                        due_date_str = f"{assignment['dueDate'].get('year', 2000)}-{assignment['dueDate'].get('month', 1):02d}-{assignment['dueDate'].get('day', 1):02d}"
+                        due_date = parse_google_timestamp(f"{due_date_str}T00:00:00Z")
+                    elif assignment.get('dueTime'):
+                        due_date = parse_google_timestamp(assignment['dueTime'])
+                    
+                    # Extract time portion from dueTime if it exists (max 20 chars for VARCHAR(20))
+                    if assignment.get('dueTime'):
+                        due_time_raw = assignment.get('dueTime')
+                        if isinstance(due_time_raw, str):
+                            # If it's a timestamp string, extract time portion (HH:MM:SS)
+                            try:
+                                if 'T' in due_time_raw:
+                                    # ISO format: "2024-01-15T14:30:00Z" -> "14:30:00"
+                                    time_part = due_time_raw.split('T')[1].split('Z')[0].split('+')[0]
+                                    due_time = time_part[:20]  # Ensure max 20 chars
+                                elif ':' in due_time_raw:
+                                    # Already a time string, truncate to 20 chars
+                                    due_time = due_time_raw[:20]
+                                else:
+                                    due_time = None
+                            except:
+                                due_time = None
+                        elif isinstance(due_time_raw, dict):
+                            # If it's a TimeOfDay object: {"hours": 14, "minutes": 30}
+                            hours = due_time_raw.get('hours', 0)
+                            minutes = due_time_raw.get('minutes', 0)
+                            seconds = due_time_raw.get('seconds', 0)
+                            due_time = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                    
+                    # Prepare assignment data
+                    assignment_data = {
+                        "course_id": db_course_id,
+                        "coursework_id": cw_id,
+                        "title": assignment.get('title', ''),
+                        "description": assignment.get('description'),
+                        "materials": assignment.get('materials'),
+                        "state": assignment.get('state'),
+                        "alternate_link": assignment.get('alternateLink'),
+                        "creation_time": parse_google_timestamp(assignment.get('creationTime')),
+                        "update_time": parse_google_timestamp(assignment.get('updateTime')),
+                        "due_date": due_date,
+                        "due_time": due_time,
+                        "max_points": parse_max_points(assignment.get('maxPoints')),
+                        "work_type": assignment.get('workType'),
+                        "associated_with_developer": assignment.get('associatedWithDeveloper', False),
+                        "assignee_mode": assignment.get('assigneeMode'),
+                        "individual_students_options": assignment.get('individualStudentsOptions'),
+                        "submission_modification_mode": assignment.get('submissionModificationMode'),
+                        "creator_user_id": assignment.get('creatorUserId'),
+                        "topic_id": assignment.get('topicId'),
+                        "grade_category": assignment.get('gradeCategory'),
+                        "assignment": assignment.get('assignment'),
+                        "multiple_choice_question": assignment.get('multipleChoiceQuestion'),
+                        "last_synced_at": datetime.now(timezone.utc).isoformat()
+                    }
+                    
+                    # Upsert assignment
+                    existing = supabase.table('google_classroom_coursework').select('id').eq('course_id', db_course_id).eq('coursework_id', cw_id).limit(1).execute()
+                    
+                    if existing.data and len(existing.data) > 0:
+                        supabase.table('google_classroom_coursework').update(assignment_data).eq('id', existing.data[0]['id']).execute()
+                        assignments_updated += 1
+                    else:
+                        supabase.table('google_classroom_coursework').insert(assignment_data).execute()
+                        assignments_created += 1
+                    
+                    assignments_synced += 1
+            else:
+                print(f"⚠️ [Classroom OAuth Sync] Failed to fetch assignments for course {course_name}: {coursework_response.text}")
+        
+        return {
+            "success": True,
+            "message": f"Synced {assignments_synced} assignments",
+            "assignments_synced": assignments_synced,
+            "assignments_created": assignments_created,
+            "assignments_updated": assignments_updated,
+            "courses_processed": len(courses)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[Classroom OAuth Sync] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to sync assignments: {str(e)}")
 

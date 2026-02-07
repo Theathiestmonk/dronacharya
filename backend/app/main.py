@@ -41,7 +41,7 @@ async def startup_event():
         print(f"[App] Warning: Failed to start auto-sync scheduler: {e}")
         import traceback
         traceback.print_exc()
-    
+
     # Log DWD status for production debugging
     try:
         from app.services.google_dwd_service import get_dwd_service

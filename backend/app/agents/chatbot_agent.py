@@ -1782,7 +1782,16 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     
     # Detect exam-related queries for drive integration (HIGH PRIORITY - before classroom detection)
     exam_keywords = ['exam', 'examination', 'test', 'assessment', 'schedule', 'timetable', 'time table', 'date sheet', 'syllabus', 'upcoming exam', 'exam date', 'exam schedule']
-    is_exam_query = any(kw in query_lower for kw in exam_keywords)
+    # Also check for common variations and abbreviations
+    timetable_variations = ['tim table', 'timetable', 'time table', 'tt', 'schedule', 'class schedule', 'daily schedule']
+    # Check if query contains timetable-related words (including variations)
+    has_timetable_keyword = any(variation in query_lower for variation in timetable_variations)
+    # Check if query mentions a day (mon, tue, wed, thu, fri, sat, sun, monday, tuesday, etc.)
+    day_keywords = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'today', 'tomorrow']
+    has_day_keyword = any(day in query_lower for day in day_keywords)
+    
+    # If query has timetable keyword OR (has day keyword AND seems like a schedule query), treat as exam/timetable query
+    is_exam_query = any(kw in query_lower for kw in exam_keywords) or (has_timetable_keyword or (has_day_keyword and ('give' in query_lower or 'show' in query_lower or 'get' in query_lower)))
     print(f"[Chatbot] 🧪 DEBUG: query_lower='{query_lower}', exam_keywords={exam_keywords}, is_exam_query={is_exam_query}")
 
     # For person detail queries, use web crawler first (team page)
@@ -1922,11 +1931,21 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             # Check if drive integration returned a "no data" error
             if drive_response and (drive_response.lower().startswith("sorry") or drive_response.lower().startswith("i couldn't")):
                 print(f"[Chatbot] ⚠️ Drive integration returned no data error: {drive_response[:100]}")
-                # Return a simple message for no data instead of generic response
+                # Return a context-aware message based on query type
                 if is_teacher_drive_query:
                     return f"I couldn't find teacher information for that subject in the timetable."
+                elif is_exam_query:
+                    # Check if it's a timetable query vs exam query
+                    query_lower = user_query.lower()
+                    if 'timetable' in query_lower or 'time table' in query_lower or 'schedule' in query_lower:
+                        # It's a timetable query
+                        return f"I couldn't find the timetable information. The information sheet for your grade may not be available or accessible. Please contact your administrator for assistance."
+                    else:
+                        # It's an exam query
+                        return "There are no upcoming exams scheduled at this time."
                 else:
-                    return "There are no upcoming exams scheduled at this time."
+                    # Generic fallback
+                    return drive_response  # Return the original error message from drive integration
             elif drive_response and drive_response.startswith("TEACHER_INFO:"):
                 print(f"[Chatbot] 👨‍🏫 Teacher info detected, enhancing with AI model")
                 # Extract the raw teacher info and enhance it with AI

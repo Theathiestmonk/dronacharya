@@ -77,12 +77,38 @@ class DriveChatbotIntegrator:
                     print(f"  - {sheet['name']} (ID: {sheet['id']})")
 
                 # Now search for grade-specific sheet
-                grade_sheets = [s for s in all_sheets if f'G{grade}- InfoSheet' in s['name']]
-                if grade_sheets:
-                    print(f"[DriveChatbot] Found matching sheet: {grade_sheets[0]['name']}")
-                    return grade_sheets[0]['id']
-
+                # Try multiple patterns to match different naming conventions:
+                # - "G8- InfoSheet" (with dash and space)
+                # - "G8_InfoSheet" (with underscore)
+                # - "G8 InfoSheet" (with space)
+                # - "G8-InfoSheet" (with dash, no space)
+                # - "G9 - Luminosity - InfoSheet" (with additional text)
+                grade_patterns = [
+                    f'G{grade}- InfoSheet',  # Original pattern: "G8- InfoSheet"
+                    f'G{grade}_InfoSheet',   # Underscore pattern: "G8_InfoSheet"
+                    f'G{grade} InfoSheet',   # Space pattern: "G8 InfoSheet"
+                    f'G{grade}-InfoSheet',   # Dash no space: "G8-InfoSheet"
+                    f'G{grade}_InfoSheet_',  # Underscore with year: "G8_InfoSheet_2025-26"
+                ]
+                
+                # First try exact patterns
+                for pattern in grade_patterns:
+                    grade_sheets = [s for s in all_sheets if pattern in s['name']]
+                    if grade_sheets:
+                        print(f"[DriveChatbot] Found matching sheet: {grade_sheets[0]['name']} (matched pattern: {pattern})")
+                        return grade_sheets[0]['id']
+                
+                # If no exact match, try flexible matching: sheet name starts with "G{grade}" and contains "InfoSheet"
+                # This handles cases like "G9 - Luminosity - InfoSheet 2025-26"
+                flexible_pattern = f'G{grade}'
+                for sheet in all_sheets:
+                    sheet_name = sheet['name']
+                    if sheet_name.startswith(flexible_pattern) and 'InfoSheet' in sheet_name:
+                        print(f"[DriveChatbot] Found matching sheet: {sheet_name} (flexible match)")
+                        return sheet['id']
+                
                 print(f"[DriveChatbot] No sheet found for grade {grade}")
+                print(f"[DriveChatbot] Tried patterns: {grade_patterns}")
                 return None
             else:
                 print(f"[DriveChatbot] Error listing files: {response.status_code} - {response.text}")
@@ -308,6 +334,8 @@ class DriveChatbotIntegrator:
 
         # If filtering by day(s), determine which days to show
         target_days = []
+        weekend_days = ["SATURDAY", "SUNDAY"]
+        
         if filter_days and len(filter_days) > 0:
             # Multiple days requested
             print(f"[DriveChatbot] Filtering timetable for multiple days: {filter_days}")
@@ -316,10 +344,16 @@ class DriveChatbotIntegrator:
                     # Get current day
                     from datetime import datetime
                     current_day = datetime.now().strftime('%A').upper()
+                    # Check if today is weekend
+                    if current_day in weekend_days:
+                        return f"📅 **No Timetable Available**\n\nThere is no timetable for {current_day.title()} as classes are not held on weekends. The timetable is available from Monday to Friday only.\n\nWould you like to see the timetable for a specific weekday?"
                     target_days.append(current_day)
                 else:
                     # Try to match the day to a valid day name
                     day_upper = day.upper()
+                    # Check if it's a weekend day
+                    if day_upper in weekend_days:
+                        return f"📅 **No Timetable Available**\n\nThere is no timetable for {day_upper.title()} as classes are not held on weekends. The timetable is available from Monday to Friday only.\n\nWould you like to see the timetable for a specific weekday?"
                     valid_days = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
                     if day_upper in valid_days:
                         target_days.append(day_upper)
@@ -331,11 +365,17 @@ class DriveChatbotIntegrator:
                 # Get current day
                 from datetime import datetime
                 current_day = datetime.now().strftime('%A').upper()
+                # Check if today is weekend
+                if current_day in weekend_days:
+                    return f"📅 **No Timetable Available**\n\nThere is no timetable for {current_day.title()} as classes are not held on weekends. The timetable is available from Monday to Friday only.\n\nWould you like to see the timetable for a specific weekday?"
                 target_days = [current_day]
                 print(f"[DriveChatbot] Filtering timetable for today: {current_day}")
             else:
                 # Try to match the filter_day to a valid day name
                 filter_day_upper = filter_day.upper()
+                # Check if it's a weekend day
+                if filter_day_upper in weekend_days:
+                    return f"📅 **No Timetable Available**\n\nThere is no timetable for {filter_day_upper.title()} as classes are not held on weekends. The timetable is available from Monday to Friday only.\n\nWould you like to see the timetable for a specific weekday?"
                 valid_days = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
                 if filter_day_upper in valid_days:
                     target_days = [filter_day_upper]
@@ -355,10 +395,71 @@ class DriveChatbotIntegrator:
             response += "**"
         response += "\n\n"
 
-        # Extract time slots from first row (skip first empty cell)
+        # Extract time slots - search through multiple rows to find actual times
+        # Times can be in row 1, row 2, or other rows - not fixed position
         time_slots = []
-        if len(data) > 0 and data[0]:
-            time_slots = [cell.strip() if cell else "" for cell in data[0][1:]]
+        import re
+        
+        # Enhanced time pattern to match various formats:
+        # - "8:30" or "8:30 AM" (simple time)
+        # - "8:30-8:40" or "8:30 AM - 8:40 AM" (time range)
+        # - "8:30 AM-8:40 AM" (time range without spaces)
+        time_pattern = re.compile(r'^\d{1,2}:\d{2}(\s*-\s*\d{1,2}:\d{2})?(\s*(AM|PM|am|pm))?$')
+        time_range_pattern = re.compile(r'\d{1,2}:\d{2}')  # Matches any time format
+        
+        # Search through first 10 rows to find time slots (times can be in any row)
+        time_row_found = False
+        for row_idx in range(min(10, len(data))):
+            row = data[row_idx]
+            if not row or len(row) < 2:
+                continue
+            
+            row_slots = [cell.strip() if cell else "" for cell in row[1:]]  # Skip first column
+            
+            # Check if this row contains time patterns
+            # Count how many cells look like times
+            time_count = 0
+            for cell in row_slots:
+                if cell:
+                    # Check for simple time format
+                    if time_pattern.match(cell):
+                        time_count += 1
+                    # Check for time range format (e.g., "8:30-8:40")
+                    elif '-' in cell and time_range_pattern.search(cell):
+                        time_count += 1
+                    # Check if cell contains colon and looks like time (e.g., "8:30 AM")
+                    elif ':' in cell and re.search(r'\d{1,2}:\d{2}', cell):
+                        time_count += 1
+            
+            # If at least 3 cells in this row look like times, use this row
+            if time_count >= 3:
+                time_slots = row_slots
+                time_row_found = True
+                print(f"[DriveChatbot] Found time row at index {row_idx} with {time_count} time entries")
+                break
+        
+        # If no time row found, try to map lesson identifiers (L1, L2, etc.) to default times
+        if not time_row_found:
+            # Get first row to check for lesson identifiers
+            if len(data) > 0 and data[0]:
+                raw_slots = [cell.strip() if cell else "" for cell in data[0][1:]]
+                # Check if first row has lesson identifiers
+                has_lesson_ids = any(re.match(r'^L\d+$', slot.upper()) for slot in raw_slots if slot)
+                
+                if has_lesson_ids:
+                    # Map lesson identifiers to default times (last resort)
+                    lesson_to_time = {
+                        'L1': '8:00 AM', 'L2': '9:00 AM', 'L3': '10:00 AM',
+                        'L4': '11:00 AM', 'L5': '12:00 PM', 'L6': '1:00 PM',
+                        'L7': '2:00 PM', 'L8': '3:00 PM', 'L9': '4:00 PM',
+                        'L10': '5:00 PM'
+                    }
+                    time_slots = [lesson_to_time.get(slot.upper(), "") if slot else "" for slot in raw_slots]
+                    print(f"[DriveChatbot] ⚠️ No time row found, mapped lesson identifiers to default times")
+                else:
+                    # No lesson identifiers either, use empty time slots
+                    time_slots = [""] * len(raw_slots) if raw_slots else []
+                    print(f"[DriveChatbot] ⚠️ No time row or lesson identifiers found, using empty time slots")
 
         # Create table header
         response += "| Day | Time Slot | Subject | Teacher |\n"
@@ -367,6 +468,7 @@ class DriveChatbotIntegrator:
         # Process each day row by row
         i = 1  # Start from row 1 (after time slots)
         found_matching_day = False
+        processed_days = set()  # Track which days we've already processed to avoid duplicates (works for both filtered and all days)
 
         while i < len(data):
             row = data[i]
@@ -384,8 +486,15 @@ class DriveChatbotIntegrator:
                 if target_days and current_day not in target_days:
                     i += 1
                     continue
+                
+                # Always skip duplicate day entries (whether filtering or showing all days)
+                if current_day in processed_days:
+                    print(f"[DriveChatbot] Skipping duplicate {current_day} entry")
+                    i += 1
+                    continue
 
                 found_matching_day = True
+                processed_days.add(current_day)  # Mark this day as processed
 
                 # Get subjects for this day (from column 1 onwards, preserve nulls)
                 subjects = []
@@ -468,23 +577,42 @@ class DriveChatbotIntegrator:
 
         print(f"[DriveChatbot] Query Analysis: Grade={grade}, Exam={exam_type}, Type={query_type}, Subject={subject_filter}, Subjects={subjects_filter}, Day={day_filter}, Days={days_filter}")
 
-        # Step 2: Validate we have required info
+        # Step 2: Check for weekend days BEFORE fetching any sheet
+        # If user asks for Saturday or Sunday timetable, return weekend message immediately
+        weekend_days = ["SATURDAY", "SUNDAY"]
+        requested_days = []
+        if days_filter:
+            requested_days = [d.upper() for d in days_filter]
+        elif day_filter:
+            requested_days = [day_filter.upper()]
+        
+        # Check if any requested day is a weekend
+        for requested_day in requested_days:
+            if requested_day in weekend_days:
+                return f"📅 **No Timetable Available**\n\nThere is no timetable for {requested_day.title()} as classes are not held on weekends. The timetable is available from Monday to Friday only.\n\nWould you like to see the timetable for a specific weekday?"
+
+        # Step 3: Validate we have required info
         if not grade:
             return "I couldn't determine which grade you're asking about. Please specify your grade (e.g., 'grade 7', 'G8', 'class 9')."
 
-        # Step 3: Get active Drive token
+        # Step 4: Get active Drive token
         token = self.get_active_drive_token()
         if not token:
             return "Sorry, the Google Drive connection is not available right now. Please contact your administrator."
 
-        # Step 4: Find the grade-specific sheet
+        # Step 5: Find the grade-specific sheet
         file_id = self.find_grade_sheet(grade, token)
         if not file_id:
             return f"Sorry, I couldn't find the Grade {grade} information sheet. Please contact your administrator."
 
         print(f"[DriveChatbot] Found sheet for Grade {grade}: {file_id}")
 
-        # Step 5: Determine which tab to read
+        # Step 6: Determine which tab to read
+        # If query has day filter but query_type is 'general', treat it as timetable query
+        if (day_filter or days_filter) and query_type == 'general':
+            query_type = 'timetable'
+            print(f"[DriveChatbot] Detected day filter with general query type, treating as timetable")
+        
         target_sheet = None
 
         if query_type == 'teacher':

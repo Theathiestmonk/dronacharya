@@ -29,7 +29,7 @@ class GradeExamDetector:
         # Query type patterns (more specific patterns first)
         self.query_patterns = {
             'syllabus': r'\b(?:syllabus|syllabi|topics|content|what\s*to\s*study)\b',
-            'timetable': r'\b(?:timetable|time\s*table|daily\s*schedule|routine)\b',
+            'timetable': r'\b(?:timetable|time\s*table|tim\s*table|tt|daily\s*schedule|routine)\b',
             'schedule': r'\b(?:schedule|date|when|dates|exam\s*date|exam\s*schedule)\b',
             'teacher': r'\b(?:teacher|who\s*is\s*the|who\s*teaches|teacher\s*name|instructor)\b',
             'teacher_subject': r'\b(?:what\s*subject|which\s*subject|subject\s*taught|teaches\s*what|subject\s*of|what\s*does\s*\w+\s*teach|does\s*\w+\s*teach)\b'
@@ -53,28 +53,28 @@ class GradeExamDetector:
             r'\b(?:sumayya|krishna|krishana|mohit|pallavi|harshita|umesh|amarnath|akanksha|shraddha|rishika|manoj|pooja|rishi|neha|priya|tripto|ankit|swati|ashita|poonam|vikas)\b'  # Known teacher names
         ]
 
-        # Day patterns for timetable filtering (including relative time)
+        # Day patterns for timetable filtering (including relative time and abbreviations)
         self.day_patterns = {
             'today': r'\b(?:today|todays|today\'s)\b',
             'tomorrow': r'\b(?:tomorrow|tomorrows|tomorrow\'s)\b',
             'yesterday': r'\b(?:yesterday|yesterdays|yesterday\'s|yeasterday|yeasterdays|yeasterday\'s)\b',
-            'monday': r'\bmonday\b',
-            'tuesday': r'\btuesday\b',
-            'wednesday': r'\bwednesday\b',
-            'thursday': r'\bthursday\b',
-            'friday': r'\bfriday\b'
+            'monday': r'\b(?:monday|mon)\b',
+            'tuesday': r'\b(?:tuesday|tue|tues)\b',
+            'wednesday': r'\b(?:wednesday|wed)\b',
+            'thursday': r'\b(?:thursday|thu|thurs)\b',
+            'friday': r'\b(?:friday|fri)\b'
         }
 
-        # Multiple days patterns for combined timetable requests (including relative time)
+        # Multiple days patterns for combined timetable requests (including relative time and abbreviations)
         self.days_patterns = {
             'today': r'\b(?:today|todays|today\'s)\b',
             'tomorrow': r'\b(?:tomorrow|tomorrows|tomorrow\'s)\b',
             'yesterday': r'\b(?:yesterday|yesterdays|yesterday\'s|yeasterday|yeasterdays|yeasterday\'s)\b',
-            'monday': r'\bmonday\b',
-            'tuesday': r'\btuesday\b',
-            'wednesday': r'\bwednesday\b',
-            'thursday': r'\bthursday\b',
-            'friday': r'\bfriday\b'
+            'monday': r'\b(?:monday|mon)\b',
+            'tuesday': r'\b(?:tuesday|tue|tues)\b',
+            'wednesday': r'\b(?:wednesday|wed)\b',
+            'thursday': r'\b(?:thursday|thu|thurs)\b',
+            'friday': r'\b(?:friday|fri)\b'
         }
 
         # Grade number to word mapping
@@ -213,23 +213,59 @@ class GradeExamDetector:
         return relative_day
 
     def detect_day(self, query: str) -> Optional[str]:
-        """Detect day from query for timetable filtering"""
+        """Detect day from query for timetable filtering with fuzzy matching for typos"""
         query_lower = query.lower()
 
+        # First try exact pattern matching
         for day, pattern in self.day_patterns.items():
             if re.search(pattern, query_lower):
                 return self._calculate_relative_day(day)
 
+        # If no exact match, try fuzzy matching for common typos and abbreviations
+        # Check if query contains most letters of day names (handles typos like "thursdya" → "thursday")
+        day_fuzzy_patterns = {
+            'monday': ['monday', 'mondy', 'mnday', 'monay', 'mon'],
+            'tuesday': ['tuesday', 'tuesdy', 'tuesay', 'tuesda', 'tue', 'tues'],
+            'wednesday': ['wednesday', 'wednesdy', 'wednesay', 'wednesda', 'wensday', 'wednsday', 'wed'],
+            'thursday': ['thursday', 'thursdy', 'thursay', 'thursda', 'thursdya', 'thursady', 'thu', 'thurs'],
+            'friday': ['friday', 'fridy', 'friday', 'frida', 'fri'],
+            'saturday': ['saturday', 'saturdy', 'saturda', 'saturda', 'sat'],
+            'sunday': ['sunday', 'sundya', 'sunda', 'sun']
+        }
+        
+        for day, variations in day_fuzzy_patterns.items():
+            for variation in variations:
+                if variation in query_lower:
+                    return self._calculate_relative_day(day)
+
         return None
 
     def detect_days(self, query: str) -> list[str]:
-        """Detect multiple days from query for timetable filtering"""
+        """Detect multiple days from query for timetable filtering with fuzzy matching"""
         query_lower = query.lower()
         found_days = []
 
+        # First try exact pattern matching
         for day, pattern in self.days_patterns.items():
             if re.search(pattern, query_lower):
                 found_days.append(self._calculate_relative_day(day))
+
+        # If no exact matches, try fuzzy matching for typos and abbreviations
+        if not found_days:
+            day_fuzzy_patterns = {
+                'monday': ['monday', 'mondy', 'mnday', 'monay', 'mon'],
+                'tuesday': ['tuesday', 'tuesdy', 'tuesay', 'tuesda', 'tue', 'tues'],
+                'wednesday': ['wednesday', 'wednesdy', 'wednesay', 'wednesda', 'wensday', 'wednsday', 'wed'],
+                'thursday': ['thursday', 'thursdy', 'thursay', 'thursda', 'thursdya', 'thursady', 'thu', 'thurs'],
+                'friday': ['friday', 'fridy', 'friday', 'frida', 'fri'],
+                'saturday': ['saturday', 'saturdy', 'saturda', 'saturda', 'sat'],
+                'sunday': ['sunday', 'sundya', 'sunda', 'sun']
+            }
+            
+            for day, variations in day_fuzzy_patterns.items():
+                for variation in variations:
+                    if variation in query_lower and self._calculate_relative_day(day) not in found_days:
+                        found_days.append(self._calculate_relative_day(day))
 
         return found_days
 

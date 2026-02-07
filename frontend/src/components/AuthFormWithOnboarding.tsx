@@ -150,13 +150,13 @@ const AuthFormWithOnboarding: React.FC<AuthFormWithOnboardingProps> = ({ onBack 
           <p className="mt-2 sm:mt-4 text-center text-xs sm:text-sm text-gray-600 px-2">
             Sign in to access our learning community
           </p>
-        </div>
-        
-        {error && (
-          <div className="rounded-md bg-red-50 p-3 sm:p-4 mb-4">
-            <div className="text-xs sm:text-sm text-red-700">{error}</div>
           </div>
-        )}
+
+          {error && (
+          <div className="rounded-md bg-red-50 p-3 sm:p-4 mb-4">
+              <div className="text-xs sm:text-sm text-red-700">{error}</div>
+            </div>
+          )}
 
         {/* Google Sign In - Main Authentication Method */}
         <div className="mt-6 sm:mt-8">
@@ -182,17 +182,17 @@ const AuthFormWithOnboarding: React.FC<AuthFormWithOnboardingProps> = ({ onBack 
 
             <p className="text-xs text-gray-500 text-center px-4 max-w-sm">
               By continuing with Google, you automatically agree to our{' '}
-              <button
-                type="button"
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowTermsTooltip(true); }}
+              <button 
+                type="button" 
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowTermsTooltip(true); }} 
                 className="text-blue-600 hover:underline focus:outline-none"
               >
                 Terms
               </button>
               {' '}and{' '}
-              <button
-                type="button"
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowPrivacyTooltip(true); }}
+              <button 
+                type="button" 
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowPrivacyTooltip(true); }} 
                 className="text-blue-600 hover:underline focus:outline-none"
               >
                 Privacy Policy

@@ -57,6 +57,19 @@ interface GCDRToken {
   notes: string | null;
 }
 
+interface ClassroomOAuthToken {
+  id: number;
+  admin_id: number;
+  service_type: string;
+  access_token: string;
+  refresh_token: string | null;
+  token_expires_at: string;
+  scope: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 
 const ESSENTIAL_PAGES = [
   "https://prakriti.edu.in/",
@@ -129,6 +142,8 @@ const AdminDashboard: React.FC = () => {
   const [syncingGrade, setSyncingGrade] = useState<{ grade: string; service: string } | null>(null);
   const [gcdrTokens, setGcdrTokens] = useState<GCDRToken[]>([]);
   const [testingToken, setTestingToken] = useState<number | null>(null);
+  const [classroomOAuthToken, setClassroomOAuthToken] = useState<ClassroomOAuthToken | null>(null);
+  const [syncingAssignments, setSyncingAssignments] = useState(false);
 
   const fetchClassroomData = useCallback(async (forceRefresh: boolean = false) => {
     try {
@@ -877,6 +892,82 @@ const AdminDashboard: React.FC = () => {
     window.location.href = `${backendUrl}/api/admin/gcdr/connect?email=${encodeURIComponent(profile?.email || '')}`;
   };
 
+  const connectGoogleClassroom = () => {
+    // This will redirect to Google OAuth flow for Classroom
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    window.location.href = `${backendUrl}/api/admin/classroom/connect?email=${encodeURIComponent(profile?.email || '')}`;
+  };
+
+  const fetchClassroomOAuthToken = useCallback(async (forceRefresh: boolean = false) => {
+    try {
+      const adminEmail = profile?.email;
+      if (!adminEmail) return;
+
+      // Check cache first (unless forcing refresh)
+      if (!forceRefresh) {
+        const cached = getCachedData<ClassroomOAuthToken | null>('admin_classroom_oauth_token', adminEmail);
+        if (cached !== null) {
+          console.log('🔍 [Cache] Using cached Classroom OAuth token');
+          setClassroomOAuthToken(cached);
+          return;
+        }
+      }
+
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const emailParam = adminEmail ? `?email=${encodeURIComponent(adminEmail)}` : '';
+      const response = await fetch(`${backendUrl}/api/admin/classroom/oauth-token${emailParam}`);
+
+      if (response.ok) {
+        const data = await response.json();
+        const token = data.token || null;
+        setClassroomOAuthToken(token);
+        if (token) {
+          setCachedData('admin_classroom_oauth_token', token, adminEmail);
+        }
+      } else {
+        const errorData = await response.json();
+        console.error('Error fetching Classroom OAuth token:', errorData);
+        setClassroomOAuthToken(null);
+      }
+    } catch (err) {
+      console.error('Error fetching Classroom OAuth token:', err);
+      setClassroomOAuthToken(null);
+    }
+  }, [profile?.email]);
+
+  const syncAssignments = useCallback(async () => {
+    if (!profile?.email) {
+      alert('❌ Admin email not found');
+      return;
+    }
+
+    setSyncingAssignments(true);
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${backendUrl}/api/admin/classroom/sync-assignments?email=${encodeURIComponent(profile.email)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert(`✅ Successfully synced ${data.assignments_synced} assignments!\n\nCreated: ${data.assignments_created}\nUpdated: ${data.assignments_updated}\nCourses: ${data.courses_processed}`);
+        // Refresh classroom data to show updated assignments
+        fetchClassroomData(true);
+      } else {
+        alert(`❌ Failed to sync assignments: ${data.detail || data.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      alert(`❌ Error syncing assignments: ${errorMessage}`);
+    } finally {
+      setSyncingAssignments(false);
+    }
+  }, [profile?.email, fetchClassroomData]);
+
   useEffect(() => {
     console.log('🔍 [MOUNT] Component mounted');
     fetchClassroomData();
@@ -886,7 +977,8 @@ const AdminDashboard: React.FC = () => {
     fetchDwdStatus();
     fetchUsersByGradeRole();
     fetchGcdrTokens();
-  }, [fetchClassroomData, fetchCalendarData, fetchWebsitePages, fetchSchedulerStatus, fetchDwdStatus, fetchUsersByGradeRole, fetchGcdrTokens]);
+    fetchClassroomOAuthToken();
+  }, [fetchClassroomData, fetchCalendarData, fetchWebsitePages, fetchSchedulerStatus, fetchDwdStatus, fetchUsersByGradeRole, fetchGcdrTokens, fetchClassroomOAuthToken]);
 
   // Handle URL parameters for tab switching and messages
   useEffect(() => {
@@ -905,9 +997,15 @@ const AdminDashboard: React.FC = () => {
     // Handle success messages
     if (success) {
       if (success === 'connected' && email) {
-        alert(`✅ Google Drive connected successfully!\n\nAccount: ${email}\n\nYou can now test the connection and access exam files.`);
-        // Refresh tokens to show the new connection
-        fetchGcdrTokens(true);
+        if (tab === 'drive') {
+          alert(`✅ Google Drive connected successfully!\n\nAccount: ${email}\n\nYou can now test the connection and access exam files.`);
+          // Refresh tokens to show the new connection
+          fetchGcdrTokens(true);
+        } else if (tab === 'classroom') {
+          alert(`✅ Google Classroom connected successfully!\n\nAccount: ${email}\n\nYou can now sync assignments using the "Sync Assignments" button.`);
+          // Refresh token to show the new connection
+          fetchClassroomOAuthToken(true);
+        }
       }
     }
 
@@ -920,7 +1018,7 @@ const AdminDashboard: React.FC = () => {
         alert(`❌ OAuth Error:\n\n${decodeURIComponent(message)}`);
       }
     }
-  }, [searchParams, fetchGcdrTokens]);
+  }, [searchParams, fetchGcdrTokens, fetchClassroomOAuthToken]);
 
   // Calculate sync status for display
   const getStatusBadge = (status: 'fresh' | 'stale' | 'outdated') => {
@@ -1523,6 +1621,72 @@ const AdminDashboard: React.FC = () => {
         {/* Google Classroom Tab */}
         {activeTab === 'classroom' && (
           <div className="mb-8">
+            {/* OAuth Connection Section */}
+            <div className="bg-white rounded-lg sm:rounded-xl shadow-sm sm:shadow-md border border-gray-200 p-4 sm:p-6 mb-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Assignment Sync (OAuth)</h3>
+                  <p className="text-sm text-gray-600">
+                    Connect Google Classroom to sync assignment details. DWD handles courses, teachers, and students.
+                    {classroomOAuthToken ? (
+                      <span className="text-green-600 font-medium"> • Connected</span>
+                    ) : (
+                      <span className="text-gray-500"> • Not connected</span>
+                    )}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  {!classroomOAuthToken ? (
+                    <button
+                      onClick={connectGoogleClassroom}
+                      className="px-4 sm:px-5 py-2 sm:py-2.5 bg-blue-600 text-white rounded-lg font-medium text-xs sm:text-sm transition-all duration-300 transform hover:scale-105 hover:shadow-lg flex items-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                      </svg>
+                      Connect Google Classroom
+                    </button>
+                  ) : (
+                    <button
+                      onClick={syncAssignments}
+                      disabled={syncingAssignments}
+                      className="px-4 sm:px-5 py-2 sm:py-2.5 bg-green-600 text-white rounded-lg font-medium text-xs sm:text-sm transition-all duration-300 transform hover:scale-105 hover:shadow-lg disabled:opacity-50 disabled:transform-none flex items-center gap-2"
+                    >
+                      {syncingAssignments ? (
+                        <>
+                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Syncing...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          Sync Assignments
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+              </div>
+              {classroomOAuthToken && (
+                <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm text-green-800">
+                    ✅ Connected as: <strong>{classroomOAuthToken.access_token ? 'Active' : 'Inactive'}</strong>
+                    {classroomOAuthToken.token_expires_at && (
+                      <span className="ml-2">• Expires: {formatDateTime(classroomOAuthToken.token_expires_at)}</span>
+                    )}
+                  </p>
+                </div>
+              )}
+            </div>
+
             <div className="flex justify-between items-center mb-4">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Classroom Courses</h2>

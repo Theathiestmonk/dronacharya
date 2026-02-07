@@ -322,14 +322,18 @@ class GoogleDWDService:
                         # Using only VALID scopes that Google still supports
                         # Note: admin.py says coursework.readonly and student-submissions.readonly are deprecated
                         # But we're using student-submissions.students.readonly (different scope)
+                        # CRITICAL: classroom.courses.readonly does NOT provide assignment data
+                        # We need a coursework-specific scope to access assignments via courses().courseWork().list()
+                        # ALTERNATIVE: classroom.coursework.me.readonly for user's own assignments
                         CLASSROOM_SCOPES = [
                             'https://www.googleapis.com/auth/classroom.courses.readonly',
                             'https://www.googleapis.com/auth/classroom.rosters.readonly',
-                            'https://www.googleapis.com/auth/classroom.coursework.students.readonly',  # For assignment details
+                            'https://www.googleapis.com/auth/classroom.coursework.students.readonly',  # For all student assignments (teacher/admin view)
+                            'https://www.googleapis.com/auth/classroom.coursework.me.readonly',  # ALTERNATIVE: User's own assignments only
                             'https://www.googleapis.com/auth/classroom.student-submissions.students.readonly',  # For submission status (all students, can filter by student)
                             'https://www.googleapis.com/auth/classroom.announcements.readonly'
                         ]
-                        print(f"   ✅ [CLASS PATCH] Using 5 valid Classroom scopes (including coursework.students.readonly)")
+                        print(f"   ✅ [CLASS PATCH] Using {len(CLASSROOM_SCOPES)} valid Classroom scopes (including coursework.students.readonly and coursework.me.readonly for assignment data)")
                         
                         CALENDAR_SCOPES = [
                             'https://www.googleapis.com/auth/calendar.readonly',
@@ -384,7 +388,7 @@ class GoogleDWDService:
                                 classroom_scope_list = [
                                     'https://www.googleapis.com/auth/classroom.courses.readonly',
                                     'https://www.googleapis.com/auth/classroom.rosters.readonly',
-                                    'https://www.googleapis.com/auth/classroom.coursework.students.readonly',  # For assignment details
+                                    'https://www.googleapis.com/auth/classroom.coursework.students.readonly',  # Required for assignment data
                                     'https://www.googleapis.com/auth/classroom.student-submissions.students.readonly',
                                     'https://www.googleapis.com/auth/classroom.announcements.readonly'
                                 ]
@@ -521,11 +525,15 @@ class GoogleDWDService:
             original_token_endpoint_request = oauth2_client._token_endpoint_request
             
             # Define scopes for each API type (must match Admin Console exactly)
-            # NOTE: classroom.coursework.readonly is DEPRECATED - using coursework.students.readonly instead
+            # NOTE: classroom.coursework.readonly is DEPRECATED
+            # CRITICAL: classroom.courses.readonly does NOT provide assignment data
+            # We need coursework.students.readonly OR coursework.me.readonly to access assignments via courses().courseWork().list()
+            # ALTERNATIVE: classroom.coursework.me.readonly for user's own assignments (may be recognized by Google Admin Console)
             DWD_CLASSROOM_SCOPES = [
                 'https://www.googleapis.com/auth/classroom.courses.readonly',
                 'https://www.googleapis.com/auth/classroom.rosters.readonly',
-                'https://www.googleapis.com/auth/classroom.coursework.students.readonly',  # For assignment details
+                'https://www.googleapis.com/auth/classroom.coursework.students.readonly',  # For all student assignments (teacher/admin view)
+                'https://www.googleapis.com/auth/classroom.coursework.me.readonly',  # ALTERNATIVE: User's own assignments only
                 'https://www.googleapis.com/auth/classroom.student-submissions.students.readonly',  # For submission status (all students, can filter by student)
                 'https://www.googleapis.com/auth/classroom.announcements.readonly'
             ]
@@ -980,10 +988,13 @@ class GoogleDWDService:
         
         # Try setting Classroom scopes temporarily on credentials
         # This might allow Google to create JWT with correct scopes naturally
+        # CRITICAL: coursework.students.readonly OR coursework.me.readonly is required for assignment data
+        # ALTERNATIVE: Use coursework.me.readonly if coursework.students.readonly is not recognized
         classroom_scopes = [
             'https://www.googleapis.com/auth/classroom.courses.readonly',
             'https://www.googleapis.com/auth/classroom.rosters.readonly',
-            'https://www.googleapis.com/auth/classroom.coursework.students.readonly',  # For assignment details
+            'https://www.googleapis.com/auth/classroom.coursework.students.readonly',  # For all student assignments
+            'https://www.googleapis.com/auth/classroom.coursework.me.readonly',  # ALTERNATIVE: User's own assignments only
             'https://www.googleapis.com/auth/classroom.student-submissions.students.readonly',
             'https://www.googleapis.com/auth/classroom.announcements.readonly'
         ]
@@ -1108,7 +1119,7 @@ class GoogleDWDService:
                 print(f"      https://www.googleapis.com/auth/classroom.coursework.students.readonly")
                 print(f"      https://www.googleapis.com/auth/classroom.student-submissions.students.readonly")
                 print(f"      https://www.googleapis.com/auth/classroom.announcements.readonly")
-                print(f"      NOTE: classroom.coursework.readonly is DEPRECATED - use coursework.students.readonly instead")
+                print(f"      NOTE: classroom.courses.readonly does NOT provide assignment data - coursework.students.readonly is REQUIRED")
                 print(f"   6. Also include the 2 Calendar scopes (Calendar works, so these are correct):")
                 print(f"      https://www.googleapis.com/auth/calendar.readonly")
                 print(f"      https://www.googleapis.com/auth/calendar.events.readonly")

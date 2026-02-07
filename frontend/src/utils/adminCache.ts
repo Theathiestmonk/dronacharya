@@ -14,7 +14,8 @@ export type CacheKey =
   | 'admin_scheduler_status'
   | 'admin_dwd_status'
   | 'admin_users_by_grade_role'
-  | 'admin_gcdr_tokens';
+  | 'admin_gcdr_tokens'
+  | 'admin_classroom_oauth_token';
 
 interface CachedData<T> {
   data: T;

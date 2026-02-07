@@ -32,14 +32,19 @@ Or check the startup logs - the Client ID is now logged when the server starts.
 https://www.googleapis.com/auth/classroom.courses.readonly
 https://www.googleapis.com/auth/classroom.rosters.readonly
 https://www.googleapis.com/auth/classroom.announcements.readonly
-https://www.googleapis.com/auth/classroom.coursework.students.readonly
 https://www.googleapis.com/auth/classroom.student-submissions.students.readonly
 https://www.googleapis.com/auth/admin.directory.user.readonly
 https://www.googleapis.com/auth/calendar.readonly
 https://www.googleapis.com/auth/calendar.events.readonly
 ```
 
-**Note:** We use `classroom.student-submissions.students.readonly` for both students and faculty. For students, we filter results in code to show only their own submissions. This simplifies scope management - you don't need `classroom.student-submissions.me.readonly`.
+**Note:** 
+- We use `classroom.student-submissions.students.readonly` for both students and faculty. For students, we filter results in code to show only their own submissions. This simplifies scope management - you don't need `classroom.student-submissions.me.readonly`.
+- **CRITICAL:** `classroom.courses.readonly` does NOT provide assignment data. You MUST add a coursework scope to access assignments via `courses().courseWork().list()` endpoint.
+- **ALTERNATIVE SCOPES for assignment data:**
+  - `classroom.coursework.students.readonly` - For all student assignments (teacher/admin view)
+  - `classroom.coursework.me.readonly` - **RECOMMENDED ALTERNATIVE** - For user's own assignments only (may be recognized by Google Admin Console)
+- If `classroom.coursework.students.readonly` doesn't appear in authorized scopes list, try adding `classroom.coursework.me.readonly` instead.
 
 6. Click **"Authorize"**
 7. **Wait 15-30 minutes** for changes to propagate
