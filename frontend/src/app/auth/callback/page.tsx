@@ -11,10 +11,10 @@ export default function AuthCallback() {
     // Wait for Supabase to process the auth callback
     const timer = setTimeout(() => {
       if (user) {
-        // User is authenticated, redirect to reset password page
-        router.push('/reset-password');
+        // User is authenticated, redirect to home page
+        router.push('/');
       } else {
-        // No user, redirect to main page
+        // No user, redirect to main page (or an error page if preferred)
         router.push('/');
       }
     }, 1000);
