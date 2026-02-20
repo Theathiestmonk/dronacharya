@@ -9,7 +9,6 @@ import EditProfileModal from '../components/EditProfileModal';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { useAuth } from '../providers/AuthProvider';
 import { ChatHistoryProvider, useChatHistory } from '../providers/ChatHistoryProvider';
-import { useSupabase } from '../providers/SupabaseProvider';
 import { useRouter } from 'next/navigation';
 
 // Component to check if all providers are ready
@@ -707,7 +706,6 @@ const AppContent: React.FC<{
 
 const HomePage: React.FC = () => {
   const { user, loading, needsOnboarding } = useAuth();
-  const supabase = useSupabase();
   const [chatKey, setChatKey] = useState(0); // Key to force re-render of Chatbot
   const chatbotRef = useRef<{ clearChat: () => void }>(null); // Ref for chatbot component
   const [showAuthForm, setShowAuthForm] = useState(false);
