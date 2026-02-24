@@ -1,3 +1,5 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
 fastapi
 uvicorn[standard]
 openai>=1.0.0
@@ -17,11 +19,11 @@ lxml
 html5lib
 sqlalchemy
 psycopg2-binary
-httpx 
+httpx
 google-auth>=2.23.0
 google-auth-oauthlib>=1.1.0
 APScheduler>=3.10.4
 google-auth-httplib2>=0.1.1
 google-api-python-client>=2.100.0
 PyPDF2>=3.0.0
-sentence-transformers>=2.2.0 
+sentence-transformers>=2.2.0
