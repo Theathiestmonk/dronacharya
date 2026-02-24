@@ -390,7 +390,7 @@ const AppContent: React.FC<{
               <div className="flex justify-center mb-6">
                 <Image
                   src="/prakriti_logo.webp"
-                  alt="Prakriti Visual"
+                  alt="Prakriti AI Assistant"
                   width={150}
                   height={150}
                   style={{ maxWidth: '150px', height: 'auto' }}
@@ -398,7 +398,7 @@ const AppContent: React.FC<{
               </div>
               <div className="text-center">
                 <span className="text-gray-600 dark:text-gray-300">
-                  Loading Prakriti AI...
+                  Loading Prakriti AI Assistant...
                 </span>
               </div>
             </div>
