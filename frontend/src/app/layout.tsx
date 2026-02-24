@@ -1,4 +1,5 @@
 import './globals.css';
+import Script from 'next/script';
 
 import { SupabaseProvider } from '../providers/SupabaseProvider';
 import { AuthProvider } from '../providers/AuthProvider';
@@ -33,6 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="shortcut icon" href="/prakriti_logo.webp" type="image/webp" />
         <link rel="apple-touch-icon" href="/prakriti_logo.webp" />
         <meta name="theme-color" content="#23479f" />
+        <Script src="https://accounts.google.com/gsi/client" strategy="beforeInteractive" />
       </head>
       <body className="min-h-screen" suppressHydrationWarning>
         <SupabaseProvider>

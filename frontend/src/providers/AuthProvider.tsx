@@ -58,6 +58,7 @@ interface AuthContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signInWithGoogle: () => Promise<{ error: Error | null }>;
+  signInWithIdToken: (idToken: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, userData?: Record<string, unknown>) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   updateProfile: (profileData: Partial<UserProfile>) => Promise<{ error: Error | null }>;
@@ -98,9 +99,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // User needs to complete onboarding to select their role
         console.log('User profile not found - user needs to complete onboarding');
         console.log('Not creating profile automatically - user will select role in onboarding form');
-          setProfile(null);
-          setIsFirstLogin(true);
-          setProfileLoadError(false);
+        setProfile(null);
+        setIsFirstLogin(true);
+        setProfileLoadError(false);
       } else {
         console.error('Error fetching user profile:', response.status, response.statusText);
         setProfile(null);
@@ -140,7 +141,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.log('Initial session check:', session?.user ? 'User found' : 'No user');
         setUser(session?.user ?? null);
         setHasCheckedAuth(true);
-        
+
         if (session?.user) {
           await fetchUserProfile(session.user.id);
         } else {
@@ -165,7 +166,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('Auth state change:', event, session?.user ? 'User found' : 'No user');
       setUser(session?.user ?? null);
       setHasCheckedAuth(true);
-      
+
       if (session?.user) {
         await fetchUserProfile(session.user.id);
       } else {
@@ -203,7 +204,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('Redirect URL:', redirectUrl);
       console.log('Current URL before OAuth:', window.location.href);
       console.log('Window origin:', window.location.origin);
-      
+
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -217,7 +218,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('OAuth response:', { data, error });
       console.log('OAuth data URL:', data?.url);
       console.log('Expected Supabase OAuth URL should contain:', 'tvtfuexwurcdjevdnrqd.supabase.co');
-      
+
       if (data?.url) {
         if (data.url.includes('supabase.co')) {
           console.log('✅ Correct: OAuth URL contains Supabase domain');
@@ -236,18 +237,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       console.log('OAuth initiated successfully');
       console.log('About to redirect to:', data?.url);
-      
+
       // If we have a URL, redirect immediately
       if (data?.url) {
         console.log('Redirecting to Google OAuth...');
         console.log('Full redirect URL:', data.url);
-        
+
         // Force immediate redirect
         console.log('Attempting redirect to:', data.url);
-        
+
         // Use the most reliable redirect method
         window.location.assign(data.url);
-        
+
         // Don't return here - let the redirect happen
         return { error: null };
       } else {
@@ -257,6 +258,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (error) {
       console.error('OAuth exception:', error);
+      return { error: error instanceof Error ? error : new Error('Unknown error') };
+    }
+  };
+
+  const signInWithIdToken = async (idToken: string) => {
+    if (!supabase) {
+      return { error: new Error('Authentication not available') };
+    }
+
+    try {
+      console.log('Signing in with Google ID Token...');
+      const { error } = await supabase.auth.signInWithIdToken({
+        provider: 'google',
+        token: idToken,
+      });
+
+      if (error) {
+        console.error('Error signing in with ID token:', error);
+        return { error };
+      }
+
+      console.log('Successfully signed in with ID token');
+      return { error: null };
+    } catch (error) {
+      console.error('Exception in signInWithIdToken:', error);
       return { error: error instanceof Error ? error : new Error('Unknown error') };
     }
   };
@@ -338,19 +364,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!supabase) {
       return { error: new Error('Authentication not available') };
     }
-    
+
     try {
       console.log('🔄 Supabase resetPasswordForEmail called with:', {
         email,
         redirectTo: `${window.location.origin}/reset-password`
       });
-      
+
       const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
-      
+
       console.log('📧 Supabase response:', { data, error });
-      
+
       if (error) {
         console.error('❌ Supabase error details:', error);
         // Check if it's a "user not found" error
@@ -359,7 +385,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         return { error };
       }
-      
+
       return { error: null };
     } catch (error) {
       console.error('❌ Exception in resetPassword:', error);
@@ -371,7 +397,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!supabase) {
       return { error: new Error('Authentication not available') };
     }
-    
+
     try {
       const { error } = await supabase.auth.updateUser({
         password: newPassword
@@ -392,8 +418,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const needsOnboarding = Boolean(
-    user && 
-    !profileLoadError && 
+    user &&
+    !profileLoadError &&
     (isFirstLogin || !profile || !profile.onboarding_completed) &&
     !getOnboardingFromStorage() // Don't show onboarding if it's completed in localStorage
   );
@@ -404,6 +430,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loading: loading || !hasCheckedAuth, // Keep loading true until auth is checked
     signIn,
     signInWithGoogle,
+    signInWithIdToken,
     signUp,
     signOut,
     updateProfile,

@@ -15,9 +15,13 @@ from ..services.supabase_admin import SupabaseAdminService
 from ..services.google_dwd_service import get_dwd_service
 from ..services.embedding_generator import get_embedding_generator
 from ..services.auto_sync_scheduler import get_auto_sync_scheduler
+# Ensure backend root is in sys.path
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+backend_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if backend_root not in sys.path:
+    sys.path.append(backend_root)
+
 from token_refresh_service import refresh_expired_tokens
 from pydantic import BaseModel
 
@@ -72,6 +76,11 @@ class AdminLoginResponse(BaseModel):
 # Google OAuth configuration
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+
+# Sensitive Data Credentials (for Drive/Classroom)
+GOOGLE_SENSITIVE_CLIENT_ID = os.getenv("GOOGLE_SENSITIVE_CLIENT_ID")
+GOOGLE_SENSITIVE_CLIENT_SECRET = os.getenv("GOOGLE_SENSITIVE_CLIENT_SECRET")
+
 # IMPORTANT: Redirect URI MUST point to FRONTEND Next.js page, NOT backend API
 # Google redirects here, then the Next.js page calls /api/admin/callback with user's email
 # DO NOT use http://localhost:8000/api/admin/callback - that's the backend route
@@ -484,9 +493,14 @@ async def get_calendar_data(email: Optional[str] = None):
 async def refresh_google_token(integration: GoogleIntegration, db: Session):
     """Refresh Google OAuth token"""
     try:
+        # Determine which credentials to use
+        is_sensitive = integration.service_type in ["classroom", "drive"]
+        client_id = GOOGLE_SENSITIVE_CLIENT_ID if is_sensitive and GOOGLE_SENSITIVE_CLIENT_ID else GOOGLE_CLIENT_ID
+        client_secret = GOOGLE_SENSITIVE_CLIENT_SECRET if is_sensitive and GOOGLE_SENSITIVE_CLIENT_SECRET else GOOGLE_CLIENT_SECRET
+
         token_data = {
-            "client_id": GOOGLE_CLIENT_ID,
-            "client_secret": GOOGLE_CLIENT_SECRET,
+            "client_id": client_id,
+            "client_secret": client_secret,
             "refresh_token": integration.refresh_token,
             "grant_type": "refresh_token"
         }
@@ -2703,7 +2717,9 @@ async def connect_google_drive(request: Request, email: str = Query(..., descrip
         raise HTTPException(status_code=404, detail="Admin profile not found")
 
     # Google OAuth configuration
-    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    # Use Sensitive Client ID for Drive access
+    client_id = GOOGLE_SENSITIVE_CLIENT_ID or GOOGLE_CLIENT_ID
+    print(f"[DEBUG] GCDR Connect - Using Client ID: {client_id}")
     redirect_uri = os.getenv("GOOGLE_OAUTH_REDIRECT_URI", f"{request.base_url}api/admin/gcdr/callback")
 
     if not client_id:
@@ -2744,8 +2760,9 @@ async def google_drive_oauth_callback(
     try:
         # Exchange code for tokens
         token_url = "https://oauth2.googleapis.com/token"
-        client_id = os.getenv("GOOGLE_CLIENT_ID")
-        client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+        # Use Sensitive Credentials for Drive access
+        client_id = GOOGLE_SENSITIVE_CLIENT_ID or GOOGLE_CLIENT_ID
+        client_secret = GOOGLE_SENSITIVE_CLIENT_SECRET or GOOGLE_CLIENT_SECRET
         redirect_uri = os.getenv("GOOGLE_OAUTH_REDIRECT_URI")
 
         print(f"[GCDR OAuth] Client ID: {client_id[:20]}...")
@@ -2814,7 +2831,7 @@ async def google_drive_oauth_callback(
 
         # Use 'id' from user_profiles (not 'user_id' which is auth.users.id)
         # google_integrations.admin_id references user_profiles.id
-        admin_id = admin_profile.get('id')
+        admin_id = admin_profile.get('user_id')
         
         if not admin_id:
             raise HTTPException(status_code=400, detail="User profile ID not found")
@@ -2881,9 +2898,15 @@ async def refresh_all_gcdr_tokens(email: Optional[str] = None):
             if not profile or not profile.get('admin_privileges'):
                 raise HTTPException(status_code=403, detail="Admin privileges required")
 
-        # Import and run refresh function
-        from ..token_refresh_service import refresh_expired_tokens
+        # Import from root (already in sys.path from top-level)
+        from token_refresh_service import refresh_expired_tokens
         refresh_expired_tokens()
+    except Exception as e:
+        print(f"[Admin] Error refreshing tokens (import error?): {e}")
+        # Log the full traceback for debugging
+        import traceback
+        traceback.print_exc()
+        raise e
 
         return {
             "success": True,
@@ -2918,7 +2941,9 @@ async def connect_google_classroom(request: Request, email: str = Query(..., des
         raise HTTPException(status_code=404, detail="User profile not found")
     
     # Google OAuth configuration
-    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    # Use Sensitive Client ID for Classroom access
+    client_id = GOOGLE_SENSITIVE_CLIENT_ID or GOOGLE_CLIENT_ID
+    
     # Use separate redirect URI for Classroom (since GOOGLE_OAUTH_REDIRECT_URI is for Drive)
     # Construct from request or use environment variable
     redirect_uri = os.getenv("GOOGLE_CLASSROOM_OAUTH_REDIRECT_URI")
@@ -2966,8 +2991,11 @@ async def google_classroom_oauth_callback(
     try:
         # Exchange code for tokens
         token_url = "https://oauth2.googleapis.com/token"
-        client_id = os.getenv("GOOGLE_CLIENT_ID")
-        client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+        
+        # Use Sensitive Credentials for Classroom access
+        client_id = GOOGLE_SENSITIVE_CLIENT_ID or GOOGLE_CLIENT_ID
+        client_secret = GOOGLE_SENSITIVE_CLIENT_SECRET or GOOGLE_CLIENT_SECRET
+        
         # Use separate redirect URI for Classroom, or fallback to constructing from request
         # Since GOOGLE_OAUTH_REDIRECT_URI is for Drive, we need a separate one for Classroom
         redirect_uri = os.getenv("GOOGLE_CLASSROOM_OAUTH_REDIRECT_URI")
@@ -3174,8 +3202,8 @@ async def sync_assignments_oauth(email: str = Query(..., description="Teacher em
                     refresh_response = requests.post(
                         "https://oauth2.googleapis.com/token",
                         data={
-                            "client_id": os.getenv("GOOGLE_CLIENT_ID"),
-                            "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
+                            "client_id": GOOGLE_SENSITIVE_CLIENT_ID or GOOGLE_CLIENT_ID,
+                            "client_secret": GOOGLE_SENSITIVE_CLIENT_SECRET or GOOGLE_CLIENT_SECRET,
                             "refresh_token": refresh_token,
                             "grant_type": "refresh_token"
                         }

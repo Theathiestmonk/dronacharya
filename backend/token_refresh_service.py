@@ -86,11 +86,15 @@ class TokenRefreshService:
             token_url = "https://oauth2.googleapis.com/token"
 
             # Prepare the refresh request
+            # For GCDR (Drive/Classroom), we use the sensitive credentials if available
+            client_id = os.getenv('GOOGLE_SENSITIVE_CLIENT_ID') or os.getenv('GOOGLE_CLIENT_ID')
+            client_secret = os.getenv('GOOGLE_SENSITIVE_CLIENT_SECRET') or os.getenv('GOOGLE_CLIENT_SECRET')
+
             data = {
                 'grant_type': 'refresh_token',
                 'refresh_token': refresh_token,
-                'client_id': os.getenv('GOOGLE_CLIENT_ID'),
-                'client_secret': os.getenv('GOOGLE_CLIENT_SECRET')
+                'client_id': client_id,
+                'client_secret': client_secret
             }
 
             print("[TokenRefresh] Making refresh request to Google OAuth...")
