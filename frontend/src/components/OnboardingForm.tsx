@@ -25,6 +25,8 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [showAdvancedBasic, setShowAdvancedBasic] = useState(false);
+  const [showAdvancedTeacher, setShowAdvancedTeacher] = useState(false);
   const { completeOnboarding } = useAuth();
 
   const [formData, setFormData] = useState<FormData>({
@@ -274,6 +276,8 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
 
   const handleRoleChange = (newRole: UserRole) => {
     setRole(newRole);
+    setShowAdvancedBasic(false);
+    setShowAdvancedTeacher(false);
     setFormData(prev => ({
       ...prev,
       role: newRole,
@@ -370,7 +374,8 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         if (role === 'student') {
           roleRequiredFields.push('grade', 'student_id', 'learning_style', 'emergency_contact_name', 'emergency_contact_phone');
         } else if (role === 'teacher') {
-        roleRequiredFields.push('employee_id', 'department', 'subjects_taught', 'years_of_experience', 'qualifications', 'gender', 'emergency_contact_name', 'emergency_contact_phone');
+        // Keep teacher onboarding lightweight: only the minimum required for identification + teaching context
+        roleRequiredFields.push('employee_id', 'department', 'subjects_taught');
       } else if (role === 'parent') {
         roleRequiredFields.push('relationship_to_student', 'preferred_contact_method', 'gender', 'emergency_contact_name', 'emergency_contact_phone');
       }
@@ -683,12 +688,11 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           {renderFieldError('last_name')}
         </div>
         
-        {/* Gender field - only for Teacher and Parent roles */}
+        {/* Gender field - optional for Teacher/Parent */}
         {formData.role !== 'student' && (
           <div>
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Gender *</label>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Gender</label>
             <select
-              required
               value={getStringValue(formData.gender)}
               onChange={(e) => handleInputChange('gender', e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
@@ -721,83 +725,101 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           />
         </div>
         
-        <div>
-          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Date of Birth *</label>
-          <input
-            type="date"
-            required
-            value={getStringValue(formData.date_of_birth)}
-            onChange={(e) => handleInputChange('date_of_birth', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
-            style={{ 
-              borderColor: 'var(--brand-primary-200)',
-              boxShadow: '0 0 0 1px var(--brand-primary)'
-            }}
-          />
-        </div>
+        {/* For teachers, keep step 2 minimal by default */}
+        {(role !== 'teacher' || showAdvancedBasic) && (
+          <div>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
+            <input
+              type="date"
+              value={getStringValue(formData.date_of_birth)}
+              onChange={(e) => handleInputChange('date_of_birth', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+              style={{ 
+                borderColor: 'var(--brand-primary-200)',
+                boxShadow: '0 0 0 1px var(--brand-primary)'
+              }}
+            />
+          </div>
+        )}
       </div>
       
-      <div>
-        <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Address *</label>
-        <textarea
-          required
-          value={getStringValue(formData.address)}
-          onChange={(e) => handleInputChange('address', e.target.value)}
-          rows={3}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-1"
-          style={{ 
-            borderColor: 'var(--brand-primary-200)',
-            boxShadow: '0 0 0 1px var(--brand-primary)'
-          }}
-        />
-      </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">City *</label>
-          <input
-            type="text"
-            required
-            value={getStringValue(formData.city)}
-            onChange={(e) => handleInputChange('city', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
-            style={{ 
-              borderColor: 'var(--brand-primary-200)',
-              boxShadow: '0 0 0 1px var(--brand-primary)'
-            }}
-          />
+      {(role !== 'teacher' || showAdvancedBasic) && (
+        <>
+          <div>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Address</label>
+            <textarea
+              value={getStringValue(formData.address)}
+              onChange={(e) => handleInputChange('address', e.target.value)}
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-1"
+              style={{ 
+                borderColor: 'var(--brand-primary-200)',
+                boxShadow: '0 0 0 1px var(--brand-primary)'
+              }}
+            />
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">City</label>
+              <input
+                type="text"
+                value={getStringValue(formData.city)}
+                onChange={(e) => handleInputChange('city', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+                style={{ 
+                  borderColor: 'var(--brand-primary-200)',
+                  boxShadow: '0 0 0 1px var(--brand-primary)'
+                }}
+              />
+            </div>
+            
+            <div>
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">State</label>
+              <input
+                type="text"
+                value={getStringValue(formData.state)}
+                onChange={(e) => handleInputChange('state', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+                style={{ 
+                  borderColor: 'var(--brand-primary-200)',
+                  boxShadow: '0 0 0 1px var(--brand-primary)'
+                }}
+              />
+            </div>
+            
+            <div>
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Postal Code</label>
+              <input
+                type="text"
+                value={getStringValue(formData.postal_code)}
+                onChange={(e) => handleInputChange('postal_code', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+                style={{ 
+                  borderColor: 'var(--brand-primary-200)',
+                  boxShadow: '0 0 0 1px var(--brand-primary)'
+                }}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
+      {role === 'teacher' && (
+        <div className="pt-2">
+          <button
+            type="button"
+            onClick={() => setShowAdvancedBasic(v => !v)}
+            className="text-sm font-medium underline underline-offset-4"
+            style={{ color: 'var(--brand-primary)' }}
+          >
+            {showAdvancedBasic ? 'Hide optional personal details' : 'Add optional personal details'}
+          </button>
+          <p className="text-xs text-gray-500 mt-1">
+            You can skip this now and complete later from your profile.
+          </p>
         </div>
-        
-        <div>
-          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">State *</label>
-          <input
-            type="text"
-            required
-            value={getStringValue(formData.state)}
-            onChange={(e) => handleInputChange('state', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
-            style={{ 
-              borderColor: 'var(--brand-primary-200)',
-              boxShadow: '0 0 0 1px var(--brand-primary)'
-            }}
-          />
-        </div>
-        
-        <div>
-          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Postal Code *</label>
-          <input
-            type="text"
-            required
-            value={getStringValue(formData.postal_code)}
-            onChange={(e) => handleInputChange('postal_code', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
-            style={{ 
-              borderColor: 'var(--brand-primary-200)',
-              boxShadow: '0 0 0 1px var(--brand-primary)'
-            }}
-          />
-        </div>
-      </div>
+      )}
     </div>
   );
 
@@ -1037,180 +1059,176 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           <p className="text-xs text-gray-500 mt-1">Separate multiple subjects with commas</p>
           {renderFieldError('subjects_taught')}
         </div>
-        
-        <div>
-          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Years of Experience *</label>
-          <input
-            type="number"
-            required
-            min="0"
-            value={getStringValue(formData.years_of_experience)}
-            onChange={(e) => handleInputChange('years_of_experience', parseInt(e.target.value))}
-            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
-              fieldErrors.years_of_experience ? 'border-red-500' : 'border-gray-300'
-            }`}
-            style={{ 
-              borderColor: fieldErrors.years_of_experience ? '#ef4444' : 'var(--brand-primary-200)',
-              boxShadow: fieldErrors.years_of_experience ? '0 0 0 1px #ef4444' : '0 0 0 1px var(--brand-primary)'
-            }}
-          />
-          {renderFieldError('years_of_experience')}
-        </div>
-        
-        <div>
-          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Office Location</label>
-          <input
-            type="text"
-            value={getStringValue(formData.office_location)}
-            onChange={(e) => handleInputChange('office_location', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
-            style={{ 
-              borderColor: 'var(--brand-primary-200)',
-              boxShadow: '0 0 0 1px var(--brand-primary)'
-            }}
-          />
-        </div>
-        
-        <div>
-          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Office Hours</label>
-          <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
-            {/* Start Time */}
-            <div className="flex-1 min-w-0">
+      </div>
+
+      <div className="pt-2">
+        <button
+          type="button"
+          onClick={() => setShowAdvancedTeacher(v => !v)}
+          className="text-sm font-medium underline underline-offset-4"
+          style={{ color: 'var(--brand-primary)' }}
+        >
+          {showAdvancedTeacher ? 'Hide advanced (optional) details' : 'Add advanced (optional) details'}
+        </button>
+      </div>
+
+      {showAdvancedTeacher && (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Years of Experience</label>
               <input
-                type="text"
-                placeholder="HH:MM"
-                value={getStringValue(formData.office_hours_start_display)}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setFormData(prev => {
-                    // Convert to 24-hour format for display
-                    let displayValue = value;
-                    if (value.includes('PM') || value.includes('pm')) {
-                      const timeMatch = value.match(/(\d{1,2}):(\d{2})\s*(PM|pm)/);
-                      if (timeMatch) {
-                        const [, hour, minute] = timeMatch;
-                        let hour24 = parseInt(hour);
-                        if (hour24 !== 12) hour24 += 12;
-                        displayValue = `${hour24.toString().padStart(2, '0')}:${minute}`;
-                      }
-                    } else if (value.includes('AM') || value.includes('am')) {
-                      const timeMatch = value.match(/(\d{1,2}):(\d{2})\s*(AM|am)/);
-                      if (timeMatch) {
-                        const [, hour, minute] = timeMatch;
-                        let hour24 = parseInt(hour);
-                        if (hour24 === 12) hour24 = 0;
-                        displayValue = `${hour24.toString().padStart(2, '0')}:${minute}`;
-                      }
-                    } else {
-                      // If no AM/PM specified, assume 12-hour format and convert based on time
-                      const timeMatch = value.match(/^(\d{1,2}):(\d{2})$/);
-                      if (timeMatch) {
-                        const [, hour, minute] = timeMatch;
-                        let hour24 = parseInt(hour);
-                        // For start time, assume AM if hour is 1-11, PM if 12
-                        if (hour24 === 12) hour24 = 12; // 12 PM = 12:00
-                        // 1-11 AM stays as is
-                        displayValue = `${hour24.toString().padStart(2, '0')}:${minute}`;
-                      }
-                    }
-                    
-                    return {
-                      ...prev,
-                      office_hours_start_display: value,
-                      office_hours_start: displayValue
-                    };
-                  });
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 text-sm"
+                type="number"
+                min="0"
+                value={getStringValue(formData.years_of_experience)}
+                onChange={(e) => handleInputChange('years_of_experience', parseInt(e.target.value))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
                 style={{ 
                   borderColor: 'var(--brand-primary-200)',
                   boxShadow: '0 0 0 1px var(--brand-primary)'
                 }}
               />
             </div>
-            
-            <span className="text-gray-500 font-medium text-sm text-center">to</span>
-            
-            {/* End Time */}
-            <div className="flex-1 min-w-0">
+
+            <div>
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Office Location</label>
               <input
                 type="text"
-                placeholder="HH:MM"
-                value={getStringValue(formData.office_hours_end_display)}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setFormData(prev => {
-                    // Convert to 24-hour format for display
-                    let displayValue = value;
-                    if (value.includes('PM') || value.includes('pm')) {
-                      const timeMatch = value.match(/(\d{1,2}):(\d{2})\s*(PM|pm)/);
-                      if (timeMatch) {
-                        const [, hour, minute] = timeMatch;
-                        let hour24 = parseInt(hour);
-                        if (hour24 !== 12) hour24 += 12;
-                        displayValue = `${hour24.toString().padStart(2, '0')}:${minute}`;
-                      }
-                    } else if (value.includes('AM') || value.includes('am')) {
-                      const timeMatch = value.match(/(\d{1,2}):(\d{2})\s*(AM|am)/);
-                      if (timeMatch) {
-                        const [, hour, minute] = timeMatch;
-                        let hour24 = parseInt(hour);
-                        if (hour24 === 12) hour24 = 0;
-                        displayValue = `${hour24.toString().padStart(2, '0')}:${minute}`;
-                      }
-                    } else {
-                      // If no AM/PM specified, assume 12-hour format and convert based on time
-                      const timeMatch = value.match(/^(\d{1,2}):(\d{2})$/);
-                      if (timeMatch) {
-                        const [, hour, minute] = timeMatch;
-                        let hour24 = parseInt(hour);
-                        // For end time, assume PM if hour is 1-11, AM if 12
-                        if (hour24 >= 1 && hour24 <= 11) hour24 += 12; // 1-11 PM
-                        else if (hour24 === 12) hour24 = 0; // 12 AM = 00:00
-                        displayValue = `${hour24.toString().padStart(2, '0')}:${minute}`;
-                      }
-                    }
-                    
-                    return {
-                      ...prev,
-                      office_hours_end_display: value,
-                      office_hours_end: displayValue
-                    };
-                  });
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 text-sm"
+                value={getStringValue(formData.office_location)}
+                onChange={(e) => handleInputChange('office_location', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
                 style={{ 
                   borderColor: 'var(--brand-primary-200)',
                   boxShadow: '0 0 0 1px var(--brand-primary)'
                 }}
               />
             </div>
-          </div>
-          {getStringValue(formData.office_hours_start) && getStringValue(formData.office_hours_end) && (
-            <div className="mt-1 text-xs text-gray-600">
-              <span className="font-medium">Hours:</span> {getStringValue(formData.office_hours_start)} - {getStringValue(formData.office_hours_end)}
+
+            <div className="md:col-span-2">
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Office Hours</label>
+              <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
+                <div className="flex-1 min-w-0">
+                  <input
+                    type="text"
+                    placeholder="HH:MM"
+                    value={getStringValue(formData.office_hours_start_display)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setFormData(prev => {
+                        let displayValue = value;
+                        if (value.includes('PM') || value.includes('pm')) {
+                          const timeMatch = value.match(/(\d{1,2}):(\d{2})\s*(PM|pm)/);
+                          if (timeMatch) {
+                            const [, hour, minute] = timeMatch;
+                            let hour24 = parseInt(hour);
+                            if (hour24 !== 12) hour24 += 12;
+                            displayValue = `${hour24.toString().padStart(2, '0')}:${minute}`;
+                          }
+                        } else if (value.includes('AM') || value.includes('am')) {
+                          const timeMatch = value.match(/(\d{1,2}):(\d{2})\s*(AM|am)/);
+                          if (timeMatch) {
+                            const [, hour, minute] = timeMatch;
+                            let hour24 = parseInt(hour);
+                            if (hour24 === 12) hour24 = 0;
+                            displayValue = `${hour24.toString().padStart(2, '0')}:${minute}`;
+                          }
+                        } else {
+                          const timeMatch = value.match(/^(\d{1,2}):(\d{2})$/);
+                          if (timeMatch) {
+                            const [, hour, minute] = timeMatch;
+                            let hour24 = parseInt(hour);
+                            if (hour24 === 12) hour24 = 12;
+                            displayValue = `${hour24.toString().padStart(2, '0')}:${minute}`;
+                          }
+                        }
+                        return {
+                          ...prev,
+                          office_hours_start_display: value,
+                          office_hours_start: displayValue
+                        };
+                      });
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 text-sm"
+                    style={{ 
+                      borderColor: 'var(--brand-primary-200)',
+                      boxShadow: '0 0 0 1px var(--brand-primary)'
+                    }}
+                  />
+                </div>
+                
+                <span className="text-gray-500 font-medium text-sm text-center">to</span>
+                
+                <div className="flex-1 min-w-0">
+                  <input
+                    type="text"
+                    placeholder="HH:MM"
+                    value={getStringValue(formData.office_hours_end_display)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setFormData(prev => {
+                        let displayValue = value;
+                        if (value.includes('PM') || value.includes('pm')) {
+                          const timeMatch = value.match(/(\d{1,2}):(\d{2})\s*(PM|pm)/);
+                          if (timeMatch) {
+                            const [, hour, minute] = timeMatch;
+                            let hour24 = parseInt(hour);
+                            if (hour24 !== 12) hour24 += 12;
+                            displayValue = `${hour24.toString().padStart(2, '0')}:${minute}`;
+                          }
+                        } else if (value.includes('AM') || value.includes('am')) {
+                          const timeMatch = value.match(/(\d{1,2}):(\d{2})\s*(AM|am)/);
+                          if (timeMatch) {
+                            const [, hour, minute] = timeMatch;
+                            let hour24 = parseInt(hour);
+                            if (hour24 === 12) hour24 = 0;
+                            displayValue = `${hour24.toString().padStart(2, '0')}:${minute}`;
+                          }
+                        } else {
+                          const timeMatch = value.match(/^(\d{1,2}):(\d{2})$/);
+                          if (timeMatch) {
+                            const [, hour, minute] = timeMatch;
+                            let hour24 = parseInt(hour);
+                            if (hour24 >= 1 && hour24 <= 11) hour24 += 12;
+                            else if (hour24 === 12) hour24 = 0;
+                            displayValue = `${hour24.toString().padStart(2, '0')}:${minute}`;
+                          }
+                        }
+                        return {
+                          ...prev,
+                          office_hours_end_display: value,
+                          office_hours_end: displayValue
+                        };
+                      });
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 text-sm"
+                    style={{ 
+                      borderColor: 'var(--brand-primary-200)',
+                      boxShadow: '0 0 0 1px var(--brand-primary)'
+                    }}
+                  />
+                </div>
+              </div>
+              {getStringValue(formData.office_hours_start) && getStringValue(formData.office_hours_end) && (
+                <div className="mt-1 text-xs text-gray-600">
+                  <span className="font-medium">Hours:</span> {getStringValue(formData.office_hours_start)} - {getStringValue(formData.office_hours_end)}
+                </div>
+              )}
             </div>
-          )}
           </div>
-        </div>
       
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Qualifications *</label>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Qualifications</label>
         <textarea
-          required
           value={getStringValue(formData.qualifications)}
           onChange={(e) => handleInputChange('qualifications', e.target.value)}
           rows={3}
           placeholder="B.Ed, M.A. in Mathematics, etc."
-          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
-            fieldErrors.qualifications ? 'border-red-500' : 'border-gray-300'
-          }`}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
           style={{ 
-            borderColor: fieldErrors.qualifications ? '#ef4444' : 'var(--brand-primary-200)',
-            boxShadow: fieldErrors.qualifications ? '0 0 0 1px #ef4444' : '0 0 0 1px var(--brand-primary)'
+            borderColor: 'var(--brand-primary-200)',
+            boxShadow: '0 0 0 1px var(--brand-primary)'
           }}
         />
-        {renderFieldError('qualifications')}
       </div>
       
       <div>
@@ -1229,43 +1247,37 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
         <p className="text-xs text-gray-500 mt-1">Separate multiple specializations with commas</p>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Emergency Contact Name *</label>
-          <input
-            type="text"
-            required
-            value={getStringValue(formData.emergency_contact_name)}
-            onChange={(e) => handleInputChange('emergency_contact_name', e.target.value)}
-            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
-              fieldErrors.emergency_contact_name ? 'border-red-500' : 'border-gray-300'
-            }`}
-            style={{ 
-              borderColor: fieldErrors.emergency_contact_name ? '#ef4444' : 'var(--brand-primary-200)',
-              boxShadow: fieldErrors.emergency_contact_name ? '0 0 0 1px #ef4444' : '0 0 0 1px var(--brand-primary)'
-            }}
-          />
-          {renderFieldError('emergency_contact_name')}
-        </div>
-        
-        <div>
-          <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Emergency Contact Phone *</label>
-          <input
-            type="tel"
-            required
-            value={getStringValue(formData.emergency_contact_phone)}
-            onChange={(e) => handleInputChange('emergency_contact_phone', e.target.value)}
-            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
-              fieldErrors.emergency_contact_phone ? 'border-red-500' : 'border-gray-300'
-            }`}
-            style={{ 
-              borderColor: fieldErrors.emergency_contact_phone ? '#ef4444' : 'var(--brand-primary-200)',
-              boxShadow: fieldErrors.emergency_contact_phone ? '0 0 0 1px #ef4444' : '0 0 0 1px var(--brand-primary)'
-            }}
-          />
-          {renderFieldError('emergency_contact_phone')}
-        </div>
-      </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Emergency Contact Name</label>
+              <input
+                type="text"
+                value={getStringValue(formData.emergency_contact_name)}
+                onChange={(e) => handleInputChange('emergency_contact_name', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+                style={{ 
+                  borderColor: 'var(--brand-primary-200)',
+                  boxShadow: '0 0 0 1px var(--brand-primary)'
+                }}
+              />
+            </div>
+            
+            <div>
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Emergency Contact Phone</label>
+              <input
+                type="tel"
+                value={getStringValue(formData.emergency_contact_phone)}
+                onChange={(e) => handleInputChange('emergency_contact_phone', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2"
+                style={{ 
+                  borderColor: 'var(--brand-primary-200)',
+                  boxShadow: '0 0 0 1px var(--brand-primary)'
+                }}
+              />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 
@@ -1423,20 +1435,19 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
       case 1:
         return formData.role !== undefined;
       case 2:
-        const basicFields = formData.first_name && formData.last_name && formData.phone && formData.date_of_birth && formData.address && formData.city && formData.state && formData.postal_code;
-        // For teacher and parent roles, also require gender in step 2
-        if (role === 'teacher' || role === 'parent') {
-          return basicFields && formData.gender;
+        // Teachers: keep step 2 minimal
+        if (role === 'teacher') {
+          return Boolean(formData.first_name && formData.last_name && formData.phone);
         }
-        return basicFields;
+        // Others: keep full details as before
+        return Boolean(formData.first_name && formData.last_name && formData.phone && formData.date_of_birth && formData.address && formData.city && formData.state && formData.postal_code);
       case 3:
         if (role === 'student') {
           const canProceedStudent = formData.grade && formData.student_id && formData.learning_style && formData.emergency_contact_name && formData.emergency_contact_phone;
           return canProceedStudent;
         }
         if (role === 'teacher') {
-          const canProceedTeacher = formData.employee_id && formData.department && formData.subjects_taught && formData.years_of_experience !== undefined && formData.qualifications && formData.gender && formData.emergency_contact_name && formData.emergency_contact_phone;
-          return canProceedTeacher;
+          return Boolean(formData.employee_id && formData.department && formData.subjects_taught);
         }
         if (role === 'parent') {
           const canProceedParent = formData.relationship_to_student && formData.preferred_contact_method && formData.gender && formData.emergency_contact_name && formData.emergency_contact_phone;
