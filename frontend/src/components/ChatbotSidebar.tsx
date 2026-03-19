@@ -194,15 +194,6 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
         {onClose && (
           <div className="lg:hidden flex justify-between items-center p-4 border-b border-gray-200">
             <div className="flex items-center gap-3 flex-1">
-              {/* Logo */}
-              <div className="w-10 h-10 flex items-center justify-center flex-shrink-0">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/prakriti_logo.webp"
-                  alt="Prakriti School Logo"
-                  className="w-full h-full object-contain"
-                />
-              </div>
               {/* Brand Name */}
               <div className="flex-1">
                 <div className="font-semibold text-gray-900 text-base">Prakriti AI Assistant</div>
@@ -257,15 +248,6 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
         <div className={`p-4 border-b border-gray-200 ${onClose ? 'lg:block hidden' : 'block'}`}>
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 flex-1">
-              {/* Logo */}
-              <div className="w-10 h-10 flex items-center justify-center flex-shrink-0">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/prakriti_logo.webp"
-                  alt="Prakriti School Logo"
-                  className="w-full h-full object-contain"
-                />
-              </div>
               {/* Brand Name */}
               <div className="flex-1">
                 <div className="font-semibold text-gray-900 text-base">Prakriti AI Assistant</div>

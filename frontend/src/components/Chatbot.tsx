@@ -1885,18 +1885,8 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             {/* Spacer at top - reduced for mobile */}
             <div className="flex-shrink-0 pt-10 sm:pt-14 md:pt-20"></div>
             
-            {/* Centered Content: Logo and Message - Scrollable if needed */}
+            {/* Centered Content: Welcome message - Scrollable if needed */}
             <div className="flex-1 flex flex-col items-center justify-center px-3 sm:px-4 md:px-6 min-h-0 overflow-y-auto">
-              {/* Logo - Smaller on mobile */}
-              <div className="flex justify-center mb-3 sm:mb-4 md:mb-6 flex-shrink-0">
-                <Image 
-                  src="/prakriti_logo.webp" 
-                  alt="Prakriti Visual" 
-                  width={128}
-                  height={128}
-                  className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 object-contain" 
-                />
-              </div>
               {/* Welcome Message - Smaller on mobile */}
               <div className="text-center px-2 sm:px-4 mb-3 sm:mb-4 md:mb-6 flex-shrink-0">
                 <h2 className="text-lg sm:text-xl md:text-2xl lg:text-3xl xl:text-4xl font-normal leading-tight text-gray-600">
