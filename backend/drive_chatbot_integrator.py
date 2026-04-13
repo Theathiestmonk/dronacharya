@@ -9,12 +9,24 @@ from typing import Optional, Dict, Any, List
 # Add backend to path for imports
 sys.path.append(os.path.dirname(__file__))
 
-from grade_exam_detector import GradeExamDetector
+from grade_exam_detector import GradeExamDetector, _now_in_timezone
 from supabase_config import get_supabase_client
 from token_refresh_service import TokenRefreshService
 
 class DriveChatbotIntegrator:
     """Integrates Google Drive data with chatbot responses"""
+
+    # Daily timetable tab names differ by infosheet; try in order (Sheets API names are case-sensitive).
+    TIMETABLE_TAB_CANDIDATES: tuple = (
+        "TT",
+        "Time Table",
+        "Time table",
+        "Timetable",
+        "TIMETABLE",
+        "TimeTable",
+        "Daily Time Table",
+        "Daily Timetable",
+    )
 
     def __init__(self):
         self.detector = GradeExamDetector()
@@ -89,21 +101,38 @@ class DriveChatbotIntegrator:
                     f'G{grade} InfoSheet',   # Space pattern: "G8 InfoSheet"
                     f'G{grade}-InfoSheet',   # Dash no space: "G8-InfoSheet"
                     f'G{grade}_InfoSheet_',  # Underscore with year: "G8_InfoSheet_2025-26"
+                    f'Grade {grade} B Infosheet',  # e.g. "Grade 5 B Infosheet"
+                    f'Grade {grade} B InfoSheet',
+                    f'Grade {grade} Infosheet',
+                    f'Grade {grade} InfoSheet',
                 ]
-                
-                # First try exact patterns
+
+                def _name_has_infosheet(name: str) -> bool:
+                    n = name.lower()
+                    return 'infosheet' in n or 'info sheet' in n
+
+                # First try exact patterns (substring match, case-sensitive for G-prefixed names)
                 for pattern in grade_patterns:
                     grade_sheets = [s for s in all_sheets if pattern in s['name']]
                     if grade_sheets:
                         print(f"[DriveChatbot] Found matching sheet: {grade_sheets[0]['name']} (matched pattern: {pattern})")
                         return grade_sheets[0]['id']
-                
-                # If no exact match, try flexible matching: sheet name starts with "G{grade}" and contains "InfoSheet"
+
+                # "Grade 5 B Infosheet" etc.: word Grade + number + optional section letter (case-insensitive infosheet)
+                g_prefix = f'grade {grade}'
+                for sheet in all_sheets:
+                    sheet_name = sheet['name']
+                    snl = sheet_name.lower()
+                    if snl.startswith(g_prefix) and _name_has_infosheet(sheet_name):
+                        print(f"[DriveChatbot] Found matching sheet: {sheet_name} (Grade-prefix flexible match)")
+                        return sheet['id']
+
+                # If no exact match, try flexible matching: sheet name starts with "G{grade}" and contains infosheet
                 # This handles cases like "G9 - Luminosity - InfoSheet 2025-26"
                 flexible_pattern = f'G{grade}'
                 for sheet in all_sheets:
                     sheet_name = sheet['name']
-                    if sheet_name.startswith(flexible_pattern) and 'InfoSheet' in sheet_name:
+                    if sheet_name.startswith(flexible_pattern) and _name_has_infosheet(sheet_name):
                         print(f"[DriveChatbot] Found matching sheet: {sheet_name} (flexible match)")
                         return sheet['id']
                 
@@ -166,6 +195,24 @@ class DriveChatbotIntegrator:
         except Exception as e:
             print(f"[DriveChatbot] Error extracting sheet data: {e}")
             return None
+
+    def extract_timetable_sheet_data(
+        self,
+        file_id: str,
+        token: Dict[str, Any],
+        min_rows: int = 1,
+    ) -> tuple[Optional[List[List[str]]], Optional[str]]:
+        """Load daily timetable from the first tab that exists with enough rows.
+        Tries ``TT`` then ``Time Table`` and other common names — grade sheets vary by school.
+        """
+        for tab in self.TIMETABLE_TAB_CANDIDATES:
+            data = self.extract_sheet_data(file_id, tab, token)
+            if data and len(data) >= min_rows:
+                print(f"[DriveChatbot] Using timetable tab {tab!r} ({len(data)} rows, min_rows={min_rows})")
+                return data, tab
+            print(f"[DriveChatbot] Tab {tab!r} missing or has < {min_rows} rows, trying next timetable name...")
+        print(f"[DriveChatbot] No timetable tab matched: {self.TIMETABLE_TAB_CANDIDATES}")
+        return None, None
 
     def format_exam_schedule(self, data: List[List[str]], exam_type: str, subject_filter: str = None) -> str:
         """Format exam schedule data into readable text with tabular format and future dates only"""
@@ -327,7 +374,13 @@ class DriveChatbotIntegrator:
 
         return response
 
-    def format_timetable(self, data: List[List[str]], filter_day: str = None, filter_days: list[str] = None) -> str:
+    def format_timetable(
+        self,
+        data: List[List[str]],
+        filter_day: str = None,
+        filter_days: list[str] = None,
+        user_timezone: str = None,
+    ) -> str:
         """Format timetable data into readable table with proper null handling"""
         if not data or len(data) < 3:
             return "No timetable data found."
@@ -341,9 +394,8 @@ class DriveChatbotIntegrator:
             print(f"[DriveChatbot] Filtering timetable for multiple days: {filter_days}")
             for day in filter_days:
                 if day.lower() in ['today', 'todays', "today's"]:
-                    # Get current day
-                    from datetime import datetime
-                    current_day = datetime.now().strftime('%A').upper()
+                    # Get current day in user's timezone when set (matches analyze_query / admin Drive flow)
+                    current_day = _now_in_timezone(user_timezone).strftime('%A').upper()
                     # Check if today is weekend
                     if current_day in weekend_days:
                         return f"📅 **No Timetable Available**\n\nThere is no timetable for {current_day.title()} as classes are not held on weekends. The timetable is available from Monday to Friday only.\n\nWould you like to see the timetable for a specific weekday?"
@@ -362,9 +414,7 @@ class DriveChatbotIntegrator:
         elif filter_day:
             # Single day requested (backward compatibility)
             if filter_day.lower() in ['today', 'todays', "today's"]:
-                # Get current day
-                from datetime import datetime
-                current_day = datetime.now().strftime('%A').upper()
+                current_day = _now_in_timezone(user_timezone).strftime('%A').upper()
                 # Check if today is weekend
                 if current_day in weekend_days:
                     return f"📅 **No Timetable Available**\n\nThere is no timetable for {current_day.title()} as classes are not held on weekends. The timetable is available from Monday to Friday only.\n\nWould you like to see the timetable for a specific weekday?"
@@ -549,7 +599,8 @@ class DriveChatbotIntegrator:
         """Main function to get exam information for chatbot"""
 
         # Step 1: Analyze the query
-        analysis = self.detector.analyze_query(user_query)
+        tz = user_profile.get('timezone') if user_profile else None
+        analysis = self.detector.analyze_query(user_query, timezone_name=tz)
         grade = analysis['grade']
         exam_type = analysis['exam_type']
         query_type = analysis['query_type']
@@ -614,52 +665,53 @@ class DriveChatbotIntegrator:
             print(f"[DriveChatbot] Detected day filter with general query type, treating as timetable")
         
         target_sheet = None
+        use_timetable_tabs = query_type in ("teacher", "teacher_subject", "timetable")
 
-        if query_type == 'teacher':
-            # For teacher queries, we need timetable data
-            target_sheet = "TT"  # Regular Time Table
-        elif query_type == 'teacher_subject':
-            # For teacher subject queries (reverse lookup), we need timetable data
-            target_sheet = "TT"  # Regular Time Table
-        elif exam_type and query_type == 'schedule':
-            if exam_type.upper() == 'SA1':
+        if query_type == "teacher" or query_type == "teacher_subject":
+            pass  # timetable: TT or Time Table (see extract_timetable_sheet_data)
+        elif exam_type and query_type == "schedule":
+            if exam_type.upper() == "SA1":
                 target_sheet = "SA1 Date sheet and Syllabus"
-            elif exam_type.upper() == 'SA2':
+            elif exam_type.upper() == "SA2":
                 target_sheet = "SA 2 Date Sheet"
             else:
                 target_sheet = "Examination Schedule"
-        elif exam_type and query_type == 'syllabus':
-            if exam_type.upper() == 'SA1':
+        elif exam_type and query_type == "syllabus":
+            if exam_type.upper() == "SA1":
                 target_sheet = "SA 1 Syllabus"
-            elif exam_type.upper() == 'SA2':
+            elif exam_type.upper() == "SA2":
                 target_sheet = "SA 2 Syllabus"
             else:
                 target_sheet = "Examination Schedule"
-        elif query_type == 'timetable':
-            target_sheet = "TT"  # Regular Time Table
+        elif query_type == "timetable":
+            pass  # timetable: TT or Time Table
         else:
-            # Fallback to general exam schedule
             target_sheet = "Examination Schedule"
 
-        # Step 6: Extract data from the target sheet
-        sheet_data = self.extract_sheet_data(file_id, target_sheet, token)
-
-        if not sheet_data:
-            return f"Sorry, I couldn't find the '{target_sheet}' information for Grade {grade}."
+        if use_timetable_tabs:
+            sheet_data, _timetable_tab = self.extract_timetable_sheet_data(file_id, token, min_rows=1)
+            if not sheet_data:
+                return (
+                    f"Sorry, I couldn't find a daily timetable tab for Grade {grade} "
+                    f"(tried: {', '.join(repr(t) for t in self.TIMETABLE_TAB_CANDIDATES)})."
+                )
+        else:
+            sheet_data = self.extract_sheet_data(file_id, target_sheet, token)
+            if not sheet_data:
+                return f"Sorry, I couldn't find the '{target_sheet}' information for Grade {grade}."
 
         # Step 7: Format the response based on query type
         if query_type == 'teacher':
-            # Handle teacher queries - find teacher for specific subject
+            # Handle teacher queries - resolve from Grade TT sheet (not hardcoded map)
             if subject_filter:
-                # Use simple lookup instead of API call
-                return self.get_subject_teacher_simple(subject_filter)
+                return self.get_subject_teacher(file_id, token, grade, subject_filter)
             else:
                 return "Please specify which subject teacher you're looking for (e.g., 'who is the maths teacher')."
         elif query_type == 'teacher_subject':
             # Handle teacher subject queries - find subjects taught by teacher
             teacher_name = analysis.get('teacher_name')
             if teacher_name:
-                return self.get_teacher_subjects_simple(teacher_name)
+                return self.get_teacher_subjects(file_id, token, grade, teacher_name)
             else:
                 return "Please specify which teacher you're asking about (e.g., 'what subject does Mrs. Sumayya teach')."
         elif query_type == 'schedule':
@@ -677,9 +729,9 @@ class DriveChatbotIntegrator:
         elif query_type == 'timetable':
             # Check if multiple days were requested
             if days_filter and len(days_filter) > 1:
-                return self.format_timetable(sheet_data, None, days_filter)
+                return self.format_timetable(sheet_data, None, days_filter, tz)
             else:
-                return self.format_timetable(sheet_data, day_filter, days_filter)
+                return self.format_timetable(sheet_data, day_filter, days_filter, tz)
         else:
             # General exam info - show a summary of upcoming exams
             # Check if multiple subjects were requested
@@ -1071,11 +1123,10 @@ class DriveChatbotIntegrator:
             sheet_data = self.extract_sheet_data(file_id, "", token)
 
             if not sheet_data or len(sheet_data) < 3:
-                print(f"[DriveChatbot] Main sheet not found or empty, trying 'TT' sheet")
-                # Try TT sheet as fallback
-                sheet_data = self.extract_sheet_data(file_id, token, "TT")
+                print(f"[DriveChatbot] Main sheet not found or empty, trying timetable tabs (TT / Time Table)")
+                sheet_data, _tab = self.extract_timetable_sheet_data(file_id, token, min_rows=3)
                 if not sheet_data or len(sheet_data) < 3:
-                    print(f"[DriveChatbot] TT sheet also not found or empty: {sheet_data}")
+                    print(f"[DriveChatbot] No timetable tab had enough rows: {sheet_data}")
                     return f"I couldn't find timetable data for Grade {grade}."
 
             print(f"[DriveChatbot] Sheet data type: {type(sheet_data)}")
@@ -1178,8 +1229,7 @@ class DriveChatbotIntegrator:
     def get_subject_teacher(self, file_id: str, token: Dict[str, Any], grade: str, subject: str) -> str:
         """Find and return the teacher name for a specific subject from timetable data"""
         try:
-            # Get the timetable sheet (TT tab)
-            sheet_data = self.extract_sheet_data(file_id, "TT", token)
+            sheet_data, _tab = self.extract_timetable_sheet_data(file_id, token, min_rows=1)
             if not sheet_data:
                 return f"Sorry, I couldn't find timetable information for Grade {grade}."
 

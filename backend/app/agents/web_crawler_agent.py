@@ -77,8 +77,8 @@ class WebCrawlerAgent:
             # Contact
             "https://prakriti.edu.in/contact/",
             
-            # Calendar
-            "https://prakriti.edu.in/calendar/",
+            # Academic Year Flow (school events / holidays / PTMs)
+            "https://events.prakriti.edu.in/",
             
             # Parent Resources
             "https://prakriti.edu.in/parent-society/",
@@ -999,16 +999,30 @@ class WebCrawlerAgent:
         
         return text
     
-    def extract_content_from_url(self, url: str, query: str = "", skip_link_following: bool = False) -> Dict[str, str]:
+    def is_calendar_events_source_url(self, url: str) -> bool:
+        """School calendar pages: legacy /calendar/ paths or Prakriti Year Flow (events subdomain)."""
+        if not url:
+            return False
+        u = url.lower()
+        return 'calendar' in u or 'events.prakriti.edu.in' in u
+    
+    def extract_content_from_url(
+        self,
+        url: str,
+        query: str = "",
+        skip_link_following: bool = False,
+        force_refresh: bool = False,
+    ) -> Dict[str, str]:
         """Extract content from a specific URL
         
         Args:
             url: URL to crawl
             query: Search query (for keyword extraction)
             skip_link_following: If True, skip crawling Substack links and other linked pages
+            force_refresh: If True, skip the 24h web_crawler_data cache and re-fetch (e.g. admin "Sync This Page").
         """
         # FIRST: Check Supabase web_crawler_data table for cached URL content
-        if SUPABASE_AVAILABLE:
+        if SUPABASE_AVAILABLE and not force_refresh:
             try:
                 supabase = get_supabase_client()
                 # Check if this URL was crawled today or recently (within 24 hours)
@@ -1088,6 +1102,12 @@ class WebCrawlerAgent:
                         script.decompose()
                     main_content = self.clean_text(body.get_text())
             
+            # Prakriti Year Flow is fully static HTML under .cal — prefer it for embeddings / snippets
+            if 'events.prakriti.edu.in' in url.lower():
+                cal = soup.select_one('.cal')
+                if cal:
+                    main_content = self.clean_text(cal.get_text())
+            
             content['main_content'] = main_content
             
             # Check if this page contains Substack links and crawl them (unless skip_link_following is True)
@@ -1102,8 +1122,8 @@ class WebCrawlerAgent:
                 if team_info:
                     content['main_content'] += " " + team_info
             
-            # For calendar pages, enhance with event information using Selenium for dynamic content
-            if 'calendar' in url.lower():
+            # For calendar pages, enhance with event information (Year Flow: HTML parse; legacy: Selenium)
+            if self.is_calendar_events_source_url(url):
                 calendar_info = self.extract_calendar_events_with_selenium(url, query)
                 if calendar_info:
                     content['main_content'] += "\n\n" + calendar_info
@@ -1140,7 +1160,7 @@ class WebCrawlerAgent:
                     content_type = 'general'
                     if 'team' in url.lower():
                         content_type = 'team'
-                    elif 'calendar' in url.lower():
+                    elif self.is_calendar_events_source_url(url):
                         content_type = 'calendar'
                     elif 'blog' in url.lower() or 'news' in url.lower():
                         content_type = 'news'
@@ -1374,8 +1394,223 @@ class WebCrawlerAgent:
         
         return "\n".join(calendar_info) if calendar_info else ""
     
+    def _prakriti_flow_base_year_from_title(self, title: str) -> int:
+        """First academic year from titles like 'Prakriti Year Flow 2026–27'."""
+        from datetime import date as date_cls
+        m = re.search(r'Year\s+Flow\s*(\d{4})\s*[–-]\s*\d{2}', title, re.I)
+        if m:
+            return int(m.group(1))
+        m = re.search(r'(\d{4})\s*[–-]\s*\d{2}', title)
+        if m:
+            return int(m.group(1))
+        return date_cls.today().year
+    
+    def _prakriti_academic_date_year(self, month: int, day: int, fy: int) -> int:
+        """Map month/day to calendar year for Apr→Mar academic session (fy = e.g. 2026 for 2026–27)."""
+        if month >= 4:
+            return fy
+        if month <= 2:
+            return fy + 1
+        if day >= 30:
+            return fy
+        return fy + 1
+    
+    def _parse_year_flow_date_label(self, label: str, fy: int):
+        """Return datetime.date for the start of the label window, or None."""
+        from datetime import date as date_cls
+        label = self.clean_text(label).strip()
+        if not label:
+            return None
+        label = re.sub(r'\s+', ' ', label)
+        months = r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)'
+        mmap = {'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+                'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12}
+        def ym(mon_abbr: str) -> int:
+            return mmap[mon_abbr.lower()[:3]]
+        
+        m = re.match(
+            rf'^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+(\d{{1,2}})\s+{months}\s*$',
+            label, re.I,
+        )
+        if m:
+            mon = ym(m.group(3))
+            d = int(m.group(2))
+            y = self._prakriti_academic_date_year(mon, d, fy)
+            try:
+                return date_cls(y, mon, d)
+            except ValueError:
+                return None
+        
+        m = re.match(rf'^Sat\s+(\d{{1,2}})\s+{months}\s*$', label, re.I)
+        if m:
+            mon = ym(m.group(2))
+            d = int(m.group(1))
+            y = self._prakriti_academic_date_year(mon, d, fy)
+            try:
+                return date_cls(y, mon, d)
+            except ValueError:
+                return None
+        
+        m = re.match(rf'^(\d{{1,2}})[–-](\d{{1,2}})\s+{months}\s*$', label, re.I)
+        if m:
+            mon = ym(m.group(3))
+            d = int(m.group(1))
+            y = self._prakriti_academic_date_year(mon, d, fy)
+            try:
+                return date_cls(y, mon, d)
+            except ValueError:
+                return None
+        
+        m = re.match(
+            rf'^(\d{{1,2}})\s+{months}\s*[–-]\s*(\d{{1,2}})\s+{months}\s*$',
+            label, re.I,
+        )
+        if m:
+            mon = ym(m.group(2))
+            d = int(m.group(1))
+            y = self._prakriti_academic_date_year(mon, d, fy)
+            try:
+                return date_cls(y, mon, d)
+            except ValueError:
+                return None
+        
+        m = re.match(
+            rf'^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[–-]\s*(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+(\d{{1,2}})[–-](\d{{1,2}})\s+{months}\s*$',
+            label, re.I,
+        )
+        if m:
+            mon = ym(m.group(3))
+            d = int(m.group(1))
+            y = self._prakriti_academic_date_year(mon, d, fy)
+            try:
+                return date_cls(y, mon, d)
+            except ValueError:
+                return None
+        
+        return None
+    
+    def _year_flow_event_type_from_row(self, row_el, text: str) -> str:
+        """Rough category for calendar_event_data.event_type."""
+        dh = (row_el.get('data-has') or '').lower()
+        if 'holiday' in dh:
+            return 'festival'
+        tl = text.lower()
+        if any(w in tl for w in ['holiday', 'independence', 'christmas', 'diwali', 'dussehra', 'rakhi', 'eid', 'janmashtami', 'republic', 'gandhi', 'good friday', 'holi', 'break', 'closed']):
+            return 'festival'
+        if any(w in tl for w in ['assessment', 'exam', 'term assessment']):
+            return 'academic'
+        if any(w in tl for w in ['ptm', 'parent teacher', 'meeting']):
+            return 'academic'
+        if any(w in tl for w in ['sports', 'swimming meet', 'sports day']):
+            return 'sports'
+        return 'upcoming'
+    
+    def collect_prakriti_year_flow_events(self, soup: BeautifulSoup, url: str) -> Tuple[List[Dict], Dict]:
+        """
+        Parse Year Flow HTML into event dicts matching calendar_event_data shape.
+        Returns (events, stats) where stats has extraction diagnostics.
+        """
+        from datetime import date as date_cls
+        title_el = soup.find('title')
+        title_text = self.clean_text(title_el.get_text()) if title_el else ""
+        fy = self._prakriti_flow_base_year_from_title(title_text)
+        today = date_cls.today()
+        rows = soup.select('.day-row, .sat-row, .week')
+        structured_events: List[Dict] = []
+        stats: Dict = {
+            'page_title': title_text,
+            'base_academic_year': fy,
+            'row_elements': len(rows),
+            'skipped_no_label': 0,
+            'skipped_empty_content': 0,
+            'skipped_unparsed_date': 0,
+            'unparsed_labels': [],
+        }
+        for row in rows:
+            label_el = row.select_one('.day-label, .sat-label, .week-dates')
+            content_el = row.select_one('.day-content, .sat-content, .week-content')
+            if not label_el:
+                stats['skipped_no_label'] += 1
+                continue
+            label = self.clean_text(label_el.get_text())
+            desc = self.clean_text(content_el.get_text()) if content_el else ""
+            if not desc or len(desc) < 3:
+                stats['skipped_empty_content'] += 1
+                continue
+            event_date = self._parse_year_flow_date_label(label, fy)
+            if not event_date:
+                stats['skipped_unparsed_date'] += 1
+                if len(stats['unparsed_labels']) < 20:
+                    stats['unparsed_labels'].append(label)
+                continue
+            event_type = self._year_flow_event_type_from_row(row, desc)
+            title = desc[:500] if len(desc) <= 500 else desc[:497] + '...'
+            structured_events.append({
+                'event_title': title,
+                'event_date': event_date.isoformat(),
+                'event_time': None,
+                'event_description': desc[:10000],
+                'event_type': event_type,
+                'date_label': label,
+                'is_upcoming': event_date >= today,
+                'source_url': url,
+                'is_active': True,
+            })
+        stats['events_extracted'] = len(structured_events)
+        stats['upcoming_count'] = sum(1 for e in structured_events if e.get('is_upcoming'))
+        stats['past_count'] = len(structured_events) - stats['upcoming_count']
+        return structured_events, stats
+    
+    def extract_prakriti_year_flow_calendar(self, url: str, query: str = "", persist_to_db: bool = True) -> str:
+        """Parse static HTML from https://events.prakriti.edu.in/ (Year Flow) and optionally sync calendar_event_data."""
+        try:
+            print(f"[WebCrawler] Parsing Prakriti Year Flow HTML from: {url}")
+            response = self.session.get(url, timeout=45)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, 'html.parser')
+            structured_events, _stats = self.collect_prakriti_year_flow_events(soup, url)
+            upcoming_lines = []
+            for ev in structured_events:
+                if ev.get('is_upcoming'):
+                    label = ev.get('date_label', '')
+                    desc = ev.get('event_description', '')
+                    upcoming_lines.append(f"UPCOMING_EVENT: {label} — {desc}")
+            db_events = []
+            for ev in structured_events:
+                db_events.append({k: v for k, v in ev.items() if k not in ('date_label', 'is_upcoming')})
+            if persist_to_db and db_events and SUPABASE_AVAILABLE:
+                try:
+                    supabase = get_supabase_client()
+                    ok = 0
+                    for event_data in db_events:
+                        try:
+                            supabase.table('calendar_event_data').upsert(
+                                event_data,
+                                on_conflict='event_title,event_date,source_url',
+                            ).execute()
+                            ok += 1
+                        except Exception as e:
+                            print(f"[WebCrawler] ⚠️ Year Flow upsert failed: {e}")
+                    print(f"[WebCrawler] ✅ Year Flow: persisted {ok}/{len(db_events)} rows to calendar_event_data")
+                except Exception as e:
+                    print(f"[WebCrawler] ⚠️ Supabase error (Year Flow): {e}")
+            if upcoming_lines:
+                deduped = []
+                seen = set()
+                for line in upcoming_lines:
+                    if line not in seen:
+                        seen.add(line)
+                        deduped.append(line)
+                return "\n".join(deduped[:200])
+            return "CALENDAR_DATA: Prakriti Year Flow calendar loaded; no upcoming events with parsed dates found in the detailed rows."
+        except Exception as e:
+            print(f"[WebCrawler] Year Flow parse error: {e}")
+            return f"CALENDAR_DATA: Could not load the school calendar ({e})."
+    
     def extract_calendar_events_with_selenium(self, url: str, query: str = "") -> str:
         """Extract calendar events using Selenium for dynamic content"""
+        if 'events.prakriti.edu.in' in (url or ''):
+            return self.extract_prakriti_year_flow_calendar(url, query)
         try:
             from selenium import webdriver
             from selenium.webdriver.chrome.options import Options

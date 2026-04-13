@@ -17,6 +17,21 @@ except ImportError:
 # Ensure environment variables are loaded
 load_dotenv()
 
+from app.utils.calendar_intent import (
+    is_public_school_website_calendar_query,
+    filter_calendar_events_by_month_phrase,
+    filter_calendar_events_by_week_phrase,
+)
+from app.utils.calendar_grade_scope import (
+    CALENDAR_GRADE_LEGEND,
+    normalize_user_grade_for_calendar,
+    filter_calendar_events_by_user_grade,
+    parse_queried_grade_targets,
+    filter_calendar_events_by_queried_grades,
+    filter_calendar_events_exclude_staff_only,
+    should_hide_staff_only_calendar_events,
+)
+
 # Note: rapidfuzz is optional, we'll handle it gracefully
 try:
     from rapidfuzz import fuzz  # type: ignore
@@ -51,6 +66,68 @@ def retrieve_from_json(query: str, threshold: int = 50) -> str | None:
     except Exception as e:
         print(f"[Chatbot] Error reading KB: {e}")
     return None
+
+
+def infer_year_for_natural_date(now, month_num: int, day: int = 1) -> int:
+    """
+    Infer calendar year when the user omits the year (e.g. '15 March', 'March 1–30').
+    If the month is earlier than the current month (e.g. March while today is April),
+    use the current year—the most recent occurrence—not the next year.
+    If we're in Jan–Mar and the month is Oct–Dec, use the previous calendar year
+    (e.g. 'December' in January means last December).
+    """
+    from datetime import datetime
+    if month_num > now.month:
+        if now.month <= 3 and month_num >= 10:
+            return now.year - 1
+        return now.year
+    if month_num < now.month:
+        return now.year
+    try:
+        datetime(now.year, month_num, day)
+    except ValueError:
+        return now.year
+    return now.year
+
+
+_YEAR_AFTER_DATE_PHRASE = re.compile(r"^\s*,?\s*\b((?:19|20)\d{2})\b")
+
+
+def parse_explicit_year_after_match(query: str, match_end: int | None) -> int | None:
+    """If the query has a 4-digit year immediately after a day+month match (e.g. '1 march 2027'), return it."""
+    if match_end is None or match_end < 0 or match_end > len(query):
+        return None
+    m = _YEAR_AFTER_DATE_PHRASE.match(query[match_end:])
+    return int(m.group(1)) if m else None
+
+
+def parse_explicit_year_before_month_day(query: str, full_name: str, abbrev: str) -> int | None:
+    """If the query uses '2027 march 1' style (year before day+month), return the year."""
+    m = re.search(
+        rf"\b((?:19|20)\d{{2}})\s+\d{{1,2}}(?:st|nd|rd|th)?\s+(?:{full_name}|{abbrev})\b",
+        query,
+        re.IGNORECASE,
+    )
+    return int(m.group(1)) if m else None
+
+
+def resolve_year_for_natural_date(
+    now,
+    month_num: int,
+    day: int,
+    query_lower: str,
+    match_end: int | None,
+    full_name: str,
+    abbrev: str,
+) -> int:
+    """Prefer user-specified 4-digit year; otherwise infer with infer_year_for_natural_date."""
+    y = parse_explicit_year_after_match(query_lower, match_end)
+    if y is None:
+        y = parse_explicit_year_before_month_day(query_lower, full_name, abbrev)
+    if y is not None:
+        return y
+    return infer_year_for_natural_date(now, month_num, day)
+
 
 def get_student_coursework_data(student_user_id: str, student_email: str = None, limit_coursework: int = None, user_grade: str = None, work_type_filter: str = None) -> dict:
     """
@@ -357,13 +434,13 @@ def get_admin_data(user_email: str = None,
             if user_id:
                 print(f"[Chatbot] Using reference data from user ID: {user_id}")
         
-        if not user_id:
-            print(f"[Chatbot] No synced data found in Supabase")
-            return {"classroom_data": [], "calendar_data": []}
-        
-        # Get classroom courses from normalized table
-        courses_result = supabase.table('google_classroom_courses').select('*').eq('user_id', user_id).execute()
-        courses = courses_result.data if courses_result.data else []
+        # Website calendar (calendar_event_data) is global — load even when no Classroom user exists
+        if user_id:
+            courses_result = supabase.table('google_classroom_courses').select('*').eq('user_id', user_id).execute()
+            courses = courses_result.data if courses_result.data else []
+        else:
+            print("[Chatbot] No Google Classroom sync user — classroom_data empty; still loading website calendar if any")
+            courses = []
         
         print(f"[Chatbot] Found {len(courses)} courses in Supabase")
         
@@ -590,6 +667,7 @@ def get_admin_data(user_email: str = None,
         traceback.print_exc()
         return {"classroom_data": [], "calendar_data": []}
 
+
 def detect_query_language(query):
     """
     Detect the language of the user's query
@@ -790,6 +868,10 @@ def generate_chatbot_response(request):
     user_query = request.message
     conversation_history = getattr(request, 'conversation_history', []) or []  # Ensure it's never None
     user_profile = getattr(request, 'user_profile', None)
+    is_public_cal = False  # set in Step 0.2: public school calendar OK for guests (calendar_event_data)
+    calendar_month_scope_label = None  # set for this/next/last month or week scope (Asia/Kolkata filter)
+    calendar_user_grade = None  # normalized grade key when student calendar filter is applied
+    calendar_query_grade_targets = None  # frozenset from explicit query e.g. "grade 1 and 2"
 
     # Profile includes embedding for semantic personalization
     # Basic fields (first_name, role, grade) used for greetings and basic personalization
@@ -870,6 +952,7 @@ Once you provide the subject and topic, I'll be able to give you detailed, step-
     # Step 0.2: Check if user is asking about classroom/homework/assignments FIRST (before generic check)
     # This ensures queries like "help with homework" are caught here and show connection steps
     query_lower = user_query.lower()
+    is_public_cal = is_public_school_website_calendar_query(query_lower)
     
     # Expanded keywords to catch queries like "help with homework", "I need help with my homework", etc.
     is_coursework_query_early = any(kw in query_lower for kw in [
@@ -896,8 +979,8 @@ Once you provide the subject and topic, I'll be able to give you detailed, step-
         'help with homework', 'help with assignment'
     ])
     
-    # For guest users: Tell them to login first
-    if not user_profile and (is_classroom_related_query_early or is_home_related_query_early):
+    # For guest users: Tell them to login first (but public school calendar does not need Classroom)
+    if not user_profile and (is_classroom_related_query_early or is_home_related_query_early) and not is_public_cal:
         print(f"[Chatbot] 🚫 Guest user asking about classroom/home - returning early (user needs to login first)")
         return """To access your assignments, homework, and coursework information, please follow these steps:
 
@@ -1335,11 +1418,19 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         else:
             return f"I'm doing great, thank you! I'm here and ready to help you learn about Prakriti School. How can I assist you today, {capitalized_first_name}?"
 
-    # Step 1: Intent detection for holiday calendar
-    holiday_keywords = [
-        'holiday calendar', 'school holidays', 'vacation calendar', 'holidays', 'school calendar', 'show holidays', 'holiday list', 'calendar of holidays'
+    # Step 1: Google holiday-calendar embed (narrow — do NOT use "school calendar" or generic "holidays"
+    # or Prakriti Year Flow / calendar_event_data queries will wrongly return this instead of DB events)
+    holiday_embed_keywords = [
+        'holiday calendar',
+        'school holidays',
+        'vacation calendar',
+        'show holidays',
+        'holiday list',
+        'calendar of holidays',
     ]
-    if any(kw in user_query.lower() for kw in holiday_keywords):
+    # Whole-word "holidays" only (avoid matching random substrings)
+    uql = user_query.lower()
+    if any(kw in uql for kw in holiday_embed_keywords) or re.search(r'\bholidays\b', uql):
         return {
             'type': 'calendar',
             'url': 'https://calendar.google.com/calendar/embed?src=Y185MWZiZDlkMjE4ZTQ5YzZjY2RhNGEyOTg3ZWI0ZDJkYjcyYTJmYTBlN2JiMTkzYWY2N2U4NjlhY2NiYmRiZWQ3QGdyb3VwLmNhbGVuZGFyLmdvb2dsZS5jb20&ctz=Asia/Kolkata'
@@ -1718,7 +1809,12 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                              'little', 'bit', 'explain', 'describe', 'what', 'how', 'why', 'when', 'where',
                              'magnetic', 'field', 'fields', 'energy', 'force', 'physics', 'chemistry', 'math',
                              'science', 'biology', 'history', 'geography', 'computer', 'programming', 'code',
-                             'data', 'system', 'process', 'method', 'theory', 'concept', 'principle', 'law'}
+                             'data', 'system', 'process', 'method', 'theory', 'concept', 'principle', 'law',
+                             # calendar / scheduling phrases (avoid "Event For", "Next Week" as fake names)
+                             'event', 'events', 'for', 'next', 'week', 'month', 'year', 'day', 'date', 'dates',
+                             'upcoming', 'calendar', 'grade', 'grades', 'any', 'all', 'this', 'last', 'today',
+                             'tomorrow', 'tommorow', 'tommorrow', 'tomorow', 'meeting', 'meetings', 'holiday', 'break', 'school', 'schedule',
+                             'time', 'table', 'tt'}
             all_words = re_module.findall(person_name_pattern_lower, query_lower)
             # Filter out phrases that contain excluded words, technical terms, or question words
             # Also exclude if it looks like a technical/scientific phrase
@@ -1733,7 +1829,32 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             if potential_names_lower:
                 # Convert to title case for consistency
                 potential_names = [name.title() for name in potential_names_lower[:2]]  # Limit to first 2 matches
-    
+
+    # Drop phrases that look like calendar English, not people (fallback regex is noisy on "event for … next week")
+    _not_person_phrases = frozenset({
+        'event for', 'next week', 'this week', 'last week', 'next month', 'this month', 'last month',
+        'any upcoming', 'upcoming event', 'for grade', 'grade 1', 'grade 2', 'grade 3', 'grade 4', 'grade 5',
+        'time table', 'next day',
+        # Timetable shorthand + common "tomorrow" typos (not a person name)
+        'tommorow tt', 'tomorrow tt', 'today tt', 'tommorrow tt',
+    })
+    _calendar_only_words = frozenset({
+        'event', 'events', 'for', 'next', 'week', 'month', 'year', 'day', 'date', 'dates', 'upcoming',
+        'calendar', 'grade', 'grades', 'any', 'all', 'this', 'last', 'today', 'tomorrow', 'meeting',
+        'meetings', 'holiday', 'break', 'school', 'schedule', 'time', 'table',
+    })
+    if potential_names:
+        filtered_names = []
+        for n in potential_names:
+            low = n.lower().strip()
+            if low in _not_person_phrases:
+                continue
+            parts = low.split()
+            if len(parts) == 2 and all(p in _calendar_only_words for p in parts):
+                continue
+            filtered_names.append(n)
+        potential_names = filtered_names
+
     has_person_name = len(potential_names) > 0 and not any(name.lower() in ['Prakriti', 'School', 'Google', 'Classroom', 'Calendar'] for name in potential_names)
     
     # Check if person query might be about a teacher (so we can verify with Classroom data)
@@ -1825,11 +1946,17 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     print(f"  - is_classroom_related_query (early): {(is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query) and not is_subject_faculty_query}")
     
     # Detect exam-related queries for drive integration (HIGH PRIORITY - before classroom detection)
-    exam_keywords = ['exam', 'examination', 'test', 'assessment', 'schedule', 'timetable', 'time table', 'date sheet', 'syllabus', 'upcoming exam', 'exam date', 'exam schedule']
+    # Do not use bare substring "schedule" — it matches inside "scheduled" and misroutes school-calendar questions.
+    exam_keywords = ['exam', 'examination', 'test', 'assessment', 'timetable', 'time table', 'date sheet', 'syllabus', 'upcoming exam', 'exam date', 'exam schedule']
     # Also check for common variations and abbreviations
-    timetable_variations = ['tim table', 'timetable', 'time table', 'tt', 'schedule', 'class schedule', 'daily schedule']
+    timetable_variations = [
+        'tim table', 'timetable', 'time table', 'tt', 'class schedule', 'daily schedule',
+        'time tabl', 'time tabel', 'timetabl',  # typos / missing "e"
+    ]
+    # Whole word "schedule" only (e.g. "exam schedule", "my schedule") — not "scheduled", "rescheduled"
+    has_schedule_word = bool(re.search(r'\bschedule\b', query_lower))
     # Check if query contains timetable-related words (including variations)
-    has_timetable_keyword = any(variation in query_lower for variation in timetable_variations)
+    has_timetable_keyword = any(variation in query_lower for variation in timetable_variations) or has_schedule_word
     # Check if query mentions a day (mon, tue, wed, thu, fri, sat, sun, monday, tuesday, etc.)
     day_keywords = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'today', 'tomorrow']
     has_day_keyword = any(day in query_lower for day in day_keywords)
@@ -1941,10 +2068,13 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     try:
         from grade_exam_detector import GradeExamDetector
         detector = GradeExamDetector()
-        analysis = detector.analyze_query(user_query)
+        _tz = user_profile.get("timezone") if user_profile else None
+        analysis = detector.analyze_query(user_query, timezone_name=_tz)
         print(f"[Chatbot] DEBUG: Analysis result: {analysis}")
         is_teacher_drive_query = analysis.get('query_type') == 'teacher' and analysis.get('subject')
-        is_teacher_subject_query = analysis.get('query_type') == 'teacher_subject' and analysis.get('teacher_name')
+        is_teacher_subject_query = bool(
+            analysis.get('query_type') == 'teacher_subject' and analysis.get('teacher_name')
+        )
         print(f"[Chatbot] DEBUG: is_teacher_drive_query={is_teacher_drive_query}, is_teacher_subject_query={is_teacher_subject_query}")
     except Exception as e:
         print(f"[Chatbot] Error checking teacher queries: {e}")
@@ -2049,8 +2179,12 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     is_web_only_query = should_use_web_crawling and not (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query)
     
     # For guest users: Skip loading classroom data for classroom/home queries - they need to connect first
-    # Include holiday queries in guest check (they need classroom connection for holiday info)
-    is_guest_classroom_query = not user_profile and (is_classroom_related_query or is_home_related_query or is_holiday_query)
+    # Public school website calendar (calendar_event_data) is still loaded for guests when applicable.
+    is_guest_classroom_query = (
+        not user_profile
+        and (is_classroom_related_query or is_home_related_query or is_holiday_query)
+        and not is_public_cal
+    )
     
     # For teachers: Check if they need their own classroom connection for teacher-specific features
     user_role = user_profile.get('role', '').lower() if user_profile else None
@@ -2164,75 +2298,107 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                   'july', 'august', 'september', 'october', 'november', 'december']
                     month_abbrevs = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
                                     'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
-                    
+
+                    # Same-month inclusive range: "between 1 march to 30 march", "from 1 mar to 30 mar"
+                    handled_sql_range = False
                     for i, (full_name, abbrev) in enumerate(zip(month_names, month_abbrevs)):
-                        # Pattern 1: Handles both single date ("21 september", "21st september", "21st feb") and multiple dates
-                        # Matches: one or more digits with optional ordinal suffix (st, nd, rd, th), optionally followed by (comma or "and" + more digits), then month name
-                        pattern1 = rf'\b(\d{{1,2}}(?:st|nd|rd|th)?(?:\s*(?:,|\s+and\s+)\s*\d{{1,2}}(?:st|nd|rd|th)?)*)\s+({full_name}|{abbrev})\b'
-                        # Pattern 2: "september 21" or "september 21st" or "feb 21st" or "september 21 and 29"
-                        pattern2 = rf'\b({full_name}|{abbrev})\s+(\d{{1,2}}(?:st|nd|rd|th)?(?:\s*(?:,|\s+and\s+)\s*\d{{1,2}}(?:st|nd|rd|th)?)*)\b'
-                        
-                        match = re_module.search(pattern1, query_lower, re_module.IGNORECASE)
-                        if not match:
-                            match = re_module.search(pattern2, query_lower, re_module.IGNORECASE)
-                        
-                        if match:
-                            print(f"[Chatbot] 📅 Date pattern matched: pattern1/pattern2 found '{full_name}' or '{abbrev}' in query")
-                        
-                        # Fuzzy matching for typos (e.g., "octomber" -> "october")
-                        if not match and len(full_name) > 4:
-                            # Try to find month-like words near numbers - matches single or multiple dates (handles ordinals like 1st, 2nd, 3rd)
-                            potential_months = re_module.findall(r'\d{1,2}(?:st|nd|rd|th)?(?:\s*(?:,|\s+and\s+)\s*\d{1,2}(?:st|nd|rd|th)?)*\s+([a-z]{4,})', query_lower)
-                            for pot_month in potential_months:
-                                if pot_month[:3] == full_name[:3] and len(pot_month) >= len(full_name) - 2:
-                                    # Extract all digits before the month word (handles ordinals like 1st, 2nd, 3rd)
-                                    days_match = re_module.search(rf'(\d{{1,2}}(?:st|nd|rd|th)?(?:\s*(?:,|\s+and\s+)\s*\d{{1,2}}(?:st|nd|rd|th)?)*)\s+{re_module.escape(pot_month)}', query_lower, re_module.IGNORECASE)
-                                    if days_match:
-                                        class MockMatch:
-                                            def __init__(self, days_str):
-                                                self._days = days_str
-                                            def group(self, n):
-                                                return self._days if n == 1 else None
-                                        match = MockMatch(days_match.group(1))
-                                        print(f"[Chatbot] Detected typo: '{pot_month}' → '{full_name}'")
-                                        break
-                        
-                        if match:
+                        range_m = re_module.search(
+                            rf'\b(?:between|from)\s+(\d{{1,2}})(?:st|nd|rd|th)?\s+({full_name}|{abbrev})\s+(?:to|-|through|until)\s+(\d{{1,2}})(?:st|nd|rd|th)?\s+\2\b',
+                            query_lower, re_module.IGNORECASE)
+                        if range_m:
+                            d1 = int(range_m.group(1))
+                            d2 = int(range_m.group(3))
                             month_num = i + 1
-                            # Extract days string - try group 1 first, then group 2
-                            days_str = None
+                            day_lo, day_hi = min(d1, d2), max(d1, d2)
+                            year = resolve_year_for_natural_date(
+                                now, month_num, day_lo, query_lower, range_m.end(),
+                                month_names[i], month_abbrevs[i],
+                            )
                             try:
-                                if match.group(1) and (match.group(1)[0].isdigit() or match.group(1).replace(' ', '').replace(',', '').replace('and', '').isdigit()):
-                                    days_str = match.group(1)
-                                elif len(match.groups()) > 1 and match.group(2) and (match.group(2)[0].isdigit() or match.group(2).replace(' ', '').replace(',', '').replace('and', '').isdigit()):
-                                    days_str = match.group(2)
-                            except:
-                                pass
+                                start_dt = datetime(year, month_num, day_lo, 0, 0, 0, 0, tzinfo=timezone.utc)
+                                end_dt = datetime(year, month_num, day_hi, 23, 59, 59, 999999, tzinfo=timezone.utc)
+                                target_date_ranges_for_sql.append((start_dt, end_dt))
+                                print(f"[Chatbot] SQL filtering for date range: {day_lo}–{day_hi} {month_names[i]} {year}")
+                                handled_sql_range = True
+                            except ValueError as e:
+                                print(f"[Chatbot] Invalid same-month date range: {e}")
+                            break
+
+                    if handled_sql_range:
+                        pass  # Skip per-day parsing below
+                    else:
+                        for i, (full_name, abbrev) in enumerate(zip(month_names, month_abbrevs)):
+                            # Pattern 1: Handles both single date ("21 september", "21st september", "21st feb") and multiple dates
+                            # Matches: one or more digits with optional ordinal suffix (st, nd, rd, th), optionally followed by (comma or "and" + more digits), then month name
+                            pattern1 = rf'\b(\d{{1,2}}(?:st|nd|rd|th)?(?:\s*(?:,|\s+and\s+)\s*\d{{1,2}}(?:st|nd|rd|th)?)*)\s+({full_name}|{abbrev})\b'
+                            # Pattern 2: "september 21" or "september 21st" or "feb 21st" or "september 21 and 29"
+                            pattern2 = rf'\b({full_name}|{abbrev})\s+(\d{{1,2}}(?:st|nd|rd|th)?(?:\s*(?:,|\s+and\s+)\s*\d{{1,2}}(?:st|nd|rd|th)?)*)\b'
                             
-                            if days_str:
-                                # Extract all numbers (handles both comma and "and" separators, and ordinal suffixes like 21st, 22nd)
-                                # Remove ordinal suffixes (st, nd, rd, th) before extracting numbers
-                                days_str_clean = re_module.sub(r'(st|nd|rd|th)\b', '', days_str, flags=re_module.IGNORECASE)
-                                days = [int(d.strip()) for d in re_module.findall(r'\d+', days_str_clean)]
-                                year = now.year
-                                # If month is in the past (e.g., we're in March but query is for February), use next year
-                                if month_num < now.month:
-                                    year += 1
-                                for day in days:
-                                    try:
-                                        parsed_date = datetime(year, month_num, day, tzinfo=timezone.utc)
-                                        date_start = parsed_date.replace(hour=0, minute=0, second=0, microsecond=0)
-                                        date_end = parsed_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-                                        target_date_ranges_for_sql.append((date_start, date_end))
-                                        print(f"[Chatbot] SQL filtering for date: {day} {month_names[i]} {year}")
-                                    except ValueError:
-                                        print(f"[Chatbot] Invalid date: {day}/{month_num}")
-                                if target_date_ranges_for_sql:
-                                    break
+                            match = re_module.search(pattern1, query_lower, re_module.IGNORECASE)
+                            if not match:
+                                match = re_module.search(pattern2, query_lower, re_module.IGNORECASE)
+                            
+                            if match:
+                                print(f"[Chatbot] 📅 Date pattern matched: pattern1/pattern2 found '{full_name}' or '{abbrev}' in query")
+                            
+                            # Fuzzy matching for typos (e.g., "octomber" -> "october")
+                            if not match and len(full_name) > 4:
+                                # Try to find month-like words near numbers - matches single or multiple dates (handles ordinals like 1st, 2nd, 3rd)
+                                potential_months = re_module.findall(r'\d{1,2}(?:st|nd|rd|th)?(?:\s*(?:,|\s+and\s+)\s*\d{1,2}(?:st|nd|rd|th)?)*\s+([a-z]{4,})', query_lower)
+                                for pot_month in potential_months:
+                                    if pot_month[:3] == full_name[:3] and len(pot_month) >= len(full_name) - 2:
+                                        # Extract all digits before the month word (handles ordinals like 1st, 2nd, 3rd)
+                                        days_match = re_module.search(rf'(\d{{1,2}}(?:st|nd|rd|th)?(?:\s*(?:,|\s+and\s+)\s*\d{{1,2}}(?:st|nd|rd|th)?)*)\s+{re_module.escape(pot_month)}', query_lower, re_module.IGNORECASE)
+                                        if days_match:
+                                            class MockMatch:
+                                                def __init__(self, days_str, end_pos):
+                                                    self._days = days_str
+                                                    self._end_pos = end_pos
+                                                def group(self, n):
+                                                    return self._days if n == 1 else None
+                                                def end(self):
+                                                    return self._end_pos
+                                            match = MockMatch(days_match.group(1), days_match.end())
+                                            print(f"[Chatbot] Detected typo: '{pot_month}' → '{full_name}'")
+                                            break
+                            
+                            if match:
+                                month_num = i + 1
+                                # Extract days string - try group 1 first, then group 2
+                                days_str = None
+                                try:
+                                    if match.group(1) and (match.group(1)[0].isdigit() or match.group(1).replace(' ', '').replace(',', '').replace('and', '').isdigit()):
+                                        days_str = match.group(1)
+                                    elif len(match.groups()) > 1 and match.group(2) and (match.group(2)[0].isdigit() or match.group(2).replace(' ', '').replace(',', '').replace('and', '').isdigit()):
+                                        days_str = match.group(2)
+                                except Exception:
+                                    pass
+                                
+                                if days_str:
+                                    # Extract all numbers (handles both comma and "and" separators, and ordinal suffixes like 21st, 22nd)
+                                    # Remove ordinal suffixes (st, nd, rd, th) before extracting numbers
+                                    days_str_clean = re_module.sub(r'(st|nd|rd|th)\b', '', days_str, flags=re_module.IGNORECASE)
+                                    days = [int(d.strip()) for d in re_module.findall(r'\d+', days_str_clean)]
+                                    match_end_for_year = match.end() if hasattr(match, "end") else None
+                                    for day in days:
+                                        year = resolve_year_for_natural_date(
+                                            now, month_num, day, query_lower, match_end_for_year,
+                                            full_name, abbrev,
+                                        )
+                                        try:
+                                            parsed_date = datetime(year, month_num, day, tzinfo=timezone.utc)
+                                            date_start = parsed_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                                            date_end = parsed_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+                                            target_date_ranges_for_sql.append((date_start, date_end))
+                                            print(f"[Chatbot] SQL filtering for date: {day} {month_names[i]} {year}")
+                                        except ValueError:
+                                            print(f"[Chatbot] Invalid date: {day}/{month_num}")
+                                    if target_date_ranges_for_sql:
+                                        break
                     
                     # If no month names found, try DD/MM or MM/DD format (single date only for now)
                     if not target_date_ranges_for_sql:
-                        date_pattern = r'\b(\d{1,2})[/-](\d{1,2})\b'
+                        date_pattern = r'\b(\d{1,2})[/-](\d{1,2})(?:[/-]((?:19|20)\d{2}))?\b'
                         match = re_module.search(date_pattern, query_lower)
                         if match:
                             num1, num2 = int(match.group(1)), int(match.group(2))
@@ -2244,7 +2410,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                 else:
                                     day, month = num1, num2
                                 
-                                year = now.year
+                                year = int(match.group(3)) if match.group(3) else infer_year_for_natural_date(now, month, day)
                                 try:
                                     parsed_date = datetime(year, month, day, tzinfo=timezone.utc)
                                     date_start = parsed_date.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -2253,7 +2419,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                     print(f"[Chatbot] SQL filtering for date: {day}/{month}/{year}")
                                 except ValueError:
                                     print(f"[Chatbot] Invalid date: {day}/{month}")
-                            except:
+                            except Exception:
                                 pass
                 
                 # Check if user is a student asking about coursework - use direct coursework query
@@ -2356,6 +2522,80 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
 
                 # Special handling for calendar queries with no events
                 calendar_events = admin_data.get('calendar_data', [])
+                if is_calendar_query and calendar_events:
+                    filtered_cal, scope_lbl = filter_calendar_events_by_month_phrase(query_lower, calendar_events)
+                    if scope_lbl is None:
+                        filtered_cal, scope_lbl = filter_calendar_events_by_week_phrase(query_lower, calendar_events)
+                    if scope_lbl is not None:
+                        calendar_month_scope_label = scope_lbl
+                        admin_data['calendar_data'] = filtered_cal
+                        calendar_events = filtered_cal
+                        print(f"[Chatbot] 📅 Month scope filter ({scope_lbl}): {len(calendar_events)} event(s)")
+                        if len(calendar_events) == 0:
+                            month_name = scope_lbl.split(" (")[0].strip()
+                            return (
+                                f"**School calendar**\n\n"
+                                f"There are no school events listed in the calendar data for **{month_name}**. "
+                                f"The public calendar is updated regularly; check back later or contact the school office for the latest dates."
+                            )
+
+                if is_calendar_query and calendar_events:
+                    qg = parse_queried_grade_targets(query_lower)
+                    if qg is not None:
+                        before_q = len(calendar_events)
+                        graded_q = filter_calendar_events_by_queried_grades(calendar_events, qg)
+                        calendar_query_grade_targets = qg
+                        if before_q != len(graded_q):
+                            print(
+                                f"[Chatbot] 📚 Query grade filter {sorted(qg)}: "
+                                f"{before_q} -> {len(graded_q)} event(s)"
+                            )
+                        if should_hide_staff_only_calendar_events(user_profile):
+                            before_staff = len(graded_q)
+                            graded_q = filter_calendar_events_exclude_staff_only(graded_q)
+                            dropped = before_staff - len(graded_q)
+                            if dropped:
+                                print(
+                                    f"[Chatbot] 👤 Excluded {dropped} staff-only calendar row(s) "
+                                    "(facilitator PD / facilitators-only, not for learners)"
+                                )
+                        admin_data["calendar_data"] = graded_q
+                        calendar_events = graded_q
+                        if len(graded_q) == 0 and before_q > 0:
+                            glist = ", ".join(sorted(qg, key=lambda x: (len(x), x)))
+                            return (
+                                "**School calendar**\n\n"
+                                f"No events in the calendar data are school-wide or cohort-tagged only for **{glist}**. "
+                                "Titles that mention other grades (e.g. Indigo (3) with Violet (2)) are excluded for this filter."
+                            )
+
+                if is_calendar_query and calendar_events:
+                    ug = normalize_user_grade_for_calendar(user_profile)
+                    if ug is not None and calendar_query_grade_targets is None:
+                        before_g = len(calendar_events)
+                        graded = filter_calendar_events_by_user_grade(calendar_events, ug)
+                        calendar_user_grade = ug
+                        if before_g != len(graded):
+                            print(f"[Chatbot] 📚 Grade filter (grade {ug}): {before_g} -> {len(graded)} event(s)")
+                        if should_hide_staff_only_calendar_events(user_profile):
+                            before_staff = len(graded)
+                            graded = filter_calendar_events_exclude_staff_only(graded)
+                            dropped = before_staff - len(graded)
+                            if dropped:
+                                print(
+                                    f"[Chatbot] 👤 Excluded {dropped} staff-only calendar row(s) "
+                                    "(facilitator PD / facilitators-only, not for learners)"
+                                )
+                        admin_data["calendar_data"] = graded
+                        calendar_events = graded
+                        if len(graded) == 0 and before_g > 0:
+                            return (
+                                "**School calendar**\n\n"
+                                f"No events in this view are open to **all grades** or tagged for **Grade {ug}**. "
+                                "Other events may be for different cohorts (see colour / Honesty (4) / Empathy (7) tags in titles). "
+                                "Check your profile grade or ask the office if this looks wrong."
+                            )
+
                 if is_calendar_query and len(calendar_events) == 0:
                     print("[Chatbot] 📅 Calendar query with no events - providing clear 'no events' response")
                     # Create a direct response for calendar queries with no events
@@ -2574,16 +2814,18 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
 
             # Build messages array with conversation history
             # Build concise system prompts (TOKEN OPTIMIZATION - reduced by ~60%)
+            # Do not append homework/Classroom sign-in nags for public school calendar / event answers
+            _skip_homework_nag = (is_calendar_query or is_public_cal) and not is_coursework_query
             if user_profile:
                 # Ultra-concise system prompt for authenticated users
                 # Exclude assignment/coursework queries from the "ask for more info" instruction
-                homework_instruction = "" if is_coursework_query else """ IMPORTANT: For homework/study help requests without subject/topic, always ask for both subject and specific topic before providing solutions."""
+                homework_instruction = "" if is_coursework_query or _skip_homework_nag else """ IMPORTANT: For homework/study help requests without subject/topic, always ask for both subject and specific topic before providing solutions."""
                 coursework_instruction = """ CRITICAL: For assignment/coursework queries, you MUST extract assignments from the provided Data section and show them immediately. DO NOT create fake assignments or generate examples like 'Topic: Algebra'. Use ONLY the actual assignment titles, descriptions, due dates, and links from the Data section. DO NOT ask for more information - the data is already provided. START your response directly with the assignments from the data, not with greetings or fake examples.""" if is_coursework_query else ""
                 system_content = """You are Prakriti School's AI assistant. Progressive K-12 school in Greater Noida. Philosophy: "Learning for happiness". Programs: Bridge Programme, IGCSE, AS/A Level. Address users by first name with titles (Sir/Madam for teachers/parents). Use Markdown (**bold**, ### headings). Never say "as an AI". Present data directly without disclaimers.""" + personalization + """ Use provided data to answer questions.""" + homework_instruction + coursework_instruction
             else:
                 # Ultra-concise system prompt for guest users (TOKEN OPTIMIZATION)
                 # Exclude assignment/coursework queries from the "ask for more info" instruction
-                homework_instruction = "" if is_coursework_query else """ IMPORTANT: For homework/study help, remind guest users to sign in and connect Google Classroom for personalized help. Always ask for subject and topic if not provided."""
+                homework_instruction = "" if is_coursework_query or _skip_homework_nag else """ IMPORTANT: For homework/study help, remind guest users to sign in and connect Google Classroom for personalized help. Always ask for subject and topic if not provided."""
                 coursework_instruction = """ CRITICAL: For assignment/coursework queries, you MUST extract assignments from the provided Data section and show them immediately. DO NOT create fake assignments or generate examples like 'Topic: Algebra'. Use ONLY the actual assignment titles, descriptions, due dates, and links from the Data section. DO NOT ask for more information - the data is already provided. START your response directly with the assignments from the data, not with greetings or fake examples.""" if is_coursework_query else ""
                 system_content = """You are Prakriti School's AI assistant. Progressive K-12 school in Greater Noida. Philosophy: "Learning for happiness". Use Markdown. Never say "as an AI". Present data directly. Use provided data to answer questions.""" + homework_instruction + coursework_instruction
 
@@ -2669,9 +2911,6 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             target_dates = []  # List of (date, start, end) tuples
             target_date_ranges = []  # List of (start, end) tuples for filtering
             
-            # Pattern for DD/MM or MM/DD format
-            date_pattern_1 = r'\b(\d{1,2})[/-](\d{1,2})\b'
-            
             if is_yesterday_query:
                 # Yesterday = 1 day before today
                 yesterday = now - timedelta(days=1)
@@ -2694,78 +2933,113 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
                 
                 found_month = False
+                handled_prompt_range = False
                 for i, (full_name, abbrev) in enumerate(zip(month_names, month_abbrevs)):
-                    # Pattern to match: "22, 24, 30 october" or "october 22, 24, 30" or "22 october, 24 october"
-                    # Also handle common typos like "octomber" → "october"
-                    pattern1 = rf'\b(\d{{1,2}}(?:\s*,\s*\d{{1,2}})*)\s+({full_name}|{abbrev})\b'
-                    pattern2 = rf'\b({full_name}|{abbrev})\s+(\d{{1,2}}(?:\s*,\s*\d{{1,2}})*)\b'
-                    pattern3 = rf'\b(\d{{1,2}})\s+({full_name}|{abbrev})(?:\s*,\s*\d{{1,2}}\s+({full_name}|{abbrev}))*\b'
-                    
-                    match = re_module.search(pattern1, query_lower, re_module.IGNORECASE)
-                    if not match:
-                        match = re_module.search(pattern2, query_lower, re_module.IGNORECASE)
-                    if not match:
-                        match = re_module.search(pattern3, query_lower, re_module.IGNORECASE)
-                    
-                    # If no match, try fuzzy matching for common typos like "octomber" → "october"
-                    if not match and len(full_name) > 4:
-                        # Simple approach: check if query contains something that looks like the month
-                        # Extract potential month words from query (words after numbers)
-                        potential_months = re_module.findall(r'\d+\s*,\s*\d+(?:\s*,\s*\d+)*\s+([a-z]{4,})', query_lower)
-                        for pot_month in potential_months:
-                            # Check if it's similar to current month name (first 3-4 chars match)
-                            if pot_month[:3] == full_name[:3] and len(pot_month) >= len(full_name) - 2:
-                                # Extract days from query
-                                days_pattern = rf'(\d+(?:\s*,\s*\d+)*)\s+{re_module.escape(pot_month)}'
-                                days_match = re_module.search(days_pattern, query_lower, re_module.IGNORECASE)
-                                if days_match:
-                                    # Create a mock match object
-                                    class MockMatch:
-                                        def __init__(self, days_str, month_str):
-                                            self._days = days_str
-                                            self._month = month_str
-                                        def group(self, n):
-                                            if n == 1:
-                                                return self._days
-                                            elif n == 2:
-                                                return self._month
-                                            return None
-                                    match = MockMatch(days_match.group(1), full_name)
-                                    print(f"[Chatbot] Detected typo: '{pot_month}' → '{full_name}'")
-                                    break
-                    
-                    if match:
+                    range_m = re_module.search(
+                        rf'\b(?:between|from)\s+(\d{{1,2}})(?:st|nd|rd|th)?\s+({full_name}|{abbrev})\s+(?:to|-|through|until)\s+(\d{{1,2}})(?:st|nd|rd|th)?\s+\2\b',
+                        query_lower, re_module.IGNORECASE)
+                    if range_m:
+                        d1 = int(range_m.group(1))
+                        d2 = int(range_m.group(3))
                         month_num = i + 1
-                        # Extract day numbers from the match
-                        days_str = match.group(1) if match.group(1) and match.group(1)[0].isdigit() else (match.group(2) if match.group(2) and match.group(2)[0].isdigit() else None)
+                        day_lo, day_hi = min(d1, d2), max(d1, d2)
+                        year = resolve_year_for_natural_date(
+                            now, month_num, day_lo, query_lower, range_m.end(),
+                            month_names[i], month_abbrevs[i],
+                        )
+                        try:
+                            start_dt = datetime(year, month_num, day_lo, 0, 0, 0, 0, tzinfo=timezone.utc)
+                            end_dt = datetime(year, month_num, day_hi, 23, 59, 59, 999999, tzinfo=timezone.utc)
+                            target_dates.append((start_dt.date(), start_dt, end_dt))
+                            target_date_ranges.append((start_dt, end_dt))
+                            print(f"[Chatbot] Detected date range: {day_lo}–{day_hi} {month_names[i]} {year}")
+                            found_month = True
+                            handled_prompt_range = True
+                        except ValueError as e:
+                            print(f"[Chatbot] Invalid same-month date range (prompt path): {e}")
+                        break
+
+                if not handled_prompt_range:
+                    for i, (full_name, abbrev) in enumerate(zip(month_names, month_abbrevs)):
+                        # Pattern to match: "22, 24, 30 october" or "october 22, 24, 30" or "22 october, 24 october"
+                        # Also handle common typos like "octomber" → "october"
+                        pattern1 = rf'\b(\d{{1,2}}(?:\s*,\s*\d{{1,2}})*)\s+({full_name}|{abbrev})\b'
+                        pattern2 = rf'\b({full_name}|{abbrev})\s+(\d{{1,2}}(?:\s*,\s*\d{{1,2}})*)\b'
+                        pattern3 = rf'\b(\d{{1,2}})\s+({full_name}|{abbrev})(?:\s*,\s*\d{{1,2}}\s+({full_name}|{abbrev}))*\b'
                         
-                        if not days_str:
-                            # Try to extract from pattern3
-                            days_str = match.group(1) if match else None
+                        match = re_module.search(pattern1, query_lower, re_module.IGNORECASE)
+                        if not match:
+                            match = re_module.search(pattern2, query_lower, re_module.IGNORECASE)
+                        if not match:
+                            match = re_module.search(pattern3, query_lower, re_module.IGNORECASE)
                         
-                        if days_str:
-                            # Parse comma-separated days
-                            days = [int(d.strip()) for d in re_module.findall(r'\d+', days_str)]
-                            year = now.year
+                        # If no match, try fuzzy matching for common typos like "octomber" → "october"
+                        if not match and len(full_name) > 4:
+                            # Simple approach: check if query contains something that looks like the month
+                            # Extract potential month words from query (words after numbers)
+                            potential_months = re_module.findall(r'\d+\s*,\s*\d+(?:\s*,\s*\d+)*\s+([a-z]{4,})', query_lower)
+                            for pot_month in potential_months:
+                                # Check if it's similar to current month name (first 3-4 chars match)
+                                if pot_month[:3] == full_name[:3] and len(pot_month) >= len(full_name) - 2:
+                                    # Extract days from query
+                                    days_pattern = rf'(\d+(?:\s*,\s*\d+)*)\s+{re_module.escape(pot_month)}'
+                                    days_match = re_module.search(days_pattern, query_lower, re_module.IGNORECASE)
+                                    if days_match:
+                                        # Create a mock match object
+                                        class MockMatch:
+                                            def __init__(self, days_str, month_str, end_pos):
+                                                self._days = days_str
+                                                self._month = month_str
+                                                self._end_pos = end_pos
+                                            def group(self, n):
+                                                if n == 1:
+                                                    return self._days
+                                                elif n == 2:
+                                                    return self._month
+                                                return None
+                                            def end(self):
+                                                return self._end_pos
+                                        match = MockMatch(days_match.group(1), full_name, days_match.end())
+                                        print(f"[Chatbot] Detected typo: '{pot_month}' → '{full_name}'")
+                                        break
+                        
+                        if match:
+                            month_num = i + 1
+                            # Extract day numbers from the match
+                            days_str = match.group(1) if match.group(1) and match.group(1)[0].isdigit() else (match.group(2) if match.group(2) and match.group(2)[0].isdigit() else None)
                             
-                            for day in days:
-                                try:
-                                    parsed_date = datetime(year, month_num, day, tzinfo=timezone.utc)
-                                    date_start = parsed_date.replace(hour=0, minute=0, second=0, microsecond=0)
-                                    date_end = parsed_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-                                    target_dates.append((parsed_date.date(), date_start, date_end))
-                                    target_date_ranges.append((date_start, date_end))
-                                    print(f"[Chatbot] Detected date: {day} {month_names[i]} {year}")
-                                except ValueError:
-                                    print(f"[Chatbot] Invalid date: {day}/{month_num}")
+                            if not days_str:
+                                # Try to extract from pattern3
+                                days_str = match.group(1) if match else None
                             
-                            if target_dates:
-                                found_month = True
-                                break
+                            if days_str:
+                                # Parse comma-separated days
+                                days = [int(d.strip()) for d in re_module.findall(r'\d+', days_str)]
+                                match_end_for_year = match.end() if hasattr(match, "end") else None
+                                
+                                for day in days:
+                                    year = resolve_year_for_natural_date(
+                                        now, month_num, day, query_lower, match_end_for_year,
+                                        full_name, abbrev,
+                                    )
+                                    try:
+                                        parsed_date = datetime(year, month_num, day, tzinfo=timezone.utc)
+                                        date_start = parsed_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                                        date_end = parsed_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+                                        target_dates.append((parsed_date.date(), date_start, date_end))
+                                        target_date_ranges.append((date_start, date_end))
+                                        print(f"[Chatbot] Detected date: {day} {month_names[i]} {year}")
+                                    except ValueError:
+                                        print(f"[Chatbot] Invalid date: {day}/{month_num}")
+                                
+                                if target_dates:
+                                    found_month = True
+                                    break
                 
                 # If no month names found, try DD/MM or MM/DD format (single date only for now)
                 if not found_month:
-                    match = re_module.search(date_pattern_1, user_query)
+                    date_pattern_with_year = r'\b(\d{1,2})[/-](\d{1,2})(?:[/-]((?:19|20)\d{2}))?\b'
+                    match = re_module.search(date_pattern_with_year, user_query)
                     if match:
                         num1, num2 = int(match.group(1)), int(match.group(2))
                         try:
@@ -2776,7 +3050,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                             else:
                                 day, month = num1, num2
                             
-                            year = now.year
+                            year = int(match.group(3)) if match.group(3) else infer_year_for_natural_date(now, month, day)
                             try:
                                 parsed_date = datetime(year, month, day, tzinfo=timezone.utc)
                                 date_start = parsed_date.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -2786,7 +3060,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                 print(f"[Chatbot] Detected specific date query: {day}/{month}/{year}")
                             except ValueError:
                                 print(f"[Chatbot] Invalid date: {day}/{month}")
-                        except:
+                        except Exception:
                             pass
             
             # Add current user query - minimal format (TOKEN OPTIMIZATION)
@@ -2855,7 +3129,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                     user_content += "\n✅ FACULTY QUERY: This is a query about a faculty member with a specific subject/role. Use team_member_data as the PRIMARY source. Do NOT check Classroom data for this - team_member_data contains the accurate information about faculty members and their roles/subjects. Provide information directly from team_member_data without mentioning Classroom data.\n"
             
             # Check again for guest classroom query and teacher connection requirements (re-check in this scope)
-            is_guest_classroom_query_local = not user_profile and (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query or is_holiday_query or any(kw in query_lower for kw in ['home', 'homework', 'my assignments', 'my coursework', 'my classes', 'my courses']))
+            is_guest_classroom_query_local = not user_profile and (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query or is_holiday_query or any(kw in query_lower for kw in ['home', 'homework', 'my assignments', 'my coursework', 'my classes', 'my courses'])) and not is_public_cal
             user_role_local = user_profile.get('role', '').lower() if user_profile else None
             is_submission_query_local = any(kw in query_lower for kw in ['submission', 'submitted', 'submitted work', 'student submission', 'check submission', 'grade submission', 'review submission', 'view submission'])
             is_grading_query_local = any(kw in query_lower for kw in ['grade', 'grading', 'assign grade', 'student grade', 'check grade', 'review grade'])
@@ -3543,9 +3817,32 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                     if calendar_events:
                         # Format events with clear date information
                         user_content += "\n📅 **UPCOMING CALENDAR EVENTS (REAL DATA FROM SCHOOL CALENDAR):**\n"
+                        user_content += f"📘 **How to read titles:** {CALENDAR_GRADE_LEGEND}\n"
+                        if calendar_query_grade_targets:
+                            gq = ", ".join(sorted(calendar_query_grade_targets, key=lambda x: (len(x), x)))
+                            user_content += (
+                                f"📌 **User asked for grade(s):** {gq}. "
+                                "Listed events are school-wide (no tags) or only use cohort tags within this set.\n\n"
+                            )
+                        elif calendar_user_grade:
+                            user_content += (
+                                f"📌 **List below is filtered for this student's grade ({calendar_user_grade}),** "
+                                "plus any school-wide events (titles without cohort tags).\n\n"
+                            )
+                        else:
+                            user_content += "\n"
+                        if calendar_month_scope_label:
+                            user_content += f"📌 **USER REQUEST SCOPE:** {calendar_month_scope_label}. Only events in this period are listed; answer using these dates only.\n\n"
                         user_content += "⚠️ CRITICAL: The events listed below are ALREADY filtered for the user's requested date/query.\n"
                         user_content += "If you see events listed below, they MATCH the user's query and you MUST mention them in your response!\n"
-                        user_content += "DO NOT say 'no events' if events are listed below - they ARE the answer to the user's question!\n\n"
+                        user_content += "DO NOT say 'no events' if events are listed below - they ARE the answer to the user's question!\n"
+                        if calendar_query_grade_targets:
+                            user_content += (
+                                "**LIST EVERY EVENT BELOW** as its own bullet (one line per event). "
+                                "Do not pick only PTM rows or a subset—include short days and school-wide lines too. "
+                                "(Staff-only PD / facilitators-only events are already removed from this list.)\n"
+                            )
+                        user_content += "\n"
                         for e in calendar_events:
                             title = e.get("summary", "")
                             start_time = e.get("startTime", "")

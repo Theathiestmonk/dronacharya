@@ -24,8 +24,8 @@ ESSENTIAL_PRAKRITI_PAGES = [
     # 6. Contact - For contact info
     "https://prakriti.edu.in/contact/",
     
-    # 7. Calendar - For calendar queries
-    "https://prakriti.edu.in/calendar/",
+    # 7. Academic Year Flow calendar (replaces legacy prakriti.edu.in/calendar archive)
+    "https://events.prakriti.edu.in/",
     
     # 8. News/Blog - For "latest news" queries (main page only)
     "https://prakriti.edu.in/blog-and-news/",
@@ -44,7 +44,7 @@ PAGE_CONTENT_TYPES = {
     "https://prakriti.edu.in/admissions/": "admission",
     "https://prakriti.edu.in/school-fees/": "admission",
     "https://prakriti.edu.in/contact/": "contact",
-    "https://prakriti.edu.in/calendar/": "calendar",
+    "https://events.prakriti.edu.in/": "calendar",
     "https://prakriti.edu.in/blog-and-news/": "news",
     "https://prakriti.edu.in/what-our-parents-say-about-us/": "testimonial",
 }

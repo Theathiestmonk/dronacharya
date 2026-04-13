@@ -490,6 +490,38 @@ async def get_calendar_data(email: Optional[str] = None):
         print(f"Error getting calendar data: {e}")
         return {"events": []}
 
+
+@router.get("/data/school-year-calendar")
+async def get_school_year_calendar_data():
+    """
+    Prakriti Year Flow / events.prakriti.edu.in rows from calendar_event_data (chatbot public calendar source).
+    Separate from Google Calendar sync in /data/calendar.
+    """
+    try:
+        from datetime import date
+
+        from supabase_config import get_supabase_client
+
+        supabase = get_supabase_client()
+        if not supabase:
+            return {"events": [], "source": "calendar_event_data"}
+        today = date.today().isoformat()
+        result = (
+            supabase.table("calendar_event_data")
+            .select("*")
+            .gte("event_date", today)
+            .eq("is_active", True)
+            .order("event_date", desc=False)
+            .order("event_time", desc=False)
+            .limit(200)
+            .execute()
+        )
+        rows = result.data if result.data else []
+        return {"events": rows, "source": "calendar_event_data"}
+    except Exception as e:
+        print(f"Error getting school year calendar: {e}")
+        return {"events": [], "source": "calendar_event_data"}
+
 async def refresh_google_token(integration: GoogleIntegration, db: Session):
     """Refresh Google OAuth token"""
     try:
@@ -1877,16 +1909,18 @@ async def sync_individual_website(url: str, email: Optional[str] = None):
         from app.config.essential_pages import PAGE_CONTENT_TYPES
         content_type = PAGE_CONTENT_TYPES.get(url, 'general')
         
-        # Crawl the specific URL
+        # Crawl the specific URL (force_refresh: bypass 24h cache so calendar_event_data / Year Flow upsert runs)
         crawler = WebCrawlerAgent()
-        content = crawler.extract_content_from_url(url, query="", skip_link_following=True)
+        content = crawler.extract_content_from_url(
+            url, query="", skip_link_following=True, force_refresh=True
+        )
         
         if 'error' in content:
             raise HTTPException(status_code=400, detail=f"Error crawling URL: {content['error']}")
         
-        # For calendar pages, always extract and store calendar events (even if page content is cached)
-        if 'calendar' in url.lower():
-            print(f"[Admin] Calendar page detected, extracting calendar events...")
+        # Legacy prakriti.edu.in/calendar paths: extra extract if needed (events subdomain handled in crawl path)
+        if crawler.is_calendar_events_source_url(url) and "events.prakriti.edu.in" not in (url or "").lower():
+            print(f"[Admin] Calendar host detected, ensuring calendar events...")
             try:
                 calendar_info = crawler.extract_calendar_events_with_selenium(url, query="")
                 if calendar_info:

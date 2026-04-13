@@ -5,6 +5,19 @@ import json
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
+
+def _now_in_timezone(timezone_name: Optional[str] = None) -> datetime:
+    """Current local time for the user when timezone_name is set (e.g. Asia/Kolkata); else system local time."""
+    if timezone_name:
+        try:
+            from zoneinfo import ZoneInfo
+
+            return datetime.now(ZoneInfo(timezone_name))
+        except Exception:
+            pass
+    return datetime.now()
+
+
 class GradeExamDetector:
     """Detects grade and exam type from user queries"""
 
@@ -29,7 +42,8 @@ class GradeExamDetector:
         # Query type patterns (more specific patterns first)
         self.query_patterns = {
             'syllabus': r'\b(?:syllabus|syllabi|topics|content|what\s*to\s*study)\b',
-            'timetable': r'\b(?:timetable|time\s*table|tim\s*table|tt|daily\s*schedule|routine)\b',
+            # Include common typos: "time tabl", "time tabel", "timetabl"
+            'timetable': r'\b(?:timetable|timetabl|time\s*table|time\s+tabl|time\s+tabel|tim\s*table|tt|daily\s*schedule|routine)\b',
             'schedule': r'\b(?:schedule|date|when|dates|exam\s*date|exam\s*schedule)\b',
             'teacher': r'\b(?:teacher|who\s*is\s*the|who\s*teaches|teacher\s*name|instructor)\b',
             'teacher_subject': r'\b(?:what\s*subject|which\s*subject|subject\s*taught|teaches\s*what|subject\s*of|what\s*does\s*\w+\s*teach|does\s*\w+\s*teach)\b'
@@ -54,9 +68,12 @@ class GradeExamDetector:
         ]
 
         # Day patterns for timetable filtering (including relative time and abbreviations)
+        # Common "tomorrow" typos (e.g. tommorow, tommorrow) so timetable queries still get one day
+        _tomorrow_alt = r'tomorrow|tomorrows|tomorrow\'s|tommorow|tommorows|tommorow\'s|tommorrow|tomorow'
         self.day_patterns = {
             'today': r'\b(?:today|todays|today\'s)\b',
-            'tomorrow': r'\b(?:tomorrow|tomorrows|tomorrow\'s)\b',
+            'tomorrow': rf'\b(?:{_tomorrow_alt})\b',
+            'next_day': r'\bnext\s+day\b',
             'yesterday': r'\b(?:yesterday|yesterdays|yesterday\'s|yeasterday|yeasterdays|yeasterday\'s)\b',
             'monday': r'\b(?:monday|mon)\b',
             'tuesday': r'\b(?:tuesday|tue|tues)\b',
@@ -68,7 +85,8 @@ class GradeExamDetector:
         # Multiple days patterns for combined timetable requests (including relative time and abbreviations)
         self.days_patterns = {
             'today': r'\b(?:today|todays|today\'s)\b',
-            'tomorrow': r'\b(?:tomorrow|tomorrows|tomorrow\'s)\b',
+            'tomorrow': rf'\b(?:{_tomorrow_alt})\b',
+            'next_day': r'\bnext\s+day\b',
             'yesterday': r'\b(?:yesterday|yesterdays|yesterday\'s|yeasterday|yeasterdays|yeasterday\'s)\b',
             'monday': r'\b(?:monday|mon)\b',
             'tuesday': r'\b(?:tuesday|tue|tues)\b',
@@ -139,6 +157,14 @@ class GradeExamDetector:
         if has_teacher_subject_keyword:
             return 'teacher_subject'
 
+        # "Who is <Firstname>?" — identify someone by name (timetable / reverse teacher lookup)
+        # Exclude "who is the/my/... teacher" — those use query_type 'teacher' + subject
+        if re.search(
+            r'\bwho\s+is\s+(?!(?:the|my|your|our|a|an)\s)([a-zA-Z][a-zA-Z]{2,})\b',
+            query_lower,
+        ):
+            return 'teacher_subject'
+
         # For other queries, use regular pattern matching
         for query_type, pattern in self.query_patterns.items():
             if re.search(pattern, query_lower):
@@ -173,6 +199,35 @@ class GradeExamDetector:
 
         # Common words to exclude (avoid false matches)
         exclude_words = {'what', 'which', 'who', 'where', 'when', 'how', 'why', 'subject', 'teach', 'teaches', 'teacher', 'the', 'is', 'are', 'does', 'do', 'of', 'by', 'for', 'from', 'with'}
+        weekday_names = {
+            'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+            'mon', 'tue', 'tues', 'wed', 'thu', 'thur', 'thurs', 'fri', 'sat', 'sun',
+        }
+
+        # "Who is Anuradha?" — first name after "who is" (must stay in sync with detect_query_type)
+        m_who = re.search(
+            r'\bwho\s+is\s+(?!(?:the|my|your|our|a|an)\s)([a-zA-Z][a-zA-Z]{2,})\b',
+            query_lower,
+        )
+        if m_who:
+            name = m_who.group(1).strip()
+            if name not in exclude_words and name not in weekday_names and len(name) >= 3:
+                if not name.lower().startswith(('what', 'which', 'who', 'where', 'when', 'how', 'why')):
+                    return name.title()
+
+        # "mrs. swapna" — space after dot (return first name only for timetable lookup)
+        m_title_spaced = re.search(r'\b(?:mr|mrs|ms|dr)\.\s+([a-zA-Z]{2,})\b', query_lower)
+        if m_title_spaced:
+            name = m_title_spaced.group(1).strip()
+            if name not in exclude_words and name not in weekday_names and len(name) >= 2:
+                return name.title()
+
+        # "mrs.swapna" / "mr.john" — no space after dot
+        m_title_compact = re.search(r'\b(?:mr|mrs|ms|dr)\.([a-zA-Z]{2,})\b', query_lower)
+        if m_title_compact:
+            name = m_title_compact.group(1).strip()
+            if name not in exclude_words and name not in weekday_names and len(name) >= 2:
+                return name.title()
 
         # Look for teacher name patterns
         for pattern in self.teacher_name_patterns:
@@ -196,13 +251,13 @@ class GradeExamDetector:
 
         return None
 
-    def _calculate_relative_day(self, relative_day: str) -> str:
-        """Convert relative day terms to actual day names"""
-        now = datetime.now()
+    def _calculate_relative_day(self, relative_day: str, timezone_name: Optional[str] = None) -> str:
+        """Convert relative day terms to actual day names (uses user timezone when provided)."""
+        now = _now_in_timezone(timezone_name)
 
         if relative_day == 'today':
             return now.strftime('%A').lower()
-        elif relative_day == 'tomorrow':
+        elif relative_day in ('tomorrow', 'next_day'):
             tomorrow = now + timedelta(days=1)
             return tomorrow.strftime('%A').lower()
         elif relative_day == 'yesterday':
@@ -212,14 +267,21 @@ class GradeExamDetector:
         # For explicit day names, return as-is
         return relative_day
 
-    def detect_day(self, query: str) -> Optional[str]:
+    @staticmethod
+    def _fuzzy_variation_matches(query_lower: str, variation: str) -> bool:
+        """Avoid false positives (e.g. 'mon' inside 'common') for short day abbreviations."""
+        if len(variation) <= 3:
+            return re.search(rf'\b{re.escape(variation)}\b', query_lower) is not None
+        return variation in query_lower
+
+    def detect_day(self, query: str, timezone_name: Optional[str] = None) -> Optional[str]:
         """Detect day from query for timetable filtering with fuzzy matching for typos"""
         query_lower = query.lower()
 
         # First try exact pattern matching
         for day, pattern in self.day_patterns.items():
             if re.search(pattern, query_lower):
-                return self._calculate_relative_day(day)
+                return self._calculate_relative_day(day, timezone_name)
 
         # If no exact match, try fuzzy matching for common typos and abbreviations
         # Check if query contains most letters of day names (handles typos like "thursdya" → "thursday")
@@ -235,12 +297,12 @@ class GradeExamDetector:
         
         for day, variations in day_fuzzy_patterns.items():
             for variation in variations:
-                if variation in query_lower:
-                    return self._calculate_relative_day(day)
+                if self._fuzzy_variation_matches(query_lower, variation):
+                    return self._calculate_relative_day(day, timezone_name)
 
         return None
 
-    def detect_days(self, query: str) -> list[str]:
+    def detect_days(self, query: str, timezone_name: Optional[str] = None) -> list[str]:
         """Detect multiple days from query for timetable filtering with fuzzy matching"""
         query_lower = query.lower()
         found_days = []
@@ -248,7 +310,7 @@ class GradeExamDetector:
         # First try exact pattern matching
         for day, pattern in self.days_patterns.items():
             if re.search(pattern, query_lower):
-                found_days.append(self._calculate_relative_day(day))
+                found_days.append(self._calculate_relative_day(day, timezone_name))
 
         # If no exact matches, try fuzzy matching for typos and abbreviations
         if not found_days:
@@ -264,21 +326,23 @@ class GradeExamDetector:
             
             for day, variations in day_fuzzy_patterns.items():
                 for variation in variations:
-                    if variation in query_lower and self._calculate_relative_day(day) not in found_days:
-                        found_days.append(self._calculate_relative_day(day))
+                    if self._fuzzy_variation_matches(query_lower, variation):
+                        resolved = self._calculate_relative_day(day, timezone_name)
+                        if resolved not in found_days:
+                            found_days.append(resolved)
 
         return found_days
 
-    def analyze_query(self, query: str) -> Dict[str, Any]:
-        """Complete query analysis"""
+    def analyze_query(self, query: str, timezone_name: Optional[str] = None) -> Dict[str, Any]:
+        """Complete query analysis. Pass timezone_name (e.g. Asia/Kolkata) so 'today' matches the user's weekday."""
         return {
             'grade': self.detect_grade(query),
             'exam_type': self.detect_exam_type(query),
             'query_type': self.detect_query_type(query),
             'subject': self.detect_subject(query),  # Keep for backward compatibility
             'subjects': self.detect_subjects(query),  # New: list of all subjects
-            'day': self.detect_day(query),  # Keep for backward compatibility
-            'days': self.detect_days(query),  # New: list of all days
+            'day': self.detect_day(query, timezone_name),  # Keep for backward compatibility
+            'days': self.detect_days(query, timezone_name),  # New: list of all days
             'teacher_name': self.detect_teacher_name(query),  # New: teacher name for reverse lookup
             'original_query': query
         }
@@ -298,7 +362,7 @@ class GradeExamDetector:
             elif query_type == 'syllabus' and exam_type in ['sa1', 'sa2']:
                 return f"{exam_type.upper()} Syllabus"
             elif query_type == 'timetable':
-                return "TT"  # Regular Time Table
+                return "TT"  # Actual tab may be TT or Time Table — see DriveChatbotIntegrator.TIMETABLE_TAB_CANDIDATES
 
         # Default fallback
         return base_sheet

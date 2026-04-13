@@ -9,6 +9,7 @@ const DEFAULT_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
 export type CacheKey =
   | 'admin_classroom_data'
   | 'admin_calendar_data'
+  | 'admin_school_year_flow'
   | 'admin_website_pages'
   | 'admin_integration_status'
   | 'admin_scheduler_status'
@@ -156,6 +157,7 @@ export function clearAllCache(adminEmail?: string): void {
       const keys: CacheKey[] = [
         'admin_classroom_data',
         'admin_calendar_data',
+        'admin_school_year_flow',
         'admin_website_pages',
         'admin_integration_status',
         'admin_scheduler_status',

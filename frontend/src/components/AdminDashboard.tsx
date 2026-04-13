@@ -32,6 +32,17 @@ interface CalendarEvent {
   calendar_id?: string;
 }
 
+/** calendar_event_data (Prakriti Year Flow crawl from events.prakriti.edu.in) */
+interface SchoolYearFlowEvent {
+  id?: number | string;
+  event_title: string;
+  event_description?: string;
+  event_date: string;
+  event_time?: string | null;
+  event_type?: string;
+  source_url?: string;
+}
+
 interface WebsitePage {
   url: string;
   title: string;
@@ -80,7 +91,7 @@ const ESSENTIAL_PAGES = [
   "https://prakriti.edu.in/admissions/",
   "https://prakriti.edu.in/school-fees/",
   "https://prakriti.edu.in/contact/",
-  "https://prakriti.edu.in/calendar/",
+  "https://events.prakriti.edu.in/",
   "https://prakriti.edu.in/blog-and-news/",
   "https://prakriti.edu.in/what-our-parents-say-about-us/",
 ];
@@ -94,10 +105,48 @@ const PAGE_CONTENT_TYPES: Record<string, string> = {
   "https://prakriti.edu.in/admissions/": "admission",
   "https://prakriti.edu.in/school-fees/": "admission",
   "https://prakriti.edu.in/contact/": "contact",
-  "https://prakriti.edu.in/calendar/": "calendar",
+  "https://events.prakriti.edu.in/": "calendar",
   "https://prakriti.edu.in/blog-and-news/": "news",
   "https://prakriti.edu.in/what-our-parents-say-about-us/": "testimonial",
 };
+
+/** Early-years cohort chips on calendar events: blue = Pre-Nursery, green = Nursery, yellow = KG. */
+type EarlyYearsCohortKey = 'pre-nursery' | 'nursery' | 'kg';
+
+const EARLY_YEARS_COHORT_STYLES: Record<EarlyYearsCohortKey, { label: string; className: string }> = {
+  'pre-nursery': {
+    label: 'Pre-Nursery',
+    className: 'bg-blue-100 text-blue-900 border border-blue-300',
+  },
+  nursery: {
+    label: 'Nursery',
+    className: 'bg-green-100 text-green-900 border border-green-300',
+  },
+  kg: {
+    label: 'KG',
+    className: 'bg-yellow-100 text-yellow-950 border border-yellow-400',
+  },
+};
+
+function extractEarlyYearsCohortTags(title: string, description: string): EarlyYearsCohortKey[] {
+  const raw = `${title || ''} ${description || ''}`;
+  const text = raw.toLowerCase();
+  const out = new Set<EarlyYearsCohortKey>();
+
+  if (/pre[-\s]?nursary|pre[-\s]?nursery|\bblue\b/i.test(raw)) {
+    out.add('pre-nursery');
+  }
+  if (/\byellow\b|\bkg\b|kindergarten/i.test(raw)) {
+    out.add('kg');
+  }
+  const stripped = text.replace(/pre[-\s]?nursary|pre[-\s]?nursery/g, ' ');
+  if (/\bgreen\b/i.test(raw) || /\bnursery\b/.test(stripped)) {
+    out.add('nursery');
+  }
+
+  const order: EarlyYearsCohortKey[] = ['pre-nursery', 'nursery', 'kg'];
+  return order.filter((k) => out.has(k));
+}
 
 type TabType = 'classroom' | 'calendar' | 'website' | 'users' | 'drive';
 
@@ -123,6 +172,7 @@ const AdminDashboard: React.FC = () => {
   const searchParams = useSearchParams();
   const [classroomData, setClassroomData] = useState<ClassroomCourse[]>([]);
   const [calendarData, setCalendarData] = useState<CalendarEvent[]>([]);
+  const [schoolYearFlowData, setSchoolYearFlowData] = useState<SchoolYearFlowEvent[]>([]);
   const [websitePages, setWebsitePages] = useState<WebsitePage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -214,6 +264,35 @@ const AdminDashboard: React.FC = () => {
       }
     } catch (err) {
       console.error('Error fetching calendar data:', err);
+    }
+  }, [profile?.email]);
+
+  const fetchSchoolYearFlow = useCallback(async (forceRefresh: boolean = false) => {
+    try {
+      const adminEmail = profile?.email;
+      if (!forceRefresh) {
+        const cached = getCachedData<SchoolYearFlowEvent[]>('admin_school_year_flow', adminEmail);
+        if (cached) {
+          console.log('🔍 [Cache] Using cached school year flow (calendar_event_data)');
+          setSchoolYearFlowData(cached);
+          return;
+        }
+      }
+      const timestamp = new Date().getTime();
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${backendUrl}/api/admin/data/school-year-calendar?t=${timestamp}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const events = data.events || [];
+        console.log(`🔍 [fetchSchoolYearFlow] Received ${events.length} upcoming Year Flow rows`);
+        setSchoolYearFlowData(events);
+        setCachedData('admin_school_year_flow', events, adminEmail);
+      }
+    } catch (err) {
+      console.error('Error fetching school year calendar:', err);
     }
   }, [profile?.email]);
 
@@ -757,7 +836,11 @@ const AdminDashboard: React.FC = () => {
       if (response.ok) {
         const data = await response.json();
         alert(data.message || 'Page synced successfully');
-        await fetchWebsitePages();
+        await fetchWebsitePages(true);
+        if (url.includes('events.prakriti.edu.in')) {
+          clearCache('admin_school_year_flow', profile?.email);
+          await fetchSchoolYearFlow(true);
+        }
       } else {
         const errorData = await response.json();
         setError(errorData.error || 'Failed to sync page');
@@ -803,7 +886,9 @@ const AdminDashboard: React.FC = () => {
           await fetchCalendarData(true);
         } else if (service === 'website') {
           clearCache('admin_website_pages', profile?.email);
+          clearCache('admin_school_year_flow', profile?.email);
           await fetchWebsitePages(true);
+          await fetchSchoolYearFlow(true);
         }
       } else {
         const errorData = await response.json();
@@ -972,13 +1057,14 @@ const AdminDashboard: React.FC = () => {
     console.log('🔍 [MOUNT] Component mounted');
     fetchClassroomData();
     fetchCalendarData();
+    fetchSchoolYearFlow();
     fetchWebsitePages();
     fetchSchedulerStatus();
     fetchDwdStatus();
     fetchUsersByGradeRole();
     fetchGcdrTokens();
     fetchClassroomOAuthToken();
-  }, [fetchClassroomData, fetchCalendarData, fetchWebsitePages, fetchSchedulerStatus, fetchDwdStatus, fetchUsersByGradeRole, fetchGcdrTokens, fetchClassroomOAuthToken]);
+  }, [fetchClassroomData, fetchCalendarData, fetchSchoolYearFlow, fetchWebsitePages, fetchSchedulerStatus, fetchDwdStatus, fetchUsersByGradeRole, fetchGcdrTokens, fetchClassroomOAuthToken]);
 
   // Handle URL parameters for tab switching and messages
   useEffect(() => {
@@ -1231,6 +1317,7 @@ const AdminDashboard: React.FC = () => {
                   console.log('🔄 [Refresh] Fetching fresh data from Supabase...');
                   fetchClassroomData(true);
                   fetchCalendarData(true);
+                  fetchSchoolYearFlow(true);
                   fetchWebsitePages(true);
                   fetchSchedulerStatus(true);
                   fetchDwdStatus(true);
@@ -1806,12 +1893,19 @@ const AdminDashboard: React.FC = () => {
           </div>
         )}
 
-        {/* Google Calendar Tab */}
+        {/* Google Calendar Tab — also shows Prakriti Year Flow (events.prakriti.edu.in → calendar_event_data) */}
         {activeTab === 'calendar' && (
-          <div className="mb-6 sm:mb-8">
+          <div className="mb-6 sm:mb-8 space-y-8 sm:space-y-10">
+            <p className="text-xs sm:text-sm text-gray-600 border border-gray-200 bg-gray-50 rounded-lg px-3 py-2">
+              Google Calendar below is <span className="font-medium">Workspace sync</span> (google_calendar_events).
+              Prakriti Year Flow farther down is the public <span className="font-medium">events.prakriti.edu.in</span> crawl stored in{' '}
+              <span className="font-mono text-[11px]">calendar_event_data</span> — the same source the chatbot uses for school-wide dates.
+            </p>
+
+            <div>
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0 mb-4">
               <div className="flex-1 min-w-0">
-                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Calendar Events</h2>
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Google Calendar</h2>
                 <p className="text-xs sm:text-sm text-gray-500 mt-1">
                   {calendarData.length} events synced
                   {getMostRecentSync(calendarData) && (
@@ -1864,11 +1958,24 @@ const AdminDashboard: React.FC = () => {
                 {calendarData.map((event) => {
                   const status = getSyncStatus(event.last_synced);
                   const isSyncing = syncingItems.has(`event-${event.id}`);
+                  const cohortTags = extractEarlyYearsCohortTags(event.title || '', event.description || '');
                   return (
                     <div key={event.id} className="bg-white rounded-lg sm:rounded-xl shadow-sm sm:shadow-md border border-gray-200 p-4 sm:p-5 transition-all duration-300 hover:shadow-md sm:hover:shadow-lg hover:-translate-y-0.5 sm:hover:-translate-y-1">
                       <div className="flex justify-between items-start mb-3 gap-2">
                         <div className="flex-1 min-w-0">
                           <h3 className="font-semibold text-sm sm:text-base text-gray-900 mb-1 line-clamp-2">{event.title || 'Untitled Event'}</h3>
+                          {cohortTags.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mb-2">
+                              {cohortTags.map((key) => (
+                                <span
+                                  key={key}
+                                  className={`inline-block text-[10px] sm:text-xs px-2 py-0.5 rounded-full font-semibold tracking-tight ${EARLY_YEARS_COHORT_STYLES[key].className}`}
+                                >
+                                  {EARLY_YEARS_COHORT_STYLES[key].label}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                           <p className="text-xs text-gray-500">
                             {new Date(event.start).toLocaleDateString('en-GB', {
                               day: '2-digit',
@@ -1932,6 +2039,83 @@ const AdminDashboard: React.FC = () => {
                 })}
               </div>
             )}
+            </div>
+
+            <div>
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0 mb-4">
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Prakriti Year Flow</h2>
+                  <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                    {schoolYearFlowData.length} upcoming rows from{' '}
+                    <a
+                      href="https://events.prakriti.edu.in/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-700 hover:underline"
+                    >
+                      events.prakriti.edu.in
+                    </a>
+                    {' '}(crawl → <span className="font-mono text-[11px]">calendar_event_data</span>). Sync that URL from the Website tab to refresh.
+                  </p>
+                </div>
+              </div>
+              {schoolYearFlowData.length === 0 ? (
+                <div className="bg-white rounded-lg sm:rounded-xl shadow-sm sm:shadow-md p-8 sm:p-12 text-center border border-gray-200">
+                  <p className="text-gray-500 text-sm sm:text-base md:text-lg">
+                    No upcoming Year Flow rows in the database, or none from today onward. Crawl{' '}
+                    <span className="font-mono text-xs">https://events.prakriti.edu.in/</span> from the Website tab.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                  {schoolYearFlowData.map((ev) => {
+                    const cohortTags = extractEarlyYearsCohortTags(ev.event_title || '', ev.event_description || '');
+                    const rowKey = `${ev.id ?? 'row'}-${ev.event_date}-${(ev.event_title || '').slice(0, 48)}`;
+                    return (
+                      <div
+                        key={rowKey}
+                        className="bg-white rounded-lg sm:rounded-xl shadow-sm sm:shadow-md border border-gray-200 p-4 sm:p-5 transition-all duration-300 hover:shadow-md sm:hover:shadow-lg"
+                      >
+                        <div className="mb-2">
+                          <p className="text-xs font-medium text-gray-500">
+                            {ev.event_date
+                              ? new Date(ev.event_date + 'T12:00:00').toLocaleDateString('en-GB', {
+                                  weekday: 'short',
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                })
+                              : '—'}
+                            {ev.event_time ? ` • ${ev.event_time}` : ''}
+                          </p>
+                          <h3 className="font-semibold text-sm sm:text-base text-gray-900 mt-1 line-clamp-3">
+                            {ev.event_title || 'Untitled'}
+                          </h3>
+                          {cohortTags.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {cohortTags.map((key) => (
+                                <span
+                                  key={key}
+                                  className={`inline-block text-[10px] sm:text-xs px-2 py-0.5 rounded-full font-semibold tracking-tight ${EARLY_YEARS_COHORT_STYLES[key].className}`}
+                                >
+                                  {EARLY_YEARS_COHORT_STYLES[key].label}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-xs sm:text-sm text-gray-600 line-clamp-4">
+                          {ev.event_description || '—'}
+                        </p>
+                        {ev.event_type && (
+                          <p className="text-[10px] sm:text-xs text-gray-400 mt-2 capitalize">{ev.event_type}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
