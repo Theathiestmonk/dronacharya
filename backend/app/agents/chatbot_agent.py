@@ -1814,7 +1814,18 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     # BUT exclude coursework/assignment queries - if query is about coursework, it's not a person detail query
     person_detail_keywords = ['introduction', 'detail', 'details', 'who is', 'about', 'little bit about', 
                              'information about', 'tell me about', 'profile', 'biography']
-    is_person_detail_query = any(kw in query_lower for kw in person_detail_keywords) and not is_coursework_query
+    # "Tell me about school / Prakriti" is general school info, not a team-member bio query
+    _general_school_about_phrases = (
+        'about school', 'about the school', 'tell me about school', 'tell me about the school',
+        'information about school', 'details about school', 'detail about school',
+        'about prakriti', 'tell me about prakriti', 'what is prakriti school', 'about prakriti school',
+    )
+    is_general_school_info_query = any(p in query_lower for p in _general_school_about_phrases)
+    is_person_detail_query = (
+        any(kw in query_lower for kw in person_detail_keywords)
+        and not is_coursework_query
+        and not is_general_school_info_query
+    )
     
     # Check if query mentions a specific person name (capitalized words or known names)
     # Try both original query (for capitalized names) and lowercase (for case-insensitive detection)
@@ -1951,7 +1962,9 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                       'ko kya hai', 'ko kya hota hai', 'ko kaya hai',
                       'ko kya hia', 'kya hai', 'kya hota hai', 'kya hia',
                       'mere school', 'school me', 'schoolm me', 'mere schoolm',
-                      'merre schoolm', 'schoolm', 'mere', 'school']
+                      'merre schoolm', 'schoolm', 'mere']
+    # NOTE: Do not add bare 'school' — it matches every English "about school" question and
+    # forces calendar/classroom intent. Use phrases like 'school events', 'mere school', etc.
     # Normalize common "calender" typo so substring checks stay reliable (unicode etc.)
     query_lower_for_events = query_lower.replace('calender', 'calendar')
     is_event_query = any(kw in query_lower_for_events for kw in event_keywords)
@@ -2042,6 +2055,8 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     web_enhancement_keywords = [
         'latest', 'recent', 'news', 'update', 'current', 'new', 'recently',
         'prakriti school', 'prakrit school', 'progressive education',
+        # General school info (not Classroom/calendar — those are gated by is_classroom_related_query)
+        'about school', 'about the school', 'tell me about the school',
         'alternative school', 'igcse', 'a level', 'bridge programme',
         'admission', 'admissions', 'addmission', 'addmissions', 'fees', 'fee', 'fee structure', 'fees structure',
         'curriculum', 'activities', 'facilities', 'contact', 'contact us',
