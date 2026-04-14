@@ -297,3 +297,74 @@ CALENDAR_GRADE_LEGEND = (
     "Endurance(9) or Endurance → G9; Equanimity(10) or Equanimity → G10; Gr 11 / Gr 12 → G11–G12. "
     "Titles without cohort tags are school-wide (all grades)."
 )
+
+# Decorative band colours in multi-column rows (not grade keys); strip for short display labels.
+_DECORATIVE_BAND_WORDS = re.compile(
+    r"\b(?:blue|green|yellow)\b",
+    re.IGNORECASE,
+)
+
+
+def sanitize_calendar_title_for_display(title: str, *, max_len: int = 140) -> str:
+    """
+    Produce a short, readable event label for chatbot replies by removing cohort/grade tokens
+    (Orange/Violet/virtue names, Gr N, parenthetic numbers) and trimming packed multi-event rows.
+    Filtering logic elsewhere still uses the raw title; this is display-only.
+    """
+    if not title or not str(title).strip():
+        return (title or "").strip()
+    original = title.strip()
+    t = original
+
+    # Packed Year Flow rows often concatenate several events separated by middle dot.
+    if "·" in t and len(t) > 60:
+        t = t.split("·", 1)[0].strip()
+
+    # Long rows stack multiple school events separated by em dash — keep the first block only.
+    if len(t) > 95 and " — " in t:
+        nd = t.count(" — ")
+        if nd >= 2 or (nd == 1 and len(t) > 135):
+            t = t.split(" — ", 1)[0].strip()
+
+    # Remove known cohort / grade patterns (same family as extract_grade_tags_from_title).
+    for pattern, _key in _GRADE_TAG_PATTERNS:
+        t = re.sub(pattern, " ", t, flags=re.IGNORECASE)
+    t = re.sub(r"\bGr\s*(12|11|10|9|8|7|6|5|4|3|2|1)\b", " ", t, flags=re.IGNORECASE)
+
+    # Leftover parenthetic grade markers, e.g. "PTM (2) (3)" after Violet/Indigo stripped.
+    t = re.sub(r"\(\s*5[AB]\s*\)", " ", t, flags=re.IGNORECASE)
+    t = re.sub(r"\(\s*\d{1,2}\s*\)", " ", t)
+    t = re.sub(r"\(\s*\)", " ", t)
+
+    # "PTM Blue Green Yellow" → "PTM" for display (bands are not grade tags).
+    if re.search(r"\bPTM\b", t, re.IGNORECASE) and _DECORATIVE_BAND_WORDS.search(t):
+        if not _HAS_NAMED_COHORT_IN_TITLE.search(t):
+            t = "PTM"
+
+    # Band colour + dash + colon with nothing left in the middle (after cohort strip).
+    t = re.sub(r"\b(?:Blue|Green|Yellow)\s*[-–—]\s*:\s*", "", t, flags=re.IGNORECASE)
+    t = re.sub(r"\s*[-–—]\s*:\s*", " — ", t)
+    # Orphan glue left when virtues were removed, e.g. "& 5 OLE"
+    t = re.sub(r"\s*&\s*\d+\s*", " ", t)
+    t = re.sub(r"\s*\+\s*", " ", t)
+
+    t = re.sub(r"\s+", " ", t).strip()
+    t = re.sub(r"^[\s\-–—:·|]+|[\s\-–—:·|]+$", "", t)
+    t = re.sub(r"\s*[-–—]{2,}\s*", " — ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+
+    if not t:
+        return original[: max_len + 1] + ("…" if len(original) > max_len else "")
+
+    if len(t) > max_len:
+        cut = t[: max_len + 1]
+        if " " in cut:
+            cut = cut.rsplit(" ", 1)[0]
+        t = cut.rstrip(" -–—·") + "…"
+    return t
+
+
+CALENDAR_DISPLAY_LEGEND = (
+    "Event names below are shortened for readability (cohort/grade codes removed). "
+    "For full titles and all events, use the official calendar link."
+)

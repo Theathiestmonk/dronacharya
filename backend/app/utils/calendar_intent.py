@@ -176,10 +176,19 @@ def is_public_school_website_calendar_query(query_lower: str) -> bool:
             "calendar in the coming weeks",
             "from the prakriti calendar",
             "events on the school calendar",
+            "where is the calendar",
+            "where is the calender",
+            "link for calendar",
+            "link for calender",
+            "calendar page",
+            "calender page",
+            "school events",
         )
     ):
         return True
-    if "school" in query_lower and ("event" in query_lower or "calendar" in query_lower):
+    if ("calendar" in query_lower or "calender" in query_lower) and ("where" in query_lower or "link" in query_lower or "url" in query_lower or "site" in query_lower or "page" in query_lower):
+        return True
+    if "school" in query_lower and ("event" in query_lower or "calendar" in query_lower or "calender" in query_lower):
         if any(
             x in query_lower
             for x in (
@@ -228,3 +237,158 @@ def is_public_school_website_calendar_query(query_lower: str) -> bool:
         if not _looks_like_personal_classroom_calendar_query(query_lower):
             return True
     return False
+
+
+def is_public_calendar_event_lookup_query(query_lower: str) -> bool:
+    """
+    True when the user asks about a school-wide Year Flow event (calendar_event_data) without
+    saying \"calendar\" — e.g. \"which date learners till 1 pm\". Guests may answer without Classroom.
+    """
+    if _looks_like_personal_classroom_calendar_query(query_lower):
+        return False
+    q = query_lower.replace("calender", "calendar").strip()
+    # Phrasing copied from public Year Flow / calendar_event_data event titles
+    if "learners till" in q or "learner till" in q:
+        return True
+    if "short day" in q and ("learner" in q or "learners" in q):
+        return True
+    if any(p in q for p in ("which date", "what date", "on which date", "which day", "what day")):
+        if any(
+            x in q
+            for x in (
+                "ptm",
+                "parent-teacher",
+                "parent teacher",
+                "facilitators",
+                "professional development",
+                "month end",
+                "summer break",
+                "group meeting",
+                "bookaroo",
+                "hocokah",
+                "inset",
+                "jamboree",
+            )
+        ):
+            return True
+    return False
+
+
+# Phrases that mean "what does the calendar page cover / include" (overview), not "list every upcoming row".
+CALENDAR_PAGE_DESCRIPTION_HINTS: tuple[str, ...] = (
+    "which content",
+    "what content",
+    "what does the calendar",
+    "what does it",
+    "what do you",
+    "describe the calendar",
+    "describe calendar",
+    "explain the calendar",
+    "explain calendar",
+    "tell me about",
+    "what is on",
+    "what's on",
+    "what is covered",
+    "what does it cover",
+    "what types",
+    "what kind",
+    "what information",
+    "how to read",
+    "what shows",
+    "content cover",
+    "cover the calendar",
+    "cover calendar",
+    "covers the calendar",
+    "covers calendar",
+)
+
+
+def _normalize_calendar_query(query_lower: str) -> str:
+    return query_lower.replace("calender", "calendar").strip()
+
+
+def is_calendar_page_content_query(query_lower: str) -> bool:
+    """
+    True when the user asks what the school calendar page *covers* or *includes* (overview / categories),
+    not a full listing of every upcoming event.
+    """
+    q = _normalize_calendar_query(query_lower)
+    return any(x in q for x in CALENDAR_PAGE_DESCRIPTION_HINTS)
+
+
+def is_calendar_link_only_query(query_lower: str) -> bool:
+    """
+    True when the user mainly wants the official calendar URL or page (where / link),
+    not a long list of upcoming events. Used to skip loading many rows and to keep replies short.
+
+    Not link-only: questions about what the calendar *contains* (content, coverage, types of events),
+    or any ask that clearly wants a description rather than just the URL.
+    """
+    q = _normalize_calendar_query(query_lower)
+
+    if is_calendar_page_content_query(query_lower):
+        return False
+
+    # Avoid matching bare "calendar page" (e.g. "which content does the calendar page cover") — use
+    # explicit "where / link" phrases for page, or narrow page variants.
+    link_hints = (
+        "where is the calendar",
+        "where is calendar",
+        "where can i find the calendar",
+        "where do i find the calendar",
+        "where to find the calendar",
+        "where is the calendar page",
+        "where is calendar page",
+        "where can i find the calendar page",
+        "link to the calendar",
+        "link for the calendar",
+        "link to calendar",
+        "link for calendar",
+        "link for the calendar page",
+        "link to the calendar page",
+        "calendar link",
+        "calender link",
+        "url for the calendar",
+        "calendar url",
+        "official calendar",
+        "prakriti calendar link",
+    )
+    if not any(h in q for h in link_hints):
+        return False
+    wants_event_list = any(
+        x in q
+        for x in (
+            "upcoming event",
+            "upcoming events",
+            "list of event",
+            "list event",
+            "list the event",
+            "what event",
+            "what events",
+            "show event",
+            "show events",
+            "events this",
+            "events next",
+            "events on",
+            "events for",
+            "events in",
+            "event this week",
+            "event next week",
+            "whats on",
+            "what's on",
+            "what is on",
+            "happening this",
+            "happening next",
+            "this week",
+            "next week",
+            "this month",
+            "next month",
+            "timetable",
+            "holiday",
+            "holidays",
+            "when is",
+            "when are",
+            "when will",
+        )
+    )
+    return not wants_event_list

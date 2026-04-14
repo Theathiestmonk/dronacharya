@@ -19,17 +19,21 @@ load_dotenv()
 
 from app.utils.calendar_intent import (
     is_public_school_website_calendar_query,
+    is_public_calendar_event_lookup_query,
+    is_calendar_link_only_query,
+    is_calendar_page_content_query,
     filter_calendar_events_by_month_phrase,
     filter_calendar_events_by_week_phrase,
 )
 from app.utils.calendar_grade_scope import (
-    CALENDAR_GRADE_LEGEND,
+    CALENDAR_DISPLAY_LEGEND,
     normalize_user_grade_for_calendar,
     filter_calendar_events_by_user_grade,
     parse_queried_grade_targets,
     filter_calendar_events_by_queried_grades,
     filter_calendar_events_exclude_staff_only,
     should_hide_staff_only_calendar_events,
+    sanitize_calendar_title_for_display,
 )
 
 # Note: rapidfuzz is optional, we'll handle it gracefully
@@ -379,13 +383,16 @@ def get_admin_data(user_email: str = None,
                    limit_announcements: int = None,
                    limit_students: int = None,
                    limit_teachers: int = None,
-                   limit_coursework: int = None) -> dict:
+                   limit_coursework: int = None,
+                   limit_calendar_events: int = 20,
+                   load_classroom_courses: bool = True) -> dict:
     """Get reference data (Google Classroom/Calendar sync) from Supabase for chatbot responses.
     
     This is REFERENCE DATA used by chatbot for ALL users - not restricted to admins.
     If user_email is provided, tries that user first; otherwise uses any admin with synced data.
     
     Uses normalized tables: google_classroom_courses, google_classroom_teachers, etc.
+    School-wide dates come from calendar_event_data (events.prakriti.edu.in), not google_calendar_events.
     
     Args:
         user_email: Email to fetch data for
@@ -399,6 +406,8 @@ def get_admin_data(user_email: str = None,
         limit_students: Limit number of students per course (SQL LIMIT)
         limit_teachers: Limit number of teachers per course (SQL LIMIT)
         limit_coursework: Limit number of coursework per course (SQL LIMIT)
+        limit_calendar_events: Max upcoming rows from calendar_event_data (0 = skip fetch for link-only asks)
+        load_classroom_courses: If False, skip google_classroom_courses (Year Flow-only / public calendar asks)
     """
     try:
         from supabase_config import get_supabase_client
@@ -435,7 +444,13 @@ def get_admin_data(user_email: str = None,
                 print(f"[Chatbot] Using reference data from user ID: {user_id}")
         
         # Website calendar (calendar_event_data) is global — load even when no Classroom user exists
-        if user_id:
+        if not load_classroom_courses:
+            courses = []
+            print(
+                "[Chatbot] Skipping Google Classroom course rows — using only calendar_event_data "
+                "(Year Flow / events.prakriti.edu.in) for this query"
+            )
+        elif user_id:
             courses_result = supabase.table('google_classroom_courses').select('*').eq('user_id', user_id).execute()
             courses = courses_result.data if courses_result.data else []
         else:
@@ -623,11 +638,23 @@ def get_admin_data(user_email: str = None,
             from datetime import date, datetime, timezone
             today = date.today()
             
-            # Fetch from calendar_event_data table (from website calendar page)
-            events_result = supabase.table('calendar_event_data').select('*').gte('event_date', today.isoformat()).eq('is_active', True).order('event_date', desc=False).order('event_time', desc=False).limit(20).execute()
-            calendar_events = events_result.data if events_result.data else []
-            
-            print(f"[Chatbot] Found {len(calendar_events)} upcoming calendar events from website calendar")
+            if limit_calendar_events <= 0:
+                print("[Chatbot] Skipping calendar_event_data fetch (limit_calendar_events=0, e.g. link-only query)")
+                calendar_events = []
+            else:
+                # Fetch from calendar_event_data table (from website calendar page)
+                events_result = (
+                    supabase.table("calendar_event_data")
+                    .select("*")
+                    .gte("event_date", today.isoformat())
+                    .eq("is_active", True)
+                    .order("event_date", desc=False)
+                    .order("event_time", desc=False)
+                    .limit(limit_calendar_events)
+                    .execute()
+                )
+                calendar_events = events_result.data if events_result.data else []
+                print(f"[Chatbot] Found {len(calendar_events)} upcoming calendar events from website calendar")
             
             # Format calendar data to match expected structure
             for event in calendar_events:
@@ -952,7 +979,9 @@ Once you provide the subject and topic, I'll be able to give you detailed, step-
     # Step 0.2: Check if user is asking about classroom/homework/assignments FIRST (before generic check)
     # This ensures queries like "help with homework" are caught here and show connection steps
     query_lower = user_query.lower()
-    is_public_cal = is_public_school_website_calendar_query(query_lower)
+    is_public_cal = is_public_school_website_calendar_query(
+        query_lower
+    ) or is_public_calendar_event_lookup_query(query_lower)
     
     # Expanded keywords to catch queries like "help with homework", "I need help with my homework", etc.
     is_coursework_query_early = any(kw in query_lower for kw in [
@@ -968,11 +997,12 @@ Once you provide the subject and topic, I'll be able to give you detailed, step-
         'student', 'classmate', 'roster',
         'teacher', 'instructor', 'faculty',
         'course', 'class', 'subject',
-        'event', 'events', 'calendar', 'schedule',
+        'event', 'events', 'calendar', 'calender', 'schedule', 'planning',
         'my assignments', 'my coursework', 'my classes', 'my courses', 'my homework',
         'help with homework', 'help with assignment', 'help with coursework',
         'need help with homework', 'need help with assignment',
-        'homework help', 'assignment help', 'coursework help'
+        'homework help', 'assignment help', 'coursework help',
+        'calendar page', 'calender page', 'school events'
     ])
     is_home_related_query_early = any(kw in query_lower for kw in [
         'home', 'homework', 'my assignments', 'my coursework', 'my classes', 'my courses',
@@ -980,7 +1010,17 @@ Once you provide the subject and topic, I'll be able to give you detailed, step-
     ])
     
     # For guest users: Tell them to login first (but public school calendar does not need Classroom)
-    if not user_profile and (is_classroom_related_query_early or is_home_related_query_early) and not is_public_cal:
+    # "What does the calendar page cover?" etc. must still work for guests (Year Flow is public).
+    _guest_calendar_overview_ok = (
+        is_calendar_page_content_query(query_lower)
+        and ("calendar" in query_lower or "calender" in query_lower)
+    )
+    if (
+        not user_profile
+        and (is_classroom_related_query_early or is_home_related_query_early)
+        and not is_public_cal
+        and not _guest_calendar_overview_ok
+    ):
         print(f"[Chatbot] 🚫 Guest user asking about classroom/home - returning early (user needs to login first)")
         return """To access your assignments, homework, and coursework information, please follow these steps:
 
@@ -1889,14 +1929,19 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     # Note: is_coursework_query, is_homework_query, and is_assignment_query are already defined above
     is_course_query = any(kw in query_lower for kw in ['course', 'courses', 'class', 'classes', 'subject', 'subjects'])
     # Separate holiday and event detection
-    holiday_keywords = ['holiday', 'holidays', 'vacation', 'school holidays', 'holiday calendar', 'vacation calendar', 'holidays calendar', 'show holidays', 'holiday list']
+    holiday_keywords = ['holiday', 'holidays', 'vacation', 'school holidays', 'holiday calendar', 'vacation calendar', 'holidays calendar', 'show holidays', 'holiday list', 'holidy', 'holidya']
     is_holiday_query = any(kw in query_lower for kw in holiday_keywords)
 
-    event_keywords = ['event', 'events', 'calendar', 'schedule', 'meeting',
+    event_keywords = ['event', 'events', 'calendar', 'calender', 'schedule', 'meeting',
                       # Date/time question patterns
                       'when is', 'when will', 'when does', 'when do', 'when are',
                       'what date', 'what day', 'which date', 'which day',
                       'date of', 'day of', 'when', 'date', 'dates',
+                      'where is the calendar', 'where is the calender',
+                      'link for calendar', 'link for calender',
+                      'calendar link', 'calender link',
+                      'calendar page', 'calender page',
+                      'school events',
                       # Week/month patterns
                       'first week', 'second week', 'third week', 'fourth week', 'last week',
                       'this week', 'next week', 'upcoming week',
@@ -1907,26 +1952,47 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                       'ko kya hia', 'kya hai', 'kya hota hai', 'kya hia',
                       'mere school', 'school me', 'schoolm me', 'mere schoolm',
                       'merre schoolm', 'schoolm', 'mere', 'school']
-    is_event_query = any(kw in query_lower for kw in event_keywords)
+    # Normalize common "calender" typo so substring checks stay reliable (unicode etc.)
+    query_lower_for_events = query_lower.replace('calender', 'calendar')
+    is_event_query = any(kw in query_lower_for_events for kw in event_keywords)
     
     # Also check for common event names (sports day, spring break, etc.)
     # This helps detect queries like "when is sports day" even without explicit event keywords
     common_event_names = ['sports day', 'spring break', 'book swap', 'session begins', 
                          'holiday', 'holidays', 'festival', 'festivals', 'diwali', 'holi',
                          'eid', 'christmas', 'vacation', 'break', 'semester', 'term']
-    has_event_name = any(event_name in query_lower for event_name in common_event_names)
+    has_event_name = any(event_name in query_lower_for_events for event_name in common_event_names)
     
     # Check for "upcoming events" patterns (even with typos like "even s")
     upcoming_event_patterns = ['upcoming event', 'upcoming even', 'coming event', 'coming even',
                               'future event', 'future even', 'next event', 'next even']
-    has_upcoming_pattern = any(pattern in query_lower for pattern in upcoming_event_patterns)
+    has_upcoming_pattern = any(pattern in query_lower_for_events for pattern in upcoming_event_patterns)
     
     # If query has event name, date/time question pattern, or upcoming events pattern, treat as event query
-    if has_event_name or has_upcoming_pattern or any(pattern in query_lower for pattern in ['when is', 'when will', 'what date', 'what day', 'which date', 'which event', 'events on', 'events in', 'held on', 'held in']):
+    if has_event_name or has_upcoming_pattern or any(pattern in query_lower_for_events for pattern in ['when is', 'when will', 'what date', 'what day', 'which date', 'which event', 'events on', 'events in', 'held on', 'held in']):
         is_event_query = True
 
-    # Combined calendar query for backward compatibility
-    is_calendar_query = is_holiday_query or is_event_query
+    # Combined calendar query for backward compatibility (include public school website / Year Flow asks)
+    is_public_cal = is_public_cal or is_public_school_website_calendar_query(
+        query_lower_for_events
+    ) or is_public_calendar_event_lookup_query(query_lower_for_events)
+    is_calendar_query = is_holiday_query or is_event_query or is_public_cal
+    is_calendar_link_only = is_calendar_link_only_query(query_lower_for_events)
+    is_calendar_page_content = is_calendar_page_content_query(query_lower_for_events)
+    if is_calendar_link_only:
+        cal_limit = 0
+    elif is_calendar_page_content:
+        cal_limit = 5  # overview: small sample only (avoid 20-row tables in replies)
+    else:
+        cal_limit = 20
+    # Guests may use public Year Flow data for "what does the calendar page cover?" — same as is_public_cal elsewhere
+    if is_calendar_page_content and (
+        "calendar" in query_lower_for_events or "calender" in query_lower_for_events
+    ):
+        is_public_cal = True
+        print(
+            "[Chatbot] 📅 Calendar page overview — public school calendar (guest OK, no Classroom required)"
+        )
     # Detect existence check queries
     is_existence_check_query = any(kw in query_lower for kw in ['exists', 'exist', 'check if', 'is there', 'is there a']) and \
                                (is_student_query or is_teacher_query)
@@ -1941,6 +2007,8 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     print(f"  - Coursework: {is_coursework_query}")
     print(f"  - Course: {is_course_query}")
     print(f"  - Calendar: {is_calendar_query}")
+    print(f"  - Calendar link-only (URL / where — no long event list): {is_calendar_link_only}")
+    print(f"  - Calendar page overview (what it covers — short summary, not full list): {is_calendar_page_content}")
     print(f"  - Existence Check: {is_existence_check_query}")
     print(f"  - is_subject_faculty_query: {is_subject_faculty_query}")
     print(f"  - is_classroom_related_query (early): {(is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query) and not is_subject_faculty_query}")
@@ -2176,7 +2244,9 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     is_teacher_classroom_query = is_submission_query or is_grading_query or (is_teacher_query and any(kw in query_lower for kw in ['my courses', 'my classes', 'my students', 'student work']))
     
     # Skip classroom data for web-only queries (PERFORMANCE OPTIMIZATION)
-    is_web_only_query = should_use_web_crawling and not (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query)
+    is_web_only_query = should_use_web_crawling and not (
+        is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query or is_public_cal
+    )
     
     # For guest users: Skip loading classroom data for classroom/home queries - they need to connect first
     # Public school website calendar (calendar_event_data) is still loaded for guests when applicable.
@@ -2192,7 +2262,9 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     
     # Only load classroom data if it's actually needed for the query type
     # Don't load for general academic queries that don't need classroom data
-    should_load_classroom_data = is_classroom_related_query or is_home_related_query or should_use_web_crawling_first
+    should_load_classroom_data = (
+        is_classroom_related_query or is_home_related_query or should_use_web_crawling_first or is_public_cal
+    )
     
     if is_guest_classroom_query:
         print(f"[Chatbot] 🚫 Guest user asking about classroom/home - skipping data load (user needs to connect first)")
@@ -2225,7 +2297,14 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             should_load_students = is_student_query
             should_load_announcements = is_announcement_query
             should_load_coursework = is_coursework_query
-            should_load_calendar = is_calendar_query or is_event_query  # Load calendar for event queries too
+            should_load_calendar = is_calendar_query or is_event_query or is_public_cal  # Load calendar for event queries too
+            # Public school calendar lives in calendar_event_data (Year Flow); skip Classroom course rows if not needed
+            should_load_classroom_courses = (
+                should_load_teachers
+                or should_load_students
+                or should_load_announcements
+                or should_load_coursework
+            )
             
             # If no specific classroom data is needed, don't load anything
             if not (should_load_teachers or should_load_students or should_load_announcements or should_load_coursework or should_load_calendar):
@@ -2249,7 +2328,8 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 print(f"  - Students: {should_load_students} (limit: {limit_students})")
                 print(f"  - Announcements: {should_load_announcements} (limit: {limit_announcements})")
                 print(f"  - Coursework: {should_load_coursework} (limit: {limit_coursework})")
-                print(f"  - Calendar: {should_load_calendar}")
+                print(f"  - Calendar: {should_load_calendar} (limit_calendar_events={cal_limit})")
+                print(f"  - Classroom courses (google_classroom_courses): {should_load_classroom_courses}")
                 
                 # Detect dates BEFORE calling get_admin_data for SQL-level filtering (cost optimization)
                 query_lower = user_query.lower()
@@ -2462,7 +2542,9 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                                limit_announcements=limit_announcements,
                                                limit_students=limit_students,
                                                limit_teachers=limit_teachers,
-                                               limit_coursework=limit_coursework)
+                                               limit_coursework=limit_coursework,
+                                               limit_calendar_events=cal_limit,
+                                               load_classroom_courses=should_load_classroom_courses)
                 
                 # If no data found from current user, try to get from any admin who has synced data
                 if not admin_data.get('classroom_data') and not admin_data.get('calendar_data'):
@@ -2493,7 +2575,9 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                                            limit_announcements=limit_announcements,
                                                            limit_students=limit_students,
                                                            limit_teachers=limit_teachers,
-                                                           limit_coursework=limit_coursework)
+                                                           limit_coursework=limit_coursework,
+                                                           limit_calendar_events=cal_limit,
+                                                           load_classroom_courses=should_load_classroom_courses)
                             else:
                                 # If no email found, just use the user_id directly (skip email lookup)
                                 print(f"[Chatbot] Found synced data for user_id: {user_with_data_id}, but no email in user_profiles")
@@ -2511,7 +2595,9 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                                                limit_announcements=limit_announcements,
                                                                limit_students=limit_students,
                                                                limit_teachers=limit_teachers,
-                                                               limit_coursework=limit_coursework)
+                                                               limit_coursework=limit_coursework,
+                                                               limit_calendar_events=cal_limit,
+                                                               load_classroom_courses=should_load_classroom_courses)
                     except Exception as e:
                         print(f"[Chatbot] Error getting reference data from other admin: {e}")
 
@@ -2596,10 +2682,15 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                 "Check your profile grade or ask the office if this looks wrong."
                             )
 
-                if is_calendar_query and len(calendar_events) == 0:
+                # Empty rows: real "no data" vs link-only (we intentionally skip DB fetch — do not say "no events")
+                if (
+                    is_calendar_query
+                    and len(calendar_events) == 0
+                    and not is_calendar_link_only
+                ):
                     print("[Chatbot] 📅 Calendar query with no events - providing clear 'no events' response")
                     # Create a direct response for calendar queries with no events
-                    calendar_response = f"**School Calendar Events**\n\nI don't have any upcoming school events scheduled in the calendar at this time. The school calendar is regularly updated with important dates, holidays, and special events.\n\nIf you're looking for information about:\n- **Holidays**: Check the school's holiday calendar\n- **Exam schedules**: Contact your teacher or administration\n- **Sports events**: Check with the physical education department\n- **Cultural activities**: Look for announcements in your classroom\n\nFor the most current information, please check with your teachers or the school administration."
+                    calendar_response = f"**School Calendar Events**\n\nI don't have any upcoming school events scheduled in the calendar data for the requested period. The school calendar is regularly updated with important dates, holidays, and special events.\n\n### **Primary School Calendar**\nFor the complete year flow and all upcoming events, please visit the official **Prakriti School Calendar**: [https://events.prakriti.edu.in/](https://events.prakriti.edu.in/)\n\nIf you're looking for information about:\n- **Holidays**: Check the school's holiday list\n- **Exam schedules**: Contact your teacher or administration\n- **Sports events**: Check with the physical education department\n- **Cultural activities**: Look for announcements in your classroom\n\nFor the most current information, please check with your teachers or the school administration."
 
                     # Add holiday context if today is a holiday
                     if global_holiday_context:
@@ -2846,9 +2937,11 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 holiday_summary = " | ".join(holiday_info_parts)
                 system_content += f"\n\n🎄 DATE CONTEXT: {holiday_summary}. When responding about specific dates, reference these holidays appropriately and maintain a celebratory tone where relevant."
 
-            # 🌍 ADD LANGUAGE CONTEXT TO SYSTEM PROMPT
             if query_language != 'english':
                 system_content += f"\n\n🌍 LANGUAGE CONTEXT: The user asked in {query_language.upper()}. Respond in {query_language} language to match the user's preferred language. IMPORTANT: Start your response directly with the answer - DO NOT restate, repeat, or rephrase the user's question. Begin immediately with relevant information."
+
+            # 📘 ADD PERMANENT SCHOOL RESOURCES
+            system_content += "\n\n📘 SCHOOL RESOURCES: The official Prakriti School Calendar (for year flow, holidays, and school-wide events) is available at: https://events.prakriti.edu.in/"
 
             messages = [{"role": "system", "content": system_content}]
 
@@ -2873,13 +2966,14 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                        (is_student_query or is_teacher_query)
             is_today_query = any(kw in query_lower for kw in ['today', 'todays', "today's"])
             is_yesterday_query = any(kw in query_lower for kw in ['yesterday', "yesterday's"])
-            calendar_keywords = ['event', 'events', 'calendar', 'schedule', 'meeting', 'holiday',
+            calendar_keywords = ['event', 'events', 'calendar', 'calender', 'schedule', 'meeting', 'holiday',
                                # Hindi calendar keywords (with common typos)
                                'ko kya hai', 'ko kya hota hai', 'ko kaya hai',
                                'ko kya hia', 'kya hai', 'kya hota hai', 'kya hia',
                                'mere school', 'school me', 'schoolm me', 'mere schoolm',
                                'merre schoolm', 'schoolm', 'mere', 'school']
-            is_calendar_query = any(kw in query_lower for kw in calendar_keywords)
+            # Do not assign to is_calendar_query here — it would overwrite intent from Step 1.5 and drop calendar context.
+            is_calendar_prompt_keyword = any(kw in query_lower for kw in calendar_keywords)
 
             # Detect translation/reference queries (need previous response context)
             translation_keywords = ['translate', 'translation', 'gujrati', 'gujarati', 'hindi', 'english', 'language', 'below response', 'previous response', 'that response', 'last response', 'above response', 'send me in', 'give me in']
@@ -2895,7 +2989,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 # For translation queries, include last 3 messages to get previous response context
                 recent_history = conversation_history[-3:] if conversation_history else []
                 print(f"[Chatbot] 🔄 Translation/reference query detected - including {len(recent_history)} previous messages for context")
-            elif not (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_calendar_query):
+            elif not (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_calendar_query or is_calendar_prompt_keyword):
                 recent_history = conversation_history[-1:] if conversation_history else []  # Max 1 message for conversational queries
             
             for msg in recent_history:
@@ -3154,6 +3248,22 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 user_content += "**RESPONSE FORMAT:** Please connect your Google Classroom account to access submission data, grading features, and your courses.\n"
                 user_content += "**DO NOT ATTEMPT TO ANSWER THE QUERY WITH CLASSROOM DATA - YOU DON'T HAVE ACCESS TO YOUR OWN CLASSROOM DATA YET.**\n"
                 user_content += f"**IMPORTANT: The user is asking: '{user_query}' - DO NOT answer this query. Instead, ONLY tell them they need to connect their Google Classroom account to access teacher features.**\n\n"
+            
+            # Link / "where is the calendar" — brief answer; do not dump many upcoming rows (no DB list in prompt)
+            if (
+                is_calendar_query
+                and is_calendar_link_only
+                and not is_guest_classroom_query_local
+                and not is_teacher_needing_connection_local
+            ):
+                user_content += (
+                    "\n📅 **CALENDAR (LINK ONLY):** The user asked **where to find** the official school calendar, "
+                    "not for a full rundown of upcoming events.\n"
+                    "- Reply in **2–4 short sentences**.\n"
+                    "- Include this link once: [School calendar](https://events.prakriti.edu.in/).\n"
+                    "- **Do NOT** output a Markdown table of many events, long bullet lists of dates, or enumerate the term—"
+                    "optional: one line that all dates and events are on that page.\n\n"
+                )
             
             # Add admin data if available - MINIMAL HEADER to save tokens
             # BUT skip for guest users asking classroom/home queries OR teachers needing their own connection
@@ -3808,16 +3918,30 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                         user_content += "Fix time ranges (add 'to' between times), grammar, use Markdown. Process data, don't copy-paste.\n"
                         user_content += "If empty: Say 'No announcements for requested date(s)'.\nDO NOT say 'no access'!\n\n"
                     
-                if admin_data.get('calendar_data') and (is_calendar_query or is_event_query):
-                    # Include calendar for both calendar and event queries
-                    calendar_events = admin_data.get('calendar_data', [])[:20]
+                if (
+                    admin_data.get("calendar_data")
+                    and (is_calendar_query or is_event_query)
+                    and not is_calendar_link_only
+                ):
+                    # Include calendar for both calendar and event queries (DB rows already limited by cal_limit)
+                    calendar_events = admin_data.get("calendar_data", [])
                     print(f"[Chatbot] 📋 Formatting {len(calendar_events)} calendar events for AI prompt")
                     for idx, e in enumerate(calendar_events):
                         print(f"[Chatbot]   Event {idx+1}: {e.get('summary', 'Unknown')} on {e.get('startTime', 'No date')}")
                     if calendar_events:
                         # Format events with clear date information
-                        user_content += "\n📅 **UPCOMING CALENDAR EVENTS (REAL DATA FROM SCHOOL CALENDAR):**\n"
-                        user_content += f"📘 **How to read titles:** {CALENDAR_GRADE_LEGEND}\n"
+                        if is_calendar_page_content:
+                            user_content += (
+                                "\n📅 **WHAT THE SCHOOL CALENDAR PAGE COVERS (OVERVIEW QUESTION):**\n"
+                                "The user asked what the **official school calendar / Year Flow** page includes or covers—not a full dump of every row.\n"
+                                "Below is a **small sample** of upcoming rows for context only (not exhaustive).\n"
+                                "Official link: [https://events.prakriti.edu.in/](https://events.prakriti.edu.in/)\n"
+                                f"📘 **How to read titles:** {CALENDAR_DISPLAY_LEGEND}\n"
+                            )
+                        else:
+                            user_content += "\n📅 **UPCOMING CALENDAR EVENTS (REAL DATA FROM SCHOOL CALENDAR):**\n"
+                            user_content += "For the complete year flow and all upcoming events, please visit: [https://events.prakriti.edu.in/](https://events.prakriti.edu.in/)\n"
+                            user_content += f"📘 **How to read titles:** {CALENDAR_DISPLAY_LEGEND}\n"
                         if calendar_query_grade_targets:
                             gq = ", ".join(sorted(calendar_query_grade_targets, key=lambda x: (len(x), x)))
                             user_content += (
@@ -3833,18 +3957,26 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                             user_content += "\n"
                         if calendar_month_scope_label:
                             user_content += f"📌 **USER REQUEST SCOPE:** {calendar_month_scope_label}. Only events in this period are listed; answer using these dates only.\n\n"
-                        user_content += "⚠️ CRITICAL: The events listed below are ALREADY filtered for the user's requested date/query.\n"
-                        user_content += "If you see events listed below, they MATCH the user's query and you MUST mention them in your response!\n"
-                        user_content += "DO NOT say 'no events' if events are listed below - they ARE the answer to the user's question!\n"
-                        if calendar_query_grade_targets:
+                        if is_calendar_page_content:
                             user_content += (
-                                "**LIST EVERY EVENT BELOW** as its own bullet (one line per event). "
-                                "Do not pick only PTM rows or a subset—include short days and school-wide lines too. "
-                                "(Staff-only PD / facilitators-only events are already removed from this list.)\n"
+                                "⚠️ **OVERVIEW MODE:** Do **not** paste a long table of every row. "
+                                "Summarize categories (e.g. PTMs, assemblies, PD, holidays, trips, term milestones) "
+                                "and cite **at most 2–3** example names from the sample below.\n\n"
                             )
+                        else:
+                            user_content += "⚠️ CRITICAL: The events listed below are ALREADY filtered for the user's requested date/query.\n"
+                            user_content += "If you see events listed below, they MATCH the user's query and you MUST mention them in your response!\n"
+                            user_content += "DO NOT say 'no events' if events are listed below - they ARE the answer to the user's question!\n"
+                            if calendar_query_grade_targets:
+                                user_content += (
+                                    "**LIST EVERY EVENT BELOW** as its own bullet (one line per event). "
+                                    "Do not pick only PTM rows or a subset—include short days and school-wide lines too. "
+                                    "(Staff-only PD / facilitators-only events are already removed from this list.)\n"
+                                )
                         user_content += "\n"
                         for e in calendar_events:
                             title = e.get("summary", "")
+                            display_title = sanitize_calendar_title_for_display(title)
                             start_time = e.get("startTime", "")
                             
                             # Parse date from ISO format (e.g., "2026-02-21T00:00:00")
@@ -3873,15 +4005,25 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                 except:
                                     pass
                             
-                            user_content += f"- **{title}**: {event_date_str}{day_of_week and f' ({day_of_week})' or ''}{week_info}\n"
-                        user_content += "\n⚠️ CRITICAL RULES:\n"
-                        user_content += "1. ONLY list events from the calendar above. DO NOT invent, make up, or generate fake events!\n"
-                        user_content += "2. When asked about specific dates (e.g., 'when is sports day', 'events on 21st feb'), you MUST list ALL events shown above that match that date.\n"
-                        user_content += "3. The events listed above are ALREADY filtered for the requested date - if you see events above, they ARE on the requested date!\n"
-                        user_content += "4. When asked about weeks (e.g., 'first week of April'), only show events that actually fall in that week from the calendar above.\n"
-                        user_content += "5. If the calendar above shows events, you MUST mention them in your response. Do NOT say 'no events' if events are listed above!\n"
-                        user_content += "6. Do NOT say 'the date can vary' or 'check with your teacher' - provide the actual date from the calendar data.\n"
-                        user_content += "7. Do NOT include event type (sports, festival, upcoming) in your response - just show the event name and date.\n\n"
+                            user_content += f"- **{display_title}**: {event_date_str}{day_of_week and f' ({day_of_week})' or ''}{week_info}\n"
+                        if is_calendar_page_content:
+                            user_content += "\n⚠️ CRITICAL RULES (OVERVIEW — NOT A FULL SCHEDULE TABLE):\n"
+                            user_content += "1. Explain what the calendar page is **for** (year flow, term dates, school-wide events, PTMs, etc.).\n"
+                            user_content += "2. **Do NOT** output a Markdown table of all rows. **Do NOT** list more than **3** concrete examples.\n"
+                            user_content += "3. Keep the answer short (about **120–200 words**).\n"
+                            user_content += "4. Use only the sample rows above for examples—do not invent events.\n"
+                            user_content += "5. Include the official link once: [https://events.prakriti.edu.in/](https://events.prakriti.edu.in/)\n\n"
+                        else:
+                            user_content += "\n⚠️ CRITICAL RULES:\n"
+                            user_content += "1. ONLY list events from the calendar above. DO NOT invent, make up, or generate fake events!\n"
+                            user_content += "2. When asked about specific dates (e.g., 'when is sports day', 'events on 21st feb'), you MUST list ALL events shown above that match that date.\n"
+                            user_content += "3. The events listed above are ALREADY filtered for the requested date - if you see events above, they ARE on the requested date!\n"
+                            user_content += "4. When asked about weeks (e.g., 'first week of April'), only show events that actually fall in that week from the calendar above.\n"
+                            user_content += "5. If the calendar above shows events, you MUST mention them in your response. Do NOT say 'no events' if events are listed above!\n"
+                            user_content += "6. Do NOT say 'the date can vary' or 'check with your teacher' - provide the actual date from the calendar data.\n"
+                            user_content += "7. Do NOT include event type (sports, festival, upcoming) in your response - just show the event name and date.\n"
+                            user_content += "8. **Readable layout:** Answer with a Markdown table | Date | Event | (weekday may appear in the Date column, e.g. *April 17, 2026 (Friday)*) OR use clear bullets. Use the **shortened Event labels exactly as listed above**—do not add cohort codes, virtue names, or Gr labels back.\n"
+                            user_content += "9. Keep the official calendar link once near the top; avoid repeating long URLs.\n\n"
             
             # Add detailed data processing instructions for coursework
             if is_coursework_query:
