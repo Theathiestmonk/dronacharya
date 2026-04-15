@@ -79,35 +79,34 @@ const ChatAppShellInner: React.FC<{
 
   useEffect(() => {
     if (!loading && !chatHistoryLoading) {
-      const minLoadingTime = 2000;
+      /* Embed /chat: no long artificial delay — avoids a second “loading” phase with the chat UI */
+      const minLoadingTime = chatOnly ? 0 : 2000;
       const elapsed = Date.now() - pageLoadTimeRef.current;
       const remainingTime = Math.max(0, minLoadingTime - elapsed);
 
       console.log(`Loading states completed. Elapsed: ${elapsed}ms, Remaining: ${remainingTime}ms`);
 
       if (remainingTime > 0) {
-        console.log(`Waiting ${remainingTime}ms to reach minimum loading time (2 seconds)`);
         const timer = setTimeout(() => {
-          console.log("Minimum loading time (2 seconds) elapsed, initializing app");
           setIsFullyInitialized(true);
         }, remainingTime);
 
         return () => clearTimeout(timer);
       } else {
-        console.log("Already past minimum loading time, initializing app");
         setIsFullyInitialized(true);
       }
     }
-  }, [loading, chatHistoryLoading]);
+  }, [loading, chatHistoryLoading, chatOnly]);
 
   useEffect(() => {
+    const fallbackMs = chatOnly ? 800 : 2000;
     const fallbackTimer = setTimeout(() => {
       console.log("Fallback timeout - forcing initialization");
       setIsFullyInitialized(true);
-    }, 2000);
+    }, fallbackMs);
 
     return () => clearTimeout(fallbackTimer);
-  }, []);
+  }, [chatOnly]);
 
   useEffect(() => {
     console.log("Loading states:", { loading, chatHistoryLoading, isFullyInitialized });
@@ -318,6 +317,21 @@ const ChatAppShellInner: React.FC<{
   const shouldShowLoading = loading || !isFullyInitialized;
 
   if (shouldShowLoading) {
+    /* /chat embed: compact spinner only — site header often already shows the school logo */
+    if (chatOnly) {
+      return (
+        <div id="chat-app-root" className="flex min-h-screen h-screen items-center justify-center bg-gradient-to-b from-[#eef2ff] via-white to-[#f4f7fb]">
+          <div className="flex flex-col items-center gap-4 px-6">
+            <div
+              className="h-10 w-10 animate-spin rounded-full border-2 border-[#23479f] border-t-transparent"
+              role="status"
+              aria-label="Loading"
+            />
+            <span className="text-sm text-gray-600">Loading assistant…</span>
+          </div>
+        </div>
+      );
+    }
     return (
       <div id="chat-app-root" className="flex min-h-screen h-screen bg-gray-50 dark:bg-gray-900">
         <main className="flex-1 flex items-center justify-center h-screen">
@@ -429,7 +443,7 @@ const ChatAppShellInner: React.FC<{
         <button
           type="button"
           onClick={() => setShowAuthForm(true)}
-          className="fixed top-3 right-3 z-[55] rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-md hover:bg-gray-50"
+          className="fixed top-3 left-3 z-[55] rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-md hover:bg-gray-50"
         >
           Sign in
         </button>

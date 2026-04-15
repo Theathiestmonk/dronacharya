@@ -18,6 +18,150 @@
   <p>Do <strong>not</strong> upload this file to WordPress. Copy the sections below.</p>
   <p><strong>Chat-only (no sidebar / no mobile nav):</strong> use <code>https://www.prakritischool.ai/chat</code> as the iframe <code>src</code> instead of <code>/?embed=1</code>. The home page (<code>/</code>) keeps the sidebar; <code>/chat</code> is for embedding.</p>
 
+  <h2>Copy-paste: new embed code (page ID 248410)</h2>
+  <p><strong>1)</strong> In Divi, open your page → add a <strong>Code</strong> module → select all in the first box below, copy, and paste into the Code module.</p>
+  <p><strong>2)</strong> <strong>Appearance → Customize → Additional CSS</strong> — copy either the <strong>minimal CSS</strong> textarea below <em>or</em> the full block in section 3 (same page ID). Do not paste both at once.</p>
+  <p><strong>3)</strong> If you already have old embed CSS for another page ID, remove it to avoid conflicts.</p>
+
+  <p style="margin: 0.75rem 0 0.35rem; font-weight: 600;">HTML — paste into Divi Code module (click inside, Ctrl+A, Ctrl+C)</p>
+  <textarea readonly rows="22" style="width:100%; max-width:56rem; box-sizing:border-box; font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.4; padding: 12px; border: 1px solid #d4d4d8; border-radius: 8px; background: #fafafa; color: #18181b;"><div class="prakriti-embed-stack">
+  <div class="prakriti-chat-embed">
+    <iframe
+      src="https://www.prakritischool.ai/chat"
+      title="Prakriti AI Assistant"
+      loading="lazy"
+      allow="clipboard-write; microphone"
+    ></iframe>
+  </div>
+
+  <footer class="prakriti-embed-site-footer" role="navigation" aria-label="Prakriti school links">
+    <nav class="prakriti-embed-site-footer__nav">
+      <a href="https://prakriti.edu.in/schoolaroo/">Schoolaroo</a>
+      <a href="https://prakriti.edu.in/prakriti-way-of-learning/">Prakriti Way of Learning</a>
+      <a href="https://prakriti.edu.in/home/">Home</a>
+      <a href="https://prakriti.edu.in/our-programmes/">Our Programmes</a>
+      <a href="https://prakriti.edu.in/team/">Team</a>
+      <span class="prakriti-embed-site-footer__sep" aria-hidden="true">|</span>
+      <a href="https://rootsofallbeings.substack.com/p/can-we-save-the-planet-or-should?utm_campaign=post&amp;utm_medium=web&amp;triedRedirect=true">Green School</a>
+      <a href="https://prakriti.edu.in/roots-of-all-beings/">Roots of All Beings</a>
+      <a href="https://events.prakriti.edu.in/">Calendar</a>
+      <a href="https://prakriti.edu.in/admissions/">Admissions</a>
+      <a href="https://prakriti.edu.in/contact/">Contact</a>
+    </nav>
+  </footer>
+</div></textarea>
+
+  <p class="note" style="margin-top: 0.75rem;">This is real HTML — it will render correctly in WordPress. The same markup appears in <strong>section 1</strong> below for reference.</p>
+
+  <h2>Fresh start (recommended): new WordPress page + one Code module</h2>
+  <p>If the old page has leftover Divi spacing, Theme Builder templates, or CSS fights, <strong>create a brand‑new page</strong> and keep the structure minimal.</p>
+  <ol style="margin: 0.5rem 0 1rem 1.25rem; line-height: 1.55;">
+    <li><strong>Pages → Add New</strong>. Title it (e.g. “Prakriti AI”). <strong>Publish</strong> once so you get a real page ID.</li>
+    <li>Click <strong>Use Divi Builder</strong> → <strong>Build from scratch</strong> (start empty).</li>
+    <li>Add exactly: <strong>one Section</strong> → <strong>one Row</strong> → <strong>one Column</strong> → <strong>Code</strong> module. Do not add spacers, extra rows, or duplicate sections.</li>
+    <li><strong>Section</strong> (blue): <em>Design → Spacing</em> → set <strong>Top</strong> and <strong>Bottom</strong> padding to <strong>0px</strong> (add a little top only if you want air under the header).</li>
+    <li><strong>Row</strong> (green) and <strong>Column</strong>: <em>Spacing</em> → top/bottom <strong>0px</strong>.</li>
+    <li><strong>Code module</strong>: paste the HTML from <strong>Copy-paste: new embed code</strong> at the top of this file (or section 1 — same markup). In <em>Design → Spacing</em>, set margin/padding bottom to <strong>0</strong>.</li>
+    <li><strong>Find the new page ID:</strong> while editing the page, check the URL — <code>post=<strong>12345</strong></code> — or install a small “Reveal IDs” plugin. You will use this in CSS.</li>
+    <li><strong>Appearance → Customize → Additional CSS:</strong> paste either the <strong>minimal CSS</strong> below <em>or</em> the full block in section 3 (both are scoped to <strong>page ID 248410</strong>). Remove old embed rules for any <em>other</em> page ID to avoid conflicts.</li>
+    <li>Set this page as your menu item / link to the new URL. You can leave the old page in draft or trash it after testing.</li>
+  </ol>
+
+  <h3>Minimal CSS (page ID 248410)</h3>
+  <p>Copy this if you want a <strong>short</strong> stylesheet; then add more from section 3 only if something still looks wrong.</p>
+  <pre><code>/* Prakriti embed — minimal — page 248410 */
+body.page-id-248410 #page-container {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px)) !important;
+}
+
+body.page-id-248410 .et_pb_section,
+body.page-id-248410 .et_pb_row,
+body.page-id-248410 .et_pb_column,
+body.page-id-248410 .et_pb_module {
+  padding-bottom: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+body.page-id-248410 .prakriti-embed-stack {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: min(72rem, 100%);
+  margin: 0 auto 0.75rem !important;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+}
+
+body.page-id-248410 .prakriti-chat-embed {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  height: min(72vh, 720px);
+}
+
+body.page-id-248410 .prakriti-chat-embed iframe {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0;
+  border: 0 !important;
+  border-radius: 11px 11px 0 0;
+}
+
+body.page-id-248410 .prakriti-embed-site-footer {
+  background: #23479f;
+  color: #fff;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  padding: 0.65rem 0.5rem;
+  border-radius: 0 0 11px 11px;
+}
+
+body.page-id-248410 .prakriti-embed-site-footer__nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem 0.75rem;
+  font-size: 0.7rem;
+  text-align: center;
+}
+
+body.page-id-248410 .prakriti-embed-site-footer__nav a {
+  color: #fff !important;
+  text-decoration: none;
+}
+
+@media (max-width: 768px) {
+  body.page-id-248410 .entry-content {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    padding-bottom: 0 !important;
+  }
+
+  body.page-id-248410 .prakriti-embed-stack {
+    max-width: 100% !important;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    margin-bottom: 0.5rem !important;
+  }
+
+  body.page-id-248410 .prakriti-chat-embed {
+    height: min(58dvh, 520px);
+  }
+
+  body.page-id-248410 .prakriti-chat-embed iframe {
+    border-radius: 0;
+  }
+
+  body.page-id-248410 .prakriti-embed-site-footer {
+    border-radius: 0;
+  }
+}</code></pre>
+
   <h2>1) Custom HTML block — iframe + footer menu (edit links here when the main site menu changes)</h2>
   <p>Put the <strong>iframe</strong> and the <strong>footer</strong> in one wrapper. Update only the <code>&lt;a href&gt;</code> and text inside <code>.prakriti-embed-site-footer</code>.</p>
   <pre><code>&lt;div class="prakriti-embed-stack"&gt;
@@ -50,66 +194,102 @@
   <h2>2) Where to paste CSS</h2>
   <p><strong>Appearance → Customize → Additional CSS</strong> (or Divi → Theme Options → Custom CSS).</p>
 
-  <h2>3) Paste this CSS (replace 248253 with your page ID)</h2>
-  <p>This uses a <strong>flex column</strong>: the iframe grows to fill space <strong>above</strong> the footer; the footer stays outside the iframe so you can change links anytime in WordPress without redeploying the chat app.</p>
-  <p><strong>Mobile scroll:</strong> Section 3 includes a <code>@media (max-width: 768px)</code> block so the WordPress page can scroll independently of the iframe (avoids “stuck” scroll when switching from chat to the rest of the site). Redeploy the chat app so the iframe picks up the <code>overscroll-behavior</code> change in the app CSS.</p>
-  <pre><code id="css-block">/* --- Prakriti embed: stack (iframe loads /chat + site footer) — page 248253 --- */
-body.page-id-248253 {
+  <h2>3) Full CSS (page ID 248410)</h2>
+  <p><strong>Desktop:</strong> Centered card; modest bottom spacing before the theme footer.</p>
+  <p><strong>Mobile:</strong> Edge-to-edge embed, <strong>tight gap</strong> above the theme footer (earlier versions stacked too much <code>padding-bottom</code>—if the footer overlaps the blue link bar, add a little <code>padding-bottom</code> only on <code>#page-container</code> in the mobile block).</p>
+  <p><strong>Scroll chaining:</strong> Deploy the chat app with <code>overscroll-behavior-y: contain</code> on scroll regions (<code>globals.css</code>).</p>
+  <pre><code id="css-block">/* --- Prakriti embed: card + clearance above theme footer — page 248410 --- */
+body.page-id-248410 {
   overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
-body.page-id-248253 #main-content,
-body.page-id-248253 .et_main_content,
-body.page-id-248253 article.type-page,
-body.page-id-248253 .entry-content {
+/* Desktop: a little room before theme footer (mobile overrides below) */
+body.page-id-248410 #page-container {
+  padding-bottom: max(2rem, env(safe-area-inset-bottom, 0px)) !important;
+}
+
+body.page-id-248410 #main-content,
+body.page-id-248410 .et_main_content,
+body.page-id-248410 article.type-page,
+body.page-id-248410 .entry-content {
   max-width: 100% !important;
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-  margin-left: 0 !important;
-  margin-right: 0 !important;
+  padding-left: clamp(0.75rem, 4vw, 1.5rem) !important;
+  padding-right: clamp(0.75rem, 4vw, 1.5rem) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  padding-bottom: clamp(1.25rem, 3vh, 2.5rem) !important;
+  box-sizing: border-box;
 }
 
-body.page-id-248253 .et_pb_section,
-body.page-id-248253 .et_pb_row,
-body.page-id-248253 .et_pb_column {
+/* Divi: section/row/column padding often set in Builder (inline) — force tight bottom */
+body.page-id-248410 .et_pb_section,
+body.page-id-248410 .et_pb_fullwidth_section,
+body.page-id-248410 .et_pb_row,
+body.page-id-248410 .et_pb_row_inner,
+body.page-id-248410 .et_pb_column {
   padding-bottom: 0 !important;
+  margin-bottom: 0 !important;
 }
 
-/* Full width breakout (optional) */
-body.page-id-248253 .et_pb_row .prakriti-embed-stack,
-body.page-id-248253 .entry-content .prakriti-embed-stack {
-  width: 100vw;
-  max-width: 100vw;
-  margin-left: calc(50% - 50vw);
-  margin-right: calc(50% - 50vw);
-  position: relative;
+body.page-id-248410 .et_pb_module,
+body.page-id-248410 .et_pb_code {
+  margin-bottom: 0 !important;
 }
 
-/* Column: chat fills space, footer sits below iframe */
-body.page-id-248253 .prakriti-embed-stack {
+body.page-id-248410 #et-main-area,
+body.page-id-248410 .et-l--body,
+body.page-id-248410 .et_builder_inner_content {
+  padding-bottom: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+/* Last section before theme footer — Divi often leaves default section padding (e.g. 4% or 50px+) */
+body.page-id-248410 #main-content .et_pb_section:last-child,
+body.page-id-248410 .post-content .et_pb_section:last-child {
+  padding-bottom: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+/* Centered “section” on desktop; sits above theme footer with extra margin */
+body.page-id-248410 .prakriti-embed-stack {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   width: 100%;
-  max-width: 100%;
-  margin: 0;
+  max-width: min(72rem, 100%);
+  margin: 0 auto !important;
+  margin-bottom: clamp(1rem, 3vw, 2rem) !important;
   padding: 0;
   min-height: 0;
-  height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 8px);
-  max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 8px);
+  height: auto;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.05),
+    0 4px 24px rgba(0, 0, 0, 0.06);
+  overscroll-behavior: contain;
 }
 
-body.page-id-248253 .prakriti-chat-embed {
-  flex: 1 1 auto;
+/* Fixed chat column height → page scrolls above/below the block (no 100vh trap) */
+body.page-id-248410 .prakriti-chat-embed {
+  flex: 0 0 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   line-height: 0;
   box-sizing: border-box;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  height: min(72vh, 720px);
+  min-height: min(380px, 45vh);
 }
 
-body.page-id-248253 .prakriti-chat-embed iframe {
+body.page-id-248410 .prakriti-chat-embed iframe {
   flex: 1 1 auto;
   display: block;
   width: 100% !important;
@@ -117,13 +297,14 @@ body.page-id-248253 .prakriti-chat-embed iframe {
   min-height: 0;
   height: 100% !important;
   margin: 0 !important;
-  border: 1px solid #e5e7eb;
+  border: 0 !important;
   box-sizing: border-box;
+  border-radius: 11px 11px 0 0;
   vertical-align: top;
 }
 
-/* Footer: same “main menu” links — edit HTML only when menu changes */
-body.page-id-248253 .prakriti-embed-site-footer {
+/* Footer — bottom of card */
+body.page-id-248410 .prakriti-embed-site-footer {
   flex-shrink: 0;
   width: 100%;
   box-sizing: border-box;
@@ -132,9 +313,10 @@ body.page-id-248253 .prakriti-embed-site-footer {
   font-family: Georgia, "Times New Roman", Times, serif;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
   padding: 0.65rem 0.5rem;
+  border-radius: 0 0 11px 11px;
 }
 
-body.page-id-248253 .prakriti-embed-site-footer__nav {
+body.page-id-248410 .prakriti-embed-site-footer__nav {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -148,119 +330,139 @@ body.page-id-248253 .prakriti-embed-site-footer__nav {
 }
 
 @media (min-width: 640px) {
-  body.page-id-248253 .prakriti-embed-site-footer__nav {
+  body.page-id-248410 .prakriti-embed-site-footer__nav {
     font-size: 0.8rem;
     gap: 0.4rem 1rem;
   }
 }
 
 @media (min-width: 1024px) {
-  body.page-id-248253 .prakriti-embed-site-footer__nav {
+  body.page-id-248410 .prakriti-embed-site-footer__nav {
     font-size: 0.875rem;
+  }
+
+  /* Slightly taller chat on large screens — still shorter than viewport so page scrolls */
+  body.page-id-248410 .prakriti-chat-embed {
+    height: min(78vh, 800px);
+    min-height: 420px;
   }
 }
 
-body.page-id-248253 .prakriti-embed-site-footer__nav a {
+body.page-id-248410 .prakriti-embed-site-footer__nav a {
   color: #fff !important;
   text-decoration: none;
   white-space: nowrap;
 }
 
-body.page-id-248253 .prakriti-embed-site-footer__nav a:hover {
+body.page-id-248410 .prakriti-embed-site-footer__nav a:hover {
   text-decoration: underline;
 }
 
-body.page-id-248253 .prakriti-embed-site-footer__sep {
+body.page-id-248410 .prakriti-embed-site-footer__sep {
   color: rgba(255, 255, 255, 0.85);
   user-select: none;
 }
 
-/* Mobile: parent page scroll + overscroll isolation (iframe vs WordPress document) */
+/* Mobile: full-width embed, shorter chat column, extra clearance for theme footer */
 @media (max-width: 768px) {
-  body.page-id-248253 {
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+  body.page-id-248410 .entry-content,
+  body.page-id-248410 article.type-page {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
   }
 
-  body.page-id-248253 .prakriti-embed-stack {
-    height: auto;
-    max-height: none;
-    min-height: 0;
-    overscroll-behavior: contain;
+  body.page-id-248410 .entry-content .et_pb_row .et_pb_column {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
   }
 
-  body.page-id-248253 .prakriti-chat-embed {
-    flex: 0 0 auto;
-    overscroll-behavior: contain;
-    touch-action: pan-y;
-    min-height: min(68dvh, 520px);
-    height: min(75dvh, 600px);
-    max-height: 75dvh;
+  /* Divi mobile: repeat — builder “custom spacing” can add 30–80px+ under the module */
+  body.page-id-248410 .et_pb_section,
+  body.page-id-248410 .et_pb_row,
+  body.page-id-248410 .et_pb_column {
+    padding-bottom: 0 !important;
+    margin-bottom: 0 !important;
   }
 
-  body.page-id-248253 .prakriti-chat-embed iframe {
-    height: 100% !important;
-    max-height: min(75dvh, 600px) !important;
+  body.page-id-248410 .prakriti-embed-stack {
+    max-width: 100% !important;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    margin-bottom: 0.5rem !important;
+    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.07);
   }
 
-  /* Extra scroll room on the WordPress page so users can scroll past the embed */
-  body.page-id-248253 #main-content,
-  body.page-id-248253 .et_main_content {
-    padding-bottom: min(28vh, 200px) !important;
+  body.page-id-248410 .prakriti-chat-embed {
+    height: min(58dvh, 480px);
+    min-height: 260px;
+  }
+
+  body.page-id-248410 .prakriti-chat-embed iframe {
+    border-radius: 0;
+  }
+
+  body.page-id-248410 .prakriti-embed-site-footer {
+    border-radius: 0;
+  }
+
+  /* Tight spacing — do not stack large paddings (was causing a huge white gap) */
+  body.page-id-248410 #page-container {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  body.page-id-248410 #main-content,
+  body.page-id-248410 .et_main_content,
+  body.page-id-248410 .entry-content,
+  body.page-id-248410 article.type-page {
+    padding-bottom: 0 !important;
   }
 }
 
 @media (max-width: 640px) {
-  body.page-id-248253 .prakriti-chat-embed iframe {
-    border-radius: 0;
-    border-left: none;
-    border-right: none;
-  }
-}
-
-@media (min-width: 641px) and (max-width: 1024px) {
-  body.page-id-248253 .prakriti-chat-embed iframe {
-    border-radius: 12px 12px 0 0;
-  }
-}
-
-@media (min-width: 1025px) {
-  body.page-id-248253 .prakriti-embed-stack {
-    max-height: min(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px, 980px);
-  }
-  body.page-id-248253 .prakriti-chat-embed iframe {
-    border-radius: 12px 12px 0 0;
-    max-height: 900px;
+  body.page-id-248410 .prakriti-embed-stack {
+    margin-bottom: 0.5rem !important;
   }
 }</code></pre>
 
-  <h2>4) Hide theme header + theme footer on this page only (optional)</h2>
-  <p>Paste into <strong>Additional CSS</strong> after section 3. You usually still hide the <strong>WordPress theme</strong> footer so only your <code>.prakriti-embed-site-footer</code> shows.</p>
-  <pre><code>body.page-id-248253 #main-header,
-body.page-id-248253 #top-header,
-body.page-id-248253 header#main-header {
+  <h2>4) Divi Builder — if the gap is still huge (section / row spacing)</h2>
+  <p>Extra CSS cannot always beat settings saved <strong>inside the Section or Row</strong>. Open this page in the Divi Visual Builder and check:</p>
+  <ul style="margin: 0.5rem 0 1rem 1.25rem; line-height: 1.5;">
+    <li><strong>Section</strong> (blue) → <strong>Section settings</strong> → <strong>Design</strong> → <strong>Spacing</strong> → set <strong>Bottom</strong> padding to <strong>0</strong> (and Top if you do not need it).</li>
+    <li><strong>Row</strong> (green) → <strong>Design</strong> → <strong>Spacing</strong> → <strong>Bottom</strong> = <strong>0</strong>.</li>
+    <li><strong>Column</strong> → <strong>Design</strong> → <strong>Spacing</strong> → bottom = <strong>0</strong>.</li>
+    <li><strong>Code module</strong> (your HTML) → <strong>Design</strong> → <strong>Spacing</strong> → bottom margin/padding = <strong>0</strong>.</li>
+    <li>Delete any <strong>empty Section or Row</strong> below the chat block (invisible spacer).</li>
+    <li>If you use <strong>Theme Builder</strong> body template, edit the template and repeat for the section that wraps this page content.</li>
+  </ul>
+
+  <h2>5) Hide theme header + theme footer on this page only (optional)</h2>
+  <p>Paste into <strong>Additional CSS</strong> after section 3 (same place as the main embed CSS). You usually still hide the <strong>WordPress theme</strong> footer so only your <code>.prakriti-embed-site-footer</code> shows.</p>
+  <pre><code>body.page-id-248410 #main-header,
+body.page-id-248410 #top-header,
+body.page-id-248410 header#main-header {
   display: none !important;
 }
 
-body.page-id-248253 .et-l--header {
+body.page-id-248410 .et-l--header {
   display: none !important;
 }
 
-body.page-id-248253 #main-footer,
-body.page-id-248253 footer#main-footer,
-body.page-id-248253 .et-l--footer,
-body.page-id-248253 #footer-bottom {
+body.page-id-248410 #main-footer,
+body.page-id-248410 footer#main-footer,
+body.page-id-248410 .et-l--footer,
+body.page-id-248410 #footer-bottom {
   display: none !important;
 }
 
-body.page-id-248253.et_fixed_nav #page-container,
-body.page-id-248253 #page-container,
-body.page-id-248253 #main-content {
+body.page-id-248410.et_fixed_nav #page-container,
+body.page-id-248410 #page-container,
+body.page-id-248410 #main-content {
   padding-top: 0 !important;
   margin-top: 0 !important;
 }
 
-body.page-id-248253 .et_pb_section:first-of-type {
+body.page-id-248410 .et_pb_section:first-of-type {
   padding-top: 0 !important;
 }</code></pre>
 
@@ -269,8 +471,8 @@ body.page-id-248253 .et_pb_section:first-of-type {
   </p>
 
   <p class="note">
-    <strong>Page ID:</strong> Replace <code>248253</code> in every selector with your embed page ID if different.
-    <strong>Horizontal scroll:</strong> Remove the <code>.prakriti-embed-stack</code> full-bleed block if <code>100vw</code> causes scroll.
+    <strong>Page ID:</strong> This file uses <code>248410</code>. If you copy to another page later, replace <code>248410</code> in every <code>body.page-id-…</code> selector.
+    <strong>Wider card:</strong> Change <code>72rem</code> on <code>.prakriti-embed-stack</code> if you want a narrower or wider block.
     <strong>Chat URL:</strong> Use <code>https://www.prakritischool.ai/chat</code> — chat-only layout (no sidebar). You do not need <code>?embed=1</code>. To embed the full app with sidebar, use <code>https://www.prakritischool.ai/?embed=1</code> instead.
   </p>
 </body>

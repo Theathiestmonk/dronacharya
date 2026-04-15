@@ -3,6 +3,7 @@ import { useState as useCopyState } from 'react';
 import Image from 'next/image';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { usePathname } from 'next/navigation';
 import { useAuth } from '@/providers/AuthProvider';
 import { useChatHistory } from '@/providers/ChatHistoryProvider';
 
@@ -120,6 +121,8 @@ interface ChatbotProps {
 }
 
 const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ clearChat, externalQuery, onQueryProcessed }, ref) => {
+  const pathname = usePathname();
+  const isChatOnlyRoute = pathname === '/chat';
   const { user, profile } = useAuth();
   const { 
     getActiveSession, 
@@ -1861,7 +1864,13 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   // Only show loading opacity on the very first app load, never again (even on login/logout)
   // CRITICAL: Don't show loading opacity when inbuilt query is active (prevents blinking)
   // Always use full opacity if inbuilt query ref is set (even before state updates)
-  const shouldShowLoading = chatHistoryLoading && !hasShownInitialLoad && !isInbuiltQueryActive && !isInbuiltQueryRef.current;
+  /* Avoid a second “loading” dim on /chat after the shell loader — feels like duplicate loaders */
+  const shouldShowLoading =
+    chatHistoryLoading &&
+    !hasShownInitialLoad &&
+    !isChatOnlyRoute &&
+    !isInbuiltQueryActive &&
+    !isInbuiltQueryRef.current;
   const containerClassName = shouldShowLoading ? 'opacity-40 scale-[0.98]' : 'opacity-100 scale-100';
   
   // Check if we have an active session with messages to prevent welcome screen from showing
@@ -1880,20 +1889,60 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     >
       {messages.length === 0 && !hasActiveSessionWithMessages ? (
         <>
-          {/* Welcome Screen - Mobile Optimized Layout */}
-          <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden">
-            {/* Spacer at top - reduced for mobile */}
-            <div className="flex-shrink-0 pt-10 sm:pt-14 md:pt-20"></div>
-            
-            {/* Welcome copy — top-aligned in scroll area so input can sit at bottom (embed + mobile UX) */}
+          {/* Welcome screen: centered copy; /chat gets extra top padding for fixed Sign in + softer background */}
+          <div
+            className={`flex-1 flex flex-col h-full min-h-0 overflow-hidden ${
+              isChatOnlyRoute
+                ? 'bg-gradient-to-b from-[#eef2ff] via-white to-[#f4f7fb]'
+                : ''
+            }`}
+          >
             <div
-              className="flex-1 flex flex-col items-center justify-start px-3 sm:px-4 md:px-6 min-h-0 overflow-y-auto"
+              className={`flex-1 flex flex-col items-center justify-center px-4 sm:px-6 min-h-0 overflow-y-auto ${
+                isChatOnlyRoute ? 'pt-16 sm:pt-14 pb-4' : 'pt-8 sm:pt-12 pb-4'
+              }`}
               data-chat-scroll-region
             >
-              <div className="text-center px-2 sm:px-4 pt-2 pb-4 sm:pb-6 flex-shrink-0 w-full max-w-3xl">
-                <h2 className="text-lg sm:text-xl md:text-2xl lg:text-3xl xl:text-4xl font-normal leading-tight text-gray-600">
-                  {welcomeMessage ? renderWelcomeMessage(welcomeMessage) : "Loading..."}
+              <div className="relative flex w-full max-w-2xl flex-col items-center text-center">
+                {isChatOnlyRoute && (
+                  <>
+                    <div
+                      className="pointer-events-none absolute -inset-x-12 -top-6 bottom-0 overflow-hidden opacity-[0.55]"
+                      aria-hidden
+                    >
+                      <div className="absolute -right-4 top-0 h-36 w-36 rounded-full bg-[#23479f]/25 blur-3xl" />
+                      <div className="absolute -left-6 top-1/3 h-28 w-28 rounded-full bg-violet-400/20 blur-2xl" />
+                      <div className="absolute bottom-8 left-1/3 h-20 w-20 rounded-full bg-sky-300/25 blur-2xl" />
+                    </div>
+                    <div className="relative mb-5 inline-flex items-center gap-2 rounded-full border border-[#23479f]/15 bg-white/90 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#23479f] shadow-sm backdrop-blur-sm">
+                      <svg className="h-3.5 w-3.5 shrink-0 text-[#23479f]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
+                      </svg>
+                      Prakriti AI
+                    </div>
+                    <div className="relative mb-6 h-px w-16 bg-gradient-to-r from-transparent via-[#23479f]/35 to-transparent" aria-hidden />
+                  </>
+                )}
+                <h2 className="relative text-xl sm:text-2xl md:text-3xl lg:text-[2rem] font-medium leading-snug tracking-tight text-gray-700">
+                  {welcomeMessage ? renderWelcomeMessage(welcomeMessage) : 'Loading...'}
                 </h2>
+                <p className="relative mt-4 max-w-md text-sm sm:text-base leading-relaxed text-gray-500">
+                  {isChatOnlyRoute
+                    ? 'Get answers about programmes, admissions, calendars, and campus life—instantly.'
+                    : 'Ask about learning, programmes, admissions, and school life—right here.'}
+                </p>
+                {isChatOnlyRoute && (
+                  <div className="relative mt-7 flex flex-wrap justify-center gap-2 sm:gap-2.5">
+                    {['Learning support', 'Programmes', 'Admissions'].map((label) => (
+                      <span
+                        key={label}
+                        className="rounded-full border border-gray-200/90 bg-white/80 px-3.5 py-1.5 text-xs font-medium text-gray-600 shadow-sm backdrop-blur-[2px]"
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
