@@ -675,7 +675,7 @@ const AppContent: React.FC<{
 
         {/* Main Content Area with Grid Background */}
         <main className={`flex min-h-0 min-w-0 flex-1 overflow-hidden ${isDesktop ? 'chat-grid-bg' : ''} relative h-full w-full`}>
-          <div className={`w-full h-full flex flex-col ${isDesktop ? 'relative' : 'mx-auto px-3 sm:px-4'}`}>
+          <div className={`flex h-full min-h-0 w-full flex-col ${isDesktop ? 'relative' : 'mx-auto px-3 sm:px-4'}`}>
             {isDesktop ? (
               <div className="w-full h-full flex justify-center">
                 <div className="w-[90%] max-w-[90%] h-full flex flex-col">

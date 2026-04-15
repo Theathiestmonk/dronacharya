@@ -1871,7 +1871,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   return (
     <div 
       ref={mainContainerRef}
-      className={`flex flex-col h-full w-full bg-transparent mx-auto ${isInbuiltQueryActive || isInbuiltQueryRef.current ? 'chatbot-no-blink' : 'transition-all duration-200'} ${containerClassName}`}
+      className={`flex h-full min-h-0 w-full flex-col bg-transparent mx-auto ${isInbuiltQueryActive || isInbuiltQueryRef.current ? 'chatbot-no-blink' : 'transition-all duration-200'} ${containerClassName}`}
       style={(isInbuiltQueryActive || isInbuiltQueryRef.current) ? { 
         opacity: 1, 
         transform: 'scale(1)', 
