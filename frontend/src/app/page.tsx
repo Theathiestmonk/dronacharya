@@ -7,6 +7,7 @@ import OnboardingForm from '../components/OnboardingForm';
 import ChatbotSidebar from '../components/ChatbotSidebar';
 import EditProfileModal from '../components/EditProfileModal';
 import ConfirmationModal from '../components/ConfirmationModal';
+import { PrakritiEmbedFooter } from '../components/PrakritiEmbedFooter';
 import { useAuth } from '../providers/AuthProvider';
 import { ChatHistoryProvider, useChatHistory } from '../providers/ChatHistoryProvider';
 import { useRouter } from 'next/navigation';
@@ -717,6 +718,8 @@ const AppContent: React.FC<{
           cancelText="Cancel"
           type="warning"
         />
+
+        <PrakritiEmbedFooter />
       </div>
     );
   };
