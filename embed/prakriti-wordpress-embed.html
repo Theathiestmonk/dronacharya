@@ -23,7 +23,7 @@
   <pre><code>&lt;div class="prakriti-embed-stack"&gt;
   &lt;div class="prakriti-chat-embed"&gt;
     &lt;iframe
-      src="https://www.prakritischool.ai/?embed=1"
+      src="https://www.prakritischool.ai/chat"
       title="Prakriti AI Assistant"
       loading="lazy"
       allow="clipboard-write; microphone"
@@ -52,7 +52,8 @@
 
   <h2>3) Paste this CSS (replace 248253 with your page ID)</h2>
   <p>This uses a <strong>flex column</strong>: the iframe grows to fill space <strong>above</strong> the footer; the footer stays outside the iframe so you can change links anytime in WordPress without redeploying the chat app.</p>
-  <pre><code id="css-block">/* --- Prakriti embed: stack (iframe + site footer) — page 248253 --- */
+  <p><strong>Mobile scroll:</strong> Section 3 includes a <code>@media (max-width: 768px)</code> block so the WordPress page can scroll independently of the iframe (avoids “stuck” scroll when switching from chat to the rest of the site). Redeploy the chat app so the iframe picks up the <code>overscroll-behavior</code> change in the app CSS.</p>
+  <pre><code id="css-block">/* --- Prakriti embed: stack (iframe loads /chat + site footer) — page 248253 --- */
 body.page-id-248253 {
   overflow-x: hidden;
 }
@@ -174,6 +175,41 @@ body.page-id-248253 .prakriti-embed-site-footer__sep {
   user-select: none;
 }
 
+/* Mobile: parent page scroll + overscroll isolation (iframe vs WordPress document) */
+@media (max-width: 768px) {
+  body.page-id-248253 {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body.page-id-248253 .prakriti-embed-stack {
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    overscroll-behavior: contain;
+  }
+
+  body.page-id-248253 .prakriti-chat-embed {
+    flex: 0 0 auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    min-height: min(68dvh, 520px);
+    height: min(75dvh, 600px);
+    max-height: 75dvh;
+  }
+
+  body.page-id-248253 .prakriti-chat-embed iframe {
+    height: 100% !important;
+    max-height: min(75dvh, 600px) !important;
+  }
+
+  /* Extra scroll room on the WordPress page so users can scroll past the embed */
+  body.page-id-248253 #main-content,
+  body.page-id-248253 .et_main_content {
+    padding-bottom: min(28vh, 200px) !important;
+  }
+}
+
 @media (max-width: 640px) {
   body.page-id-248253 .prakriti-chat-embed iframe {
     border-radius: 0;
@@ -235,7 +271,7 @@ body.page-id-248253 .et_pb_section:first-of-type {
   <p class="note">
     <strong>Page ID:</strong> Replace <code>248253</code> in every selector with your embed page ID if different.
     <strong>Horizontal scroll:</strong> Remove the <code>.prakriti-embed-stack</code> full-bleed block if <code>100vw</code> causes scroll.
-    <strong>Chat URL:</strong> Keep <code>?embed=1</code> on the iframe <code>src</code>.
+    <strong>Chat URL:</strong> Use <code>https://www.prakritischool.ai/chat</code> — chat-only layout (no sidebar). You do not need <code>?embed=1</code>. To embed the full app with sidebar, use <code>https://www.prakritischool.ai/?embed=1</code> instead.
   </p>
 </body>
 </html>

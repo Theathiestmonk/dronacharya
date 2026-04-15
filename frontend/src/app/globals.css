@@ -130,12 +130,13 @@ html.is-embedded main > div {
 }
 
 /* Scroll regions: scroll (not auto) fixes some WebKit iframe bugs; GPU layer helps iOS */
+/* contain: stops scroll chaining to parent window when chat hits scroll bounds (mobile iframe embeds) */
 html.is-embedded [data-chat-scroll-region] {
   overflow-y: scroll !important;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
-  overscroll-behavior-y: auto;
+  overscroll-behavior-y: contain;
   transform: translateZ(0);
 }
 
