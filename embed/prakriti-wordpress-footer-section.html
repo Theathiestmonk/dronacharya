@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Prakriti — WordPress footer section (standalone)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; color: #111; }
+    pre { background: #f4f4f5; border-radius: 8px; padding: 1rem; overflow: auto; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <h1>Prakriti — footer link bar for WordPress (no embed / no chat)</h1>
+  <p>Add this as a <strong>section</strong>: Custom HTML block, Divi Code module, or Divi section with a Code module. Then add the CSS under <strong>Appearance → Customize → Additional CSS</strong> (or Divi → Custom CSS).</p>
+  <p><strong>Full width:</strong> The CSS below uses a <em>viewport breakout</em> so the blue bar spans edge-to-edge even inside a narrow Divi column. In Divi, you can also set the <strong>row</strong> to <strong>Full width</strong> and width 100% for the same effect.</p>
+  <p>Edit the <code>&lt;a href&gt;</code> and labels whenever your main menu changes.</p>
+
+  <h2>1) HTML — paste into your section</h2>
+  <pre><code>&lt;section class="prakriti-footer-bar" aria-label="Prakriti school links"&gt;
+  &lt;nav class="prakriti-footer-bar__nav"&gt;
+    &lt;a href="https://prakriti.edu.in/schoolaroo/"&gt;Schoolaroo&lt;/a&gt;
+    &lt;a href="https://prakriti.edu.in/prakriti-way-of-learning/"&gt;Prakriti Way of Learning&lt;/a&gt;
+    &lt;a href="https://prakriti.edu.in/home/"&gt;Home&lt;/a&gt;
+    &lt;a href="https://prakriti.edu.in/our-programmes/"&gt;Our Programmes&lt;/a&gt;
+    &lt;a href="https://prakriti.edu.in/team/"&gt;Team&lt;/a&gt;
+    &lt;span class="prakriti-footer-bar__sep" aria-hidden="true"&gt;|&lt;/span&gt;
+    &lt;a href="https://rootsofallbeings.substack.com/p/can-we-save-the-planet-or-should?utm_campaign=post&amp;utm_medium=web&amp;triedRedirect=true"&gt;Green School&lt;/a&gt;
+    &lt;a href="https://prakriti.edu.in/roots-of-all-beings/"&gt;Roots of All Beings&lt;/a&gt;
+    &lt;a href="https://events.prakriti.edu.in/"&gt;Calendar&lt;/a&gt;
+    &lt;a href="https://prakriti.edu.in/admissions/"&gt;Admissions&lt;/a&gt;
+    &lt;a href="https://prakriti.edu.in/contact/"&gt;Contact&lt;/a&gt;
+  &lt;/nav&gt;
+&lt;/section&gt;</code></pre>
+
+  <h2>2) CSS — paste into Additional CSS</h2>
+  <pre><code>/* Prakriti footer bar — standalone section (full-bleed inside theme columns) */
+.prakriti-footer-bar {
+  /* Escape narrow wrappers: 100% only fills the column, not the screen */
+  position: relative;
+  width: 100vw;
+  max-width: none;
+  left: 50%;
+  margin-left: -50vw;
+  margin-right: 0;
+  right: auto;
+  box-sizing: border-box;
+  background-color: #23479f;
+  color: #fff;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  padding: 0.65rem 0.75rem;
+}
+
+.prakriti-footer-bar__nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem 0.85rem;
+  max-width: 72rem;
+  margin: 0 auto;
+  text-align: center;
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+@media (min-width: 640px) {
+  .prakriti-footer-bar__nav {
+    font-size: 0.8rem;
+    gap: 0.4rem 1rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .prakriti-footer-bar__nav {
+    font-size: 0.875rem;
+  }
+}
+
+.prakriti-footer-bar__nav a {
+  color: #fff !important;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.prakriti-footer-bar__nav a:hover {
+  text-decoration: underline;
+}
+
+.prakriti-footer-bar__sep {
+  color: rgba(255, 255, 255, 0.85);
+  user-select: none;
+}</code></pre>
+
+  <p><strong>Optional:</strong> To limit this bar to one page only, wrap the CSS selectors with <code>body.page-id-YOURID </code> (e.g. <code>body.page-id-248253 .prakriti-footer-bar { ... }</code>).</p>
+</body>
+</html>

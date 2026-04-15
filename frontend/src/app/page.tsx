@@ -7,7 +7,6 @@ import OnboardingForm from '../components/OnboardingForm';
 import ChatbotSidebar from '../components/ChatbotSidebar';
 import EditProfileModal from '../components/EditProfileModal';
 import ConfirmationModal from '../components/ConfirmationModal';
-import { PrakritiEmbedFooter } from '../components/PrakritiEmbedFooter';
 import { useAuth } from '../providers/AuthProvider';
 import { ChatHistoryProvider, useChatHistory } from '../providers/ChatHistoryProvider';
 import { useRouter } from 'next/navigation';
@@ -674,36 +673,31 @@ const AppContent: React.FC<{
           showSettings={!!(user && profile)}
         />
 
-        {/* Column: main + embed footer — must NOT be a sibling row with footer (was a 3rd flex column on desktop) */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:min-w-0">
-          <main
-            className={`flex min-h-0 min-w-0 flex-1 overflow-hidden ${isDesktop ? 'chat-grid-bg' : ''} relative h-full w-full`}
-          >
-            <div className={`flex h-full min-h-0 w-full flex-col ${isDesktop ? 'relative' : 'mx-auto px-3 sm:px-4'}`}>
-              {isDesktop ? (
-                <div className="flex h-full w-full justify-center">
-                  <div className="flex h-full w-[90%] max-w-[90%] flex-col">
-                    <Chatbot
-                      key={chatKey}
-                      ref={chatbotRef}
-                      externalQuery={sidebarQuery}
-                      onQueryProcessed={handleQueryProcessed}
-                    />
-                  </div>
+        <main
+          className={`flex min-h-0 min-w-0 flex-1 overflow-hidden ${isDesktop ? 'chat-grid-bg' : ''} relative h-full w-full`}
+        >
+          <div className={`flex h-full min-h-0 w-full flex-col ${isDesktop ? 'relative' : 'mx-auto px-3 sm:px-4'}`}>
+            {isDesktop ? (
+              <div className="flex h-full w-full justify-center">
+                <div className="flex h-full w-[90%] max-w-[90%] flex-col">
+                  <Chatbot
+                    key={chatKey}
+                    ref={chatbotRef}
+                    externalQuery={sidebarQuery}
+                    onQueryProcessed={handleQueryProcessed}
+                  />
                 </div>
-              ) : (
-                <Chatbot
-                  key={chatKey}
-                  ref={chatbotRef}
-                  externalQuery={sidebarQuery}
-                  onQueryProcessed={handleQueryProcessed}
-                />
-              )}
-            </div>
-          </main>
-
-          <PrakritiEmbedFooter />
-        </div>
+              </div>
+            ) : (
+              <Chatbot
+                key={chatKey}
+                ref={chatbotRef}
+                externalQuery={sidebarQuery}
+                onQueryProcessed={handleQueryProcessed}
+              />
+            )}
+          </div>
+        </main>
 
         {/* Edit Profile Modal */}
         {user && profile && (
