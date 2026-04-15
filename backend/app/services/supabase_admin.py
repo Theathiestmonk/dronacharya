@@ -201,8 +201,11 @@ class SupabaseAdminService:
             return []
     
     def get_calendar_data(self, admin_id: Any) -> List[Dict[str, Any]]:
-        """Get calendar data for admin from normalized tables"""
+        """Get Google Calendar rows for admin from normalized tables (not Year Flow)."""
         try:
+            from ..utils.google_calendar_sync_config import is_google_calendar_sync_disabled
+            if is_google_calendar_sync_disabled():
+                return []
             # Get user_id from user_profiles (admin_id is user_profiles.id, we need auth.users.id)
             profile = self.supabase.table('user_profiles').select('user_id').eq('id', admin_id).single().execute()
             user_id = profile.data.get('user_id') if profile.data else None

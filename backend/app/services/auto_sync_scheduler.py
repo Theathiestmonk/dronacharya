@@ -12,6 +12,7 @@ import os
 
 from supabase_config import get_supabase_client
 from ..services.supabase_admin import SupabaseAdminService
+from ..utils.google_calendar_sync_config import is_google_calendar_sync_disabled
 
 # Google OAuth configuration
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
@@ -140,13 +141,19 @@ class AutoSyncScheduler:
                         except Exception as e:
                             print(f"[AutoSync] ❌ Classroom sync failed for {admin_email}: {e}")
                     
-                    # Sync Calendar if connected
+                    # Sync Calendar if connected (optional; Year Flow uses calendar_event_data)
                     if has_calendar:
-                        try:
-                            await self.sync_calendar_for_admin(admin_id, admin_email, integrations)
-                            print(f"[AutoSync] ✅ Calendar sync completed for {admin_email}")
-                        except Exception as e:
-                            print(f"[AutoSync] ❌ Calendar sync failed for {admin_email}: {e}")
+                        if is_google_calendar_sync_disabled():
+                            print(
+                                f"[AutoSync] ⏭️ Skipping Google Calendar sync for {admin_email} "
+                                "(DISABLE_GOOGLE_CALENDAR_SYNC=1; school calendar = Year Flow / calendar_event_data)"
+                            )
+                        else:
+                            try:
+                                await self.sync_calendar_for_admin(admin_id, admin_email, integrations)
+                                print(f"[AutoSync] ✅ Calendar sync completed for {admin_email}")
+                            except Exception as e:
+                                print(f"[AutoSync] ❌ Calendar sync failed for {admin_email}: {e}")
                     
                 except Exception as e:
                     print(f"[AutoSync] Error syncing for admin {admin_id}: {e}")
@@ -270,6 +277,12 @@ class AutoSyncScheduler:
     
     async def sync_calendar_for_admin(self, admin_id: str, admin_email: str, integrations: List[Dict[str, Any]]):
         """Sync Google Calendar for a specific admin"""
+        if is_google_calendar_sync_disabled():
+            print(
+                "[AutoSync] Google Calendar sync disabled (DISABLE_GOOGLE_CALENDAR_SYNC); "
+                "use Prakriti Year Flow → calendar_event_data."
+            )
+            return
         calendar_integration = next((i for i in integrations if i['service_type'] == 'calendar'), None)
         if not calendar_integration:
             return

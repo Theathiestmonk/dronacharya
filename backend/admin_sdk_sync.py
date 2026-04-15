@@ -367,6 +367,10 @@ def sync_all_classroom_data():
 
 def sync_all_calendar_data():
     """Sync ALL calendar data from entire domain using Admin SDK"""
+    if os.getenv("DISABLE_GOOGLE_CALENDAR_SYNC", "").strip().lower() in ("1", "true", "yes", "on"):
+        print("ADMIN SDK: Google Calendar sync skipped (DISABLE_GOOGLE_CALENDAR_SYNC=1).")
+        return {"success": True, "skipped": True, "message": "Google Calendar sync disabled."}
+
     print("=" * 60)
     print("ADMIN SDK: SYNCING ALL CALENDAR DATA FROM PRAKRITI.ORG.IN")
     print("=" * 60)

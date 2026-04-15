@@ -379,11 +379,13 @@ def get_admin_data(user_email: str = None,
                    load_announcements: bool = True,
                    load_coursework: bool = True,
                    load_calendar: bool = True,
+                   load_submissions: bool = False,
                    announcement_date_ranges: list = None,
                    limit_announcements: int = None,
                    limit_students: int = None,
                    limit_teachers: int = None,
                    limit_coursework: int = None,
+                   limit_submissions: int = 50,
                    limit_calendar_events: int = 20,
                    load_classroom_courses: bool = True) -> dict:
     """Get reference data (Google Classroom/Calendar sync) from Supabase for chatbot responses.
@@ -401,11 +403,13 @@ def get_admin_data(user_email: str = None,
         load_announcements: Whether to load announcement data (default: True)
         load_coursework: Whether to load coursework data (default: True)
         load_calendar: Whether to load calendar data (default: True)
+        load_submissions: Whether to load submission data (default: False)
         announcement_date_ranges: List of (start_date, end_date) tuples for SQL filtering by date
         limit_announcements: Limit number of announcements per course (SQL LIMIT)
         limit_students: Limit number of students per course (SQL LIMIT)
         limit_teachers: Limit number of teachers per course (SQL LIMIT)
         limit_coursework: Limit number of coursework per course (SQL LIMIT)
+        limit_submissions: Limit number of submissions per course (SQL LIMIT)
         limit_calendar_events: Max upcoming rows from calendar_event_data (0 = skip fetch for link-only asks)
         load_classroom_courses: If False, skip google_classroom_courses (Year Flow-only / public calendar asks)
     """
@@ -416,10 +420,21 @@ def get_admin_data(user_email: str = None,
         supabase = get_supabase_client()
         user_id = None
         
+        # Canonical auth.users.id for `google_classroom_courses` when DWD sync runs as one school account.
+        # Without this, we use the logged-in user's id — they may only have a test course (e.g. G6) while
+        # Grade 7+ rows in Supabase belong to another user_id (see Table Editor).
+        _ref_uid = (os.getenv("CLASSROOM_CHATBOT_REFERENCE_USER_ID") or "").strip()
+        if _ref_uid:
+            user_id = _ref_uid
+            print(
+                f"[Chatbot] Classroom scope: CLASSROOM_CHATBOT_REFERENCE_USER_ID → {user_id} "
+                "(school-wide sync; overrides chat user's Classroom owner)"
+            )
+        
         # If user_email provided, try to get their synced data
         # IMPORTANT: Use user_id (auth.users.id) not id (user_profiles.id) 
         # because google_classroom_courses.user_id references auth.users.id
-        if user_email:
+        if not user_id and user_email:
             user_profile = supabase.table('user_profiles').select('user_id, id').eq('email', user_email).eq('is_active', True).limit(1).execute()
             if user_profile.data and len(user_profile.data) > 0:
                 # Use user_id (auth.users.id) not id (user_profiles.id)
@@ -485,7 +500,9 @@ def get_admin_data(user_email: str = None,
                 students = students_result.data if students_result.data else []
             
             if load_coursework:
-                coursework_query = supabase.table('google_classroom_coursework').select('coursework_id, title, description, due_date, due_time, state, alternate_link').eq('course_id', course_id).order('due_date', desc=False)
+                coursework_query = supabase.table('google_classroom_coursework').select(
+                    'id, coursework_id, title, description, due_date, due_time, state, alternate_link'
+                ).eq('course_id', course_id).order('due_date', desc=False)
                 if limit_coursework:
                     coursework_query = coursework_query.limit(limit_coursework)
                 coursework_result = coursework_query.execute()
@@ -590,6 +607,7 @@ def get_admin_data(user_email: str = None,
             formatted_coursework = []
             for cw in coursework_list:
                 formatted_coursework.append({
+                    "id": cw.get('id'),  # DB UUID — joins to google_classroom_submissions.coursework_id
                     "courseWorkId": cw.get('coursework_id', ''),
                     "title": cw.get('title', ''),
                     "dueDate": cw.get('due_date', ''),
@@ -598,6 +616,64 @@ def get_admin_data(user_email: str = None,
                     # Removed: description, alternateLink to save tokens
                 })
             
+            # Format submissions if needed (minimal fields)
+            formatted_submissions = []
+            if load_submissions:
+                try:
+                    # DWD stores google_classroom_submissions.course_id as the Google Classroom API
+                    # course id (google_classroom_courses.course_id), not our row UUID (google_classroom_courses.id).
+                    _google_cid = course.get('course_id')
+                    submissions_rows = []
+                    if _google_cid is None:
+                        print(
+                            f"[Chatbot] ⚠️ No google_classroom_courses.course_id for "
+                            f"'{course.get('name', '')}' — cannot match submissions rows"
+                        )
+                    else:
+                        _sub_course_key = str(_google_cid)
+                        submissions_query = supabase.table('google_classroom_submissions').select(
+                            'id, coursework_id, user_id, state, assigned_grade, late, coursework_id_google'
+                        ).eq('course_id', _sub_course_key)
+                        
+                        if limit_submissions:
+                            # Large limits = completion reports — avoid ordering by recency (drops older rows)
+                            if limit_submissions >= 400:
+                                submissions_query = submissions_query.limit(limit_submissions)
+                            else:
+                                submissions_query = submissions_query.order('created_at', desc=True).limit(limit_submissions)
+                        
+                        submissions_result = submissions_query.execute()
+                        submissions_rows = submissions_result.data or []
+                        print(
+                            f"[Chatbot] Submissions SQL: course '{course.get('name', '')}' "
+                            f"google_course_id={_sub_course_key} → {len(submissions_rows)} row(s)"
+                        )
+                    _cw_title_by_db_id = {str(cw.get('id')): cw.get('title', '') for cw in coursework_list if cw.get('id')}
+                    if submissions_rows:
+                        for sub in submissions_rows:
+                            # Try to match submission user_id with student name
+                            student_name = "Unknown Student"
+                            for s in formatted_students:
+                                if s.get('studentId') == sub.get('user_id'):
+                                    student_name = s.get('studentName')
+                                    break
+                            _cid = sub.get('coursework_id')
+                            _title = _cw_title_by_db_id.get(str(_cid), '') if _cid else ''
+                            
+                            formatted_submissions.append({
+                                "id": sub.get('id'),
+                                "courseworkId": _cid,
+                                "assignmentTitle": _title,
+                                "courseworkGoogleId": sub.get('coursework_id_google'),
+                                "studentId": sub.get('user_id'),
+                                "studentName": student_name,
+                                "state": sub.get('state'),
+                                "assignedGrade": sub.get('assigned_grade'),
+                                "isLate": sub.get('late', False)
+                            })
+                except Exception as e:
+                    print(f"[Chatbot] Error fetching submissions for course {course_id}: {e}")
+
             # Format announcements with URL (only essential fields to reduce tokens)
             formatted_announcements = []
             for ann in announcements:
@@ -625,6 +701,8 @@ def get_admin_data(user_email: str = None,
                 course_data["coursework"] = formatted_coursework
             if formatted_announcements:
                 course_data["announcements"] = formatted_announcements
+            if formatted_submissions:
+                course_data["submissions"] = formatted_submissions
             
             # Add minimal metadata only if needed
             if course.get('section'):
@@ -2253,10 +2331,54 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     is_classroom_related_query = (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_event_query or is_calendar_query) and not is_subject_faculty_query and not is_exam_query and not is_holiday_query and not is_teacher_drive_query
     is_home_related_query = any(kw in query_lower for kw in ['home', 'homework', 'my assignments', 'my coursework', 'my classes', 'my courses'])
     
+    # For guest users: Tell them to login first (but public school calendar does not need Classroom)
+    # Public school website calendar (calendar_event_data) is still loaded for guests when applicable.
+    is_guest_classroom_query = (
+        not user_profile
+        and (is_classroom_related_query or is_home_related_query or is_holiday_query)
+        and not is_public_cal
+    )
+    
     # Check for teacher-specific queries (submissions, grading, student work)
     is_submission_query = any(kw in query_lower for kw in ['submission', 'submitted', 'submitted work', 'student submission', 'check submission', 'grade submission', 'review submission', 'view submission'])
-    is_grading_query = any(kw in query_lower for kw in ['grade', 'grading', 'assign grade', 'student grade', 'check grade', 'review grade'])
-    is_teacher_classroom_query = is_submission_query or is_grading_query or (is_teacher_query and any(kw in query_lower for kw in ['my courses', 'my classes', 'my students', 'student work']))
+    # Do not use bare "grade" — it matches "Grade 5" (year level) and mis-triggers grading intent
+    is_grading_query = any(
+        kw in query_lower
+        for kw in ['grading', 'assign grade', 'student grade', 'check grade', 'review grade', 'give a grade']
+    )
+    
+    # Check for assignment status/completion queries (who turned in, who missed)
+    # Added "turned-in" and "submission report" as requested by user
+    assignment_status_keywords = [
+        'complete assignments', 'missing assignments', 'turned in', 'late',
+        'submission status', 'assignment completion', 'who completed',
+        'who turned in', 'who has not submitted', 'not submitted',
+        'pending assignments', 'assignment status', 'turned-in', 'submission report',
+        # Natural phrasing (previously missed → wrong coursework path)
+        'have completed', 'completed their', 'which students', 'students who',
+        'students have', 'completed the assignment', 'completed their assignment',
+    ]
+    _completion_status_combo = (
+        ('assignment' in query_lower or 'assignments' in query_lower or 'coursework' in query_lower)
+        and (
+            'completed' in query_lower
+            or 'missing' in query_lower
+            or 'not submitted' in query_lower
+            or 'turned in' in query_lower
+            or 'submitted' in query_lower
+        )
+        and (
+            'student' in query_lower
+            or 'which' in query_lower
+            or 'who' in query_lower
+            or 'everyone' in query_lower
+        )
+    )
+    is_assignment_status_query = (
+        any(kw in query_lower for kw in assignment_status_keywords) or _completion_status_combo
+    )
+    
+    is_teacher_classroom_query = is_submission_query or is_grading_query or is_assignment_status_query or (is_teacher_query and any(kw in query_lower for kw in ['my courses', 'my classes', 'my students', 'student work']))
     
     # Skip classroom data for web-only queries (PERFORMANCE OPTIMIZATION)
     is_web_only_query = should_use_web_crawling and not (
@@ -2309,20 +2431,23 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             if is_subject_faculty_query:
                 print(f"[Chatbot] 🎯 Subject faculty query detected - using team_member_data instead of Classroom data")
             should_load_teachers = (is_teacher_query or should_use_web_crawling_first) and not is_subject_faculty_query
-            should_load_students = is_student_query
+            should_load_students = is_student_query or is_assignment_status_query
             should_load_announcements = is_announcement_query
-            should_load_coursework = is_coursework_query
+            should_load_coursework = is_coursework_query or is_assignment_status_query
             should_load_calendar = is_calendar_query or is_event_query or is_public_cal  # Load calendar for event queries too
+            should_load_submissions = is_submission_query or is_grading_query or is_assignment_status_query
+            
             # Public school calendar lives in calendar_event_data (Year Flow); skip Classroom course rows if not needed
             should_load_classroom_courses = (
                 should_load_teachers
                 or should_load_students
                 or should_load_announcements
                 or should_load_coursework
+                or should_load_submissions
             )
             
             # If no specific classroom data is needed, don't load anything
-            if not (should_load_teachers or should_load_students or should_load_announcements or should_load_coursework or should_load_calendar):
+            if not (should_load_teachers or should_load_students or should_load_announcements or should_load_coursework or should_load_calendar or should_load_submissions):
                 print(f"[Chatbot] ⚡ Skipping classroom data fetch - no classroom-specific data needed for this query")
                 admin_data = {"classroom_data": [], "calendar_data": []}
                 # Skip the rest of the data loading logic
@@ -2334,15 +2459,16 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 # Set SQL-level limits to reduce token usage (cost optimization)
                 # Only fetch what's needed from database, not everything
                 limit_teachers = 50 if should_load_teachers else None  # Max 50 teachers
-                limit_students = 50 if should_load_students else None  # Max 50 students
+                limit_students = 100 if should_load_students or is_assignment_status_query else 50  # More students for status reports
                 limit_announcements = 20 if should_load_announcements else None  # Max 20 announcements (will filter by date if needed)
-                limit_coursework = 20 if should_load_coursework else None  # Max 20 coursework items
+                limit_coursework = 20 if should_load_coursework or is_assignment_status_query else None  # Max 20 coursework items
                 
                 print(f"[Chatbot] Data loading plan (SQL-optimized):")
                 print(f"  - Teachers: {should_load_teachers} (limit: {limit_teachers})")
                 print(f"  - Students: {should_load_students} (limit: {limit_students})")
                 print(f"  - Announcements: {should_load_announcements} (limit: {limit_announcements})")
                 print(f"  - Coursework: {should_load_coursework} (limit: {limit_coursework})")
+                print(f"  - Submissions: {should_load_submissions} (limit_submissions=100 if assignment_status else 50)")
                 print(f"  - Calendar: {should_load_calendar} (limit_calendar_events={cal_limit})")
                 print(f"  - Classroom courses (google_classroom_courses): {should_load_classroom_courses}")
                 
@@ -2524,7 +2650,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 # Allow coursework access for any user (not just students) based on email/user_id
                 # Only apply grade filtering if user is actually a student with a grade
                 coursework_data_from_direct_query = False  # Flag to track if data came from get_student_coursework_data
-                if is_coursework_query and user_id:
+                if is_coursework_query and user_id and not is_assignment_status_query:
                     # Determine work_type filter based on query (homework vs assignments)
                     work_type_filter = None
                     if is_homework_query:
@@ -2553,11 +2679,13 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                                load_announcements=should_load_announcements,
                                                load_coursework=should_load_coursework,
                                                load_calendar=should_load_calendar,
+                                               load_submissions=should_load_submissions,
                                                announcement_date_ranges=target_date_ranges_for_sql if target_date_ranges_for_sql else None,
                                                limit_announcements=limit_announcements,
                                                limit_students=limit_students,
                                                limit_teachers=limit_teachers,
                                                limit_coursework=limit_coursework,
+                                               limit_submissions=500 if is_assignment_status_query else 50,
                                                limit_calendar_events=cal_limit,
                                                load_classroom_courses=should_load_classroom_courses)
                 
@@ -2586,11 +2714,13 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                                            load_announcements=should_load_announcements,
                                                            load_coursework=should_load_coursework,
                                                            load_calendar=should_load_calendar,
+                                                           load_submissions=should_load_submissions,
                                                            announcement_date_ranges=target_date_ranges_for_sql if target_date_ranges_for_sql else None,
                                                            limit_announcements=limit_announcements,
                                                            limit_students=limit_students,
                                                            limit_teachers=limit_teachers,
                                                            limit_coursework=limit_coursework,
+                                                           limit_submissions=500 if is_assignment_status_query else 50,
                                                            limit_calendar_events=cal_limit,
                                                            load_classroom_courses=should_load_classroom_courses)
                             else:
@@ -2606,11 +2736,13 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                                                load_announcements=should_load_announcements,
                                                                load_coursework=should_load_coursework,
                                                                load_calendar=should_load_calendar,
+                                                               load_submissions=should_load_submissions,
                                                                announcement_date_ranges=target_date_ranges_for_sql if target_date_ranges_for_sql else None,
                                                                limit_announcements=limit_announcements,
                                                                limit_students=limit_students,
                                                                limit_teachers=limit_teachers,
                                                                limit_coursework=limit_coursework,
+                                                               limit_submissions=500 if is_assignment_status_query else 50,
                                                                limit_calendar_events=cal_limit,
                                                                load_classroom_courses=should_load_classroom_courses)
                     except Exception as e:
@@ -2926,13 +3058,13 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 # Ultra-concise system prompt for authenticated users
                 # Exclude assignment/coursework queries from the "ask for more info" instruction
                 homework_instruction = "" if is_coursework_query or _skip_homework_nag else """ IMPORTANT: For homework/study help requests without subject/topic, always ask for both subject and specific topic before providing solutions."""
-                coursework_instruction = """ CRITICAL: For assignment/coursework queries, you MUST extract assignments from the provided Data section and show them immediately. DO NOT create fake assignments or generate examples like 'Topic: Algebra'. Use ONLY the actual assignment titles, descriptions, due dates, and links from the Data section. DO NOT ask for more information - the data is already provided. START your response directly with the assignments from the data, not with greetings or fake examples.""" if is_coursework_query else ""
+                coursework_instruction = """ CRITICAL: For assignment/coursework queries, you MUST extract assignments from the provided Data section and show them immediately. DO NOT create fake assignments or generate examples like 'Topic: Algebra'. Use ONLY the actual assignment titles, descriptions, due dates, and links from the Data section. DO NOT ask for more information - the data is already provided. START your response directly with the assignments from the data, not with greetings or fake examples.""" if (is_coursework_query and not is_assignment_status_query) else ""
                 system_content = """You are Prakriti School's AI assistant. Progressive K-12 school in Greater Noida. Philosophy: "Learning for happiness". Programs: Bridge Programme, IGCSE, AS/A Level. Address users by first name with titles (Sir/Madam for teachers/parents). Use Markdown (**bold**, ### headings). Never say "as an AI". Present data directly without disclaimers.""" + personalization + """ Use provided data to answer questions.""" + homework_instruction + coursework_instruction
             else:
                 # Ultra-concise system prompt for guest users (TOKEN OPTIMIZATION)
                 # Exclude assignment/coursework queries from the "ask for more info" instruction
                 homework_instruction = "" if is_coursework_query or _skip_homework_nag else """ IMPORTANT: For homework/study help, remind guest users to sign in and connect Google Classroom for personalized help. Always ask for subject and topic if not provided."""
-                coursework_instruction = """ CRITICAL: For assignment/coursework queries, you MUST extract assignments from the provided Data section and show them immediately. DO NOT create fake assignments or generate examples like 'Topic: Algebra'. Use ONLY the actual assignment titles, descriptions, due dates, and links from the Data section. DO NOT ask for more information - the data is already provided. START your response directly with the assignments from the data, not with greetings or fake examples.""" if is_coursework_query else ""
+                coursework_instruction = """ CRITICAL: For assignment/coursework queries, you MUST extract assignments from the provided Data section and show them immediately. DO NOT create fake assignments or generate examples like 'Topic: Algebra'. Use ONLY the actual assignment titles, descriptions, due dates, and links from the Data section. DO NOT ask for more information - the data is already provided. START your response directly with the assignments from the data, not with greetings or fake examples.""" if (is_coursework_query and not is_assignment_status_query) else ""
                 system_content = """You are Prakriti School's AI assistant. Progressive K-12 school in Greater Noida. Philosophy: "Learning for happiness". Use Markdown. Never say "as an AI". Present data directly. Use provided data to answer questions.""" + homework_instruction + coursework_instruction
 
             # Detect query language for system prompt
@@ -2955,8 +3087,21 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             if query_language != 'english':
                 system_content += f"\n\n🌍 LANGUAGE CONTEXT: The user asked in {query_language.upper()}. Respond in {query_language} language to match the user's preferred language. IMPORTANT: Start your response directly with the answer - DO NOT restate, repeat, or rephrase the user's question. Begin immediately with relevant information."
 
-            # 📘 ADD PERMANENT SCHOOL RESOURCES
-            system_content += "\n\n📘 SCHOOL RESOURCES: The official Prakriti School Calendar (for year flow, holidays, and school-wide events) is available at: https://events.prakriti.edu.in/"
+            # 📊 ADD ASSIGNMENT STATUS INSTRUCTIONS
+            submission_status_instruction = ""
+            if is_assignment_status_query:
+                submission_status_instruction = """
+📊 STUDENT ASSIGNMENT COMPLETION (submissions[] in Data):
+- Answer with **student names** — not a list of assignment titles alone.
+- Each submission row = one student × one assignment. **`TURNED_IN`** or **`RETURNED`** = turned in / completed for this report; **`CREATED`** / **NEW** = not turned in yet (this is normal, not a system error).
+- Use `assignmentTitle` + `studentName` from submissions. Do **not** treat coursework publish state (PUBLISHED) as per-student completion.
+- If a **SUBMISSION_ROSTER** appears in the user message, include it (or an equivalent Markdown table) in your answer — those are verified DB rows.
+- Group by assignment (list students under each) OR by student (list assignments) — whichever matches the question.
+- **Per course:** Some courses have empty `submissions` + `submissionsNote` (not synced); others have non-empty `submissions`. If **any** course has rows, you have DB data — do **not** say "no submission rows in the database" globally.
+- Only say sync is missing for courses where that course's `submissions` is empty (and note is present).
+- If submissions[] is empty **everywhere** in Data, say data is missing and do not invent TURNED_IN or student names.
+"""
+                system_content += submission_status_instruction
 
             messages = [{"role": "system", "content": system_content}]
 
@@ -3174,6 +3319,8 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             
             # Add current user query - minimal format (TOKEN OPTIMIZATION)
             user_content = f"{user_query}\n"
+            # Courses actually embedded in the prompt (after grade/query filters). Used for title validation — not raw admin_data.
+            llm_prompt_classroom_data = None
 
             # Add teacher information if available from drive integration
             if 'teacher_enhanced_info' in locals() and teacher_enhanced_info:
@@ -3184,7 +3331,8 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 web_enhanced_info = ""
             
             # CRITICAL: For coursework queries, add immediate instruction BEFORE data section
-            if is_coursework_query:
+            # Assignment-status / completion reports use submission data — not generic assignment listing
+            if is_coursework_query and not is_assignment_status_query:
                 user_content += "\n🚨🚨🚨 IMMEDIATE ACTION REQUIRED - READ THIS FIRST! 🚨🚨🚨\n"
                 user_content += "**THE USER IS ASKING FOR ASSIGNMENTS/COURSEWORK. YOU WILL RECEIVE THE DATA BELOW.**\n"
                 user_content += "**YOUR JOB: Extract ALL matching assignments from the Data section and show them IMMEDIATELY.**\n"
@@ -3241,7 +3389,10 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             is_guest_classroom_query_local = not user_profile and (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query or is_holiday_query or any(kw in query_lower for kw in ['home', 'homework', 'my assignments', 'my coursework', 'my classes', 'my courses'])) and not is_public_cal
             user_role_local = user_profile.get('role', '').lower() if user_profile else None
             is_submission_query_local = any(kw in query_lower for kw in ['submission', 'submitted', 'submitted work', 'student submission', 'check submission', 'grade submission', 'review submission', 'view submission'])
-            is_grading_query_local = any(kw in query_lower for kw in ['grade', 'grading', 'assign grade', 'student grade', 'check grade', 'review grade'])
+            is_grading_query_local = any(
+                kw in query_lower
+                for kw in ['grading', 'assign grade', 'student grade', 'check grade', 'review grade', 'give a grade']
+            )
             is_teacher_classroom_query_local = is_submission_query_local or is_grading_query_local or (is_teacher_query and any(kw in query_lower for kw in ['my courses', 'my classes', 'my students', 'student work']))
             is_teacher_needing_connection_local = user_role_local == 'teacher' and is_teacher_classroom_query_local
             
@@ -3298,6 +3449,16 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                     if skip_grade_filter_for_coursework:
                         print(f"[Chatbot] Coursework data from direct query - skipping grade filter (already handled with fallback logic)")
                     
+                    # Parse query grades FIRST: if user says "Grade 6" we must NOT filter by profile "Grade 1" first
+                    query_grade_targets = None
+                    if not skip_grade_filter_for_coursework:
+                        query_grade_targets = parse_queried_grade_targets(query_lower)
+                        if query_grade_targets:
+                            print(
+                                f"[Chatbot] Query-explicit grade filter (course names): "
+                                f"{sorted(query_grade_targets)}"
+                            )
+                    
                     if user_profile and not skip_grade_filter_for_coursework:
                         user_role = user_profile.get('role', '') or ''
                         user_role_lower = user_role.lower()
@@ -3306,7 +3467,13 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                         if user_role_lower == 'student':
                             user_grade = user_profile.get('grade', '')
                             print(f"[Chatbot] Student grade from profile: '{user_grade}'")
-                            if user_grade:
+                            # Only use profile grade when the query does not name a different cohort (e.g. "which students in Grade 6")
+                            if query_grade_targets:
+                                print(
+                                    "[Chatbot] Query names explicit grade(s) — using query grade for course filter, "
+                                    "not profile grade"
+                                )
+                            elif user_grade:
                                 # Normalize grade format (e.g., "Grade 8", "G8", "8" -> extract "8")
                                 grade_match = re_module.search(r'(\d+)', str(user_grade))
                                 if grade_match:
@@ -3317,7 +3484,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                             else:
                                 print(f"[Chatbot] ⚠️ No grade found in user profile")
                         else:
-                            print(f"[Chatbot] User is not a student (role: {user_role_lower}), skipping grade filter")
+                            print(f"[Chatbot] User is not a student (role: {user_role_lower}), skipping profile grade filter")
                     
                     for course in admin_data['classroom_data']:
                         # If user is a student, filter ALL courses by grade (unless data came from direct coursework query)
@@ -3342,6 +3509,34 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                 continue
                             else:
                                 print(f"[Chatbot] Including course '{course_name}' - matches Grade {user_grade_num}")
+                        
+                        # Match courses when the user named a grade in text (e.g. "students in Grade 5")
+                        if query_grade_targets and not skip_grade_filter_for_coursework:
+                            cn = course.get('name', '')
+                            matches_qg = False
+                            for gkey in query_grade_targets:
+                                esc = re_module.escape(str(gkey))
+                                gpats = [
+                                    rf'\bG{esc}\b',
+                                    rf'\bG\s*{esc}\b',
+                                    rf'\bGrade\s*{esc}\b',
+                                    rf'\(G{esc}\)',
+                                    rf'\(G\s*{esc}\)',
+                                    rf'\(Grade\s*{esc}\)',
+                                    rf'\({esc}\)',
+                                    rf'Grade-{esc}',
+                                ]
+                                if any(
+                                    re_module.search(p, cn, re_module.IGNORECASE) for p in gpats
+                                ):
+                                    matches_qg = True
+                                    break
+                            if not matches_qg:
+                                print(
+                                    f"[Chatbot] Skipping course '{cn}' — "
+                                    f"does not match query grades {sorted(query_grade_targets)}"
+                                )
+                                continue
                         
                         # Determine which query type is most specific (prioritize specific queries)
                         query_type_priority = []
@@ -3560,15 +3755,22 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                     # Include alternate_link if available (from get_student_coursework_data)
                                     if c.get("alternate_link"):
                                         cw_item["alternate_link"] = c.get("alternate_link")
-                                    # Include other fields if available
+                                    # DB id joins to submissions.courseworkId (UUID)
+                                    if c.get("id"):
+                                        cw_item["courseworkDbId"] = c.get("id")
                                     if c.get("courseWorkId"):
-                                        cw_item["id"] = c.get("courseWorkId")
+                                        cw_item["courseworkGoogleId"] = c.get("courseWorkId")
                                     if c.get("dueDate"):
                                         cw_item["due"] = c.get("dueDate")
                                     elif c.get("due_date"):
                                         cw_item["due"] = c.get("due_date")
-                                    if c.get("state"):
-                                        cw_item["status"] = c.get("state")
+                                    # Per-student completion is in submissions[].state — NOT coursework.state (PUBLISHED)
+                                    if is_assignment_status_query:
+                                        if c.get("state"):
+                                            cw_item["assignmentPostState"] = c.get("state")
+                                    else:
+                                        if c.get("state"):
+                                            cw_item["status"] = c.get("state")
                                     if c.get("description"):
                                         cw_item["description"] = c.get("description")
                                     if c.get("work_type"):
@@ -3580,6 +3782,24 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                     filtered_course["course_link"] = course.get('course_link')
                                 filtered_course["coursework"] = []  # Empty array to indicate no data available
                                 filtered_course["coursework_restricted"] = True  # Flag that data is restricted
+                        
+                        if is_assignment_status_query:
+                            subs = (course.get('submissions') or [])[:500]
+                            filtered_course["submissions"] = [
+                                {
+                                    "studentName": s.get("studentName"),
+                                    "state": s.get("state"),
+                                    "courseworkId": s.get("courseworkId"),
+                                    "assignmentTitle": s.get("assignmentTitle"),
+                                    "isLate": s.get("isLate"),
+                                }
+                                for s in subs
+                            ]
+                            if not subs:
+                                filtered_course["submissionsNote"] = (
+                                    "No submission rows in database for this course — sync Classroom submissions "
+                                    "or check course_id linkage on google_classroom_submissions."
+                                )
                         
                         # Only add course if it has the requested data type
                         has_requested_data = False
@@ -3599,7 +3819,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                             filtered_courses.append(filtered_course)
                     
                     # For coursework queries, add explicit assignment-to-link mapping FIRST (before JSON)
-                    if is_coursework_query and filtered_courses:
+                    if is_coursework_query and filtered_courses and not is_assignment_status_query:
                         user_content += "\n"
                         user_content += "=" * 80 + "\n"
                         user_content += "📋 CRITICAL: ASSIGNMENT-TO-LINK MAPPING - USE THESE EXACT LINKS!\n"
@@ -3651,6 +3871,79 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                 total_assignments += len(coursework_list)
                     
                     # Use compact JSON format to save tokens (minimal whitespace)
+                    if is_assignment_status_query and filtered_courses:
+                        _sub_rows = sum(
+                            len(c.get("submissions") or []) for c in filtered_courses
+                        )
+                        user_content += (
+                            "\n📊 **STUDENT COMPLETION — REQUIRED FORMAT**\n"
+                            f"- **Submission rows in this Data payload (all listed courses): {_sub_rows}** "
+                            "(sum of `submissions` arrays). If this number is **> 0**, submission data exists — "
+                            "report **TURNED_IN** vs not using those rows; **do not** claim there are zero submission rows in the database.\n"
+                            "- Many courses may have **empty** `submissions` + `submissionsNote` (sync not run for that course); "
+                            "other courses in the same JSON may have **non-empty** `submissions` — treat each course separately.\n"
+                            "- The user asked **which students** completed assignments — NOT a bullet list of assignment titles only.\n"
+                            "- Use **`submissions`** (each row = one student × one assignment): "
+                            "**`state` = `TURNED_IN`** means that **student** turned in that assignment; "
+                            "**`CREATED`/`NEW`** (or missing row) means not submitted for that student.\n"
+                            "- **`assignmentTitle`** on each submission names the work — group by title or by student as appropriate.\n"
+                            "- **Do NOT** use `coursework[].assignmentPostState` (e.g. PUBLISHED) as student completion — "
+                            "that only means the assignment is posted.\n"
+                            "- If **this course's** `submissions` is empty, read `submissionsNote` for that course only — do not invent names or TURNED_IN.\n"
+                            "- Output must include **student names** (from `studentName`) for completed vs not completed.\n"
+                            "- **`TURNED_IN` or `RETURNED`** counts as turned in / completed for this question; **`CREATED`** / **`NEW`** means not turned in yet.\n"
+                            "- **You MUST include the SUBMISSION_ROSTER block below** in your answer (Markdown table or bullets): every row listed there is real DB data.\n"
+                            "- If every row is CREATED/NEW, say clearly **no one has turned in yet** (not 'error' or 'data missing').\n"
+                            "- **Read `COMPLETION_FACTS` below before writing.** If `turned_in_or_returned_count` > 0, you **must not** say "
+                            "\"no one turned in\", \"all CREATED\", or \"no students completed\" — that would contradict the facts.\n\n"
+                        )
+                        _roster_lines = []
+                        _done_rows = []  # TURNED_IN / RETURNED
+                        _not_done_rows = []
+                        for _c in filtered_courses:
+                            _cn = _c.get("name") or "Course"
+                            for _s in _c.get("submissions") or []:
+                                line = (
+                                    f"- **{_cn}** | {(_s.get('studentName') or '?')} | "
+                                    f"{(_s.get('assignmentTitle') or '?')} | **state={(_s.get('state') or '?')}**"
+                                )
+                                _roster_lines.append(line)
+                                _st = str(_s.get("state") or "").strip().upper()
+                                if _st in ("TURNED_IN", "RETURNED"):
+                                    _done_rows.append(line)
+                                else:
+                                    _not_done_rows.append(line)
+                        _n_done = len(_done_rows)
+                        _n_not = len(_not_done_rows)
+                        user_content += (
+                            "🔒 **COMPLETION_FACTS** (derived from the same DB rows as SUBMISSION_ROSTER — **your answer must agree**):\n"
+                            f"- `turned_in_or_returned_count` = **{_n_done}** (states **TURNED_IN** or **RETURNED**)\n"
+                            f"- `not_turned_in_count` = **{_n_not}** (e.g. **CREATED** / **NEW** — work started or pending turn-in)\n"
+                        )
+                        if _n_done > 0:
+                            user_content += (
+                                "- **Required:** Open by naming **which students** have at least one **TURNED_IN**/**RETURNED** row "
+                                "(use the roster). Then list other rows as not turned in if helpful.\n"
+                                "- **Forbidden:** Claiming nobody turned anything in, or that all rows are CREATED, while "
+                                f"`turned_in_or_returned_count` is {_n_done}.\n"
+                                "**Turned-in / returned rows:**\n" + "\n".join(_done_rows[:40])
+                                + ("\n" if len(_done_rows) <= 40 else f"\n… ({len(_done_rows)} total)\n")
+                            )
+                        else:
+                            user_content += (
+                                "- No **TURNED_IN**/**RETURNED** in this payload — you may say no turn-ins yet for these rows.\n"
+                            )
+                        print(
+                            f"[Chatbot] COMPLETION_FACTS: TURNED_IN/RETURNED={_n_done}, "
+                            f"not_turned_in={_n_not}"
+                        )
+                        user_content += "\n"
+                        if _roster_lines:
+                            user_content += (
+                                "📋 **SUBMISSION_ROSTER** (ground truth from database — reproduce in your reply):\n"
+                                + "\n".join(_roster_lines)
+                                + "\n\n"
+                            )
                     user_content += "Data:\n"
                     data_json = json.dumps(filtered_courses, separators=(',', ':'))
                     user_content += f"{data_json}\n"  # Compact format, no indentation
@@ -3933,6 +4226,8 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                         user_content += "Fix time ranges (add 'to' between times), grammar, use Markdown. Process data, don't copy-paste.\n"
                         user_content += "If empty: Say 'No announcements for requested date(s)'.\nDO NOT say 'no access'!\n\n"
                     
+                    llm_prompt_classroom_data = filtered_courses
+                
                 if (
                     admin_data.get("calendar_data")
                     and (is_calendar_query or is_event_query)
@@ -4079,9 +4374,12 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             print(f"[Chatbot] 📊 Estimated token count: ~{estimated_tokens} tokens")
             print(f"[Chatbot] 📊 User content length: {len(user_content)} chars | Messages count: {len(messages)}")
             
-            # If too large, use a more compact format
-            if estimated_tokens > 6000:  # Leave room for response
-                print("[Chatbot] Token count too high, using compact format...")
+            # If too large, optionally use a compact format (announcement-only).
+            # IMPORTANT: Do NOT use this for coursework / assignment-completion queries — the compact
+            # path only rebuilds announcement snippets and drops `Data:` JSON (coursework + submissions),
+            # which makes the model falsely say "data is missing."
+            if estimated_tokens > 6000 and is_announcement_query:
+                print("[Chatbot] Token count too high, using compact format (announcements only)...")
                 # Create a more compact version
                 compact_content = f"Question: {user_query}\n\n"
                 if admin_data.get('classroom_data'):
@@ -4136,6 +4434,12 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 compact_content += "\nUse the data above to answer the question."
                 messages.append({"role": "user", "content": compact_content})
             else:
+                if estimated_tokens > 6000 and not is_announcement_query:
+                    print(
+                        "[Chatbot] Token count high (~"
+                        f"{estimated_tokens}) — keeping full prompt (coursework/submissions; "
+                        "compact format would strip them)."
+                    )
                 messages.append({"role": "user", "content": user_content})
             
             # MODEL SELECTION: Always use GPT-3.5-turbo for all queries to reduce costs
@@ -4244,7 +4548,13 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 print(f"[Chatbot] Complete response received on attempt {attempt + 1}")
                 
                 # VALIDATION: For coursework queries, check if response contains actual assignment titles
-                if is_coursework_query and admin_data.get('classroom_data'):
+                # Use the same filtered list sent in the prompt (grade filters may drop all courses).
+                _courses_for_title_validation = (
+                    llm_prompt_classroom_data
+                    if llm_prompt_classroom_data is not None
+                    else admin_data.get('classroom_data', [])
+                )
+                if is_coursework_query and _courses_for_title_validation:
                     print(f"[Chatbot] 🔍 VALIDATION: Checking response for actual assignment titles...")
                     
                     # Re-apply subject filtering to match what was sent to LLM
@@ -4282,7 +4592,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                         if latest_match:
                             latest_count = int(latest_match.group(1) or latest_match.group(2) or latest_match.group(3) or latest_match.group(4) or 1)
                     
-                    for course in admin_data.get('classroom_data', []):
+                    for course in _courses_for_title_validation:
                         coursework_list = course.get('coursework', [])
                         temp_filtered = []
                         
@@ -4379,7 +4689,8 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                         print(f"[Chatbot] 🔍 VALIDATION: Found forbidden patterns: {found_patterns}")
                     
                     # If response has forbidden patterns or doesn't contain actual titles, format it ourselves
-                    if has_forbidden or (actual_titles and not has_actual_title):
+                    # BUT skip this if it's an assignment status query, as we want the complex graduation/completions report
+                    if (has_forbidden or (actual_titles and not has_actual_title)) and not is_assignment_status_query:
                         print(f"[Chatbot] ⚠️ Response contains generic assignments - formatting with actual data")
                         print(f"[Chatbot] ⚠️ Reason: has_forbidden={has_forbidden}, has_actual_title={has_actual_title}, actual_titles_count={len(actual_titles)}")
                         

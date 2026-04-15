@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from 'react';
+import Image from 'next/image';
 import { useAuth } from '@/providers/AuthProvider';
 import { useChatHistory } from '@/providers/ChatHistoryProvider';
 import { generateChatName } from '@/utils/chatNameGenerator';
@@ -193,11 +194,15 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
         {/* Close button for mobile - Replace with refresh for guest users */}
         {onClose && (
           <div className="lg:hidden flex justify-between items-center p-4 border-b border-gray-200">
-            <div className="flex items-center gap-3 flex-1">
-              {/* Brand Name */}
-              <div className="flex-1">
-                <div className="font-semibold text-gray-900 text-base">Prakriti AI Assistant</div>
-              </div>
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <Image
+                src="/prakriti_logo.webp"
+                alt="Prakriti"
+                width={44}
+                height={44}
+                className="h-11 w-11 flex-shrink-0 object-contain"
+              />
+              <div className="font-semibold text-gray-900 text-base truncate">Prakriti AI Assistant</div>
             </div>
             {/* Show refresh button for guest users, close button for logged-in users */}
             {!user ? (

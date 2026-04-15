@@ -503,27 +503,38 @@ const AppContent: React.FC<{
 
     return (
       <div className={`min-h-screen h-screen ${isDesktop ? 'flex' : 'block'} ${isDesktop ? 'bg-white' : 'chat-grid-bg'} overflow-hidden relative`}>
-        {/* Hamburger Menu Button - Only visible on mobile/tablet when sidebar is closed */}
+        {/* Mobile: logo left, hamburger right — only when sidebar is closed */}
         {!isSidebarOpen && (
-          <button
-            onClick={() => setIsSidebarOpen(true)}
-            className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-lg hover:bg-gray-100 transition-colors duration-200 bg-white shadow-md border border-gray-300"
-            aria-label="Open sidebar"
-          >
-            <svg
-              className="w-6 h-6 text-gray-600"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+          <div className="lg:hidden fixed top-4 left-0 right-0 z-50 flex items-center justify-between px-4 pointer-events-none">
+            <Image
+              src="/prakriti_logo.webp"
+              alt="Prakriti"
+              width={52}
+              height={52}
+              className="h-12 w-auto max-w-[150px] object-contain object-left drop-shadow-sm pointer-events-auto"
+              priority
+            />
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen(true)}
+              className="pointer-events-auto p-2 rounded-lg hover:bg-gray-100 transition-colors duration-200 bg-white shadow-md border border-gray-300"
+              aria-label="Open sidebar"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 6h16M4 12h16M4 18h16"
-              />
-            </svg>
-          </button>
+              <svg
+                className="w-6 h-6 text-gray-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 6h16M4 12h16M4 18h16"
+                />
+              </svg>
+            </button>
+          </div>
         )}
 
         {/* Profile Dropdown - Positioned relative to settings button */}

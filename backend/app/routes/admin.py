@@ -15,6 +15,10 @@ from ..services.supabase_admin import SupabaseAdminService
 from ..services.google_dwd_service import get_dwd_service
 from ..services.embedding_generator import get_embedding_generator
 from ..services.auto_sync_scheduler import get_auto_sync_scheduler
+from ..utils.google_calendar_sync_config import (
+    GOOGLE_CALENDAR_SYNC_DISABLED_MESSAGE,
+    is_google_calendar_sync_disabled,
+)
 # Ensure backend root is in sys.path
 import sys
 import os
@@ -455,8 +459,14 @@ async def get_website_page_data(url: Optional[str] = None):
 
 @router.get("/data/calendar")
 async def get_calendar_data(email: Optional[str] = None):
-    """Get synced calendar data for chatbot"""
+    """Get synced Google Calendar rows (not Year Flow — see /data/school-year-calendar)."""
     try:
+        if is_google_calendar_sync_disabled():
+            return {
+                "events": [],
+                "google_calendar_sync_disabled": True,
+                "message": GOOGLE_CALENDAR_SYNC_DISABLED_MESSAGE,
+            }
         admin_service = SupabaseAdminService()
         admin = None
         if email:
@@ -1177,6 +1187,18 @@ async def sync_dwd(service: str, request: DWDSyncRequest):
             }
         
         elif service == "calendar":
+            if is_google_calendar_sync_disabled():
+                print(
+                    "🔍 DWD: Google Calendar sync skipped — DISABLE_GOOGLE_CALENDAR_SYNC is set "
+                    "(school dates: calendar_event_data / Year Flow)."
+                )
+                return {
+                    "success": True,
+                    "skipped": True,
+                    "message": GOOGLE_CALENDAR_SYNC_DISABLED_MESSAGE,
+                    "stats": sync_stats,
+                    "summary": {"calendars": 0, "events": 0},
+                }
             print(f"🔍 DWD: Fetching Calendar data for {user_email}...")
             
             # Fetch calendars
@@ -1645,6 +1667,12 @@ async def sync_individual_course(course_id: str, email: Optional[str] = None):
 async def sync_individual_calendar(calendar_id: str, email: Optional[str] = None):
     """Sync a specific Google Calendar using DWD"""
     try:
+        if is_google_calendar_sync_disabled():
+            return {
+                "success": False,
+                "skipped": True,
+                "message": GOOGLE_CALENDAR_SYNC_DISABLED_MESSAGE,
+            }
         admin_service = SupabaseAdminService()
         admin = None
         if email:
@@ -1780,6 +1808,12 @@ async def sync_individual_calendar(calendar_id: str, email: Optional[str] = None
 async def sync_individual_event(event_id: str, email: Optional[str] = None, calendar_id: Optional[str] = None):
     """Sync a specific Google Calendar event using DWD"""
     try:
+        if is_google_calendar_sync_disabled():
+            return {
+                "success": False,
+                "skipped": True,
+                "message": GOOGLE_CALENDAR_SYNC_DISABLED_MESSAGE,
+            }
         admin_service = SupabaseAdminService()
         admin = None
         if email:
