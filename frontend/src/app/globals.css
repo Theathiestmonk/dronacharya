@@ -79,27 +79,41 @@ body {
   font-family: Helvetica, Arial, sans-serif, 'Noto Sans Devanagari', 'Noto Sans Gujarati';
 }
 
-/* Embedded in school site iframe: fill iframe height (parent must set iframe height, e.g. 100dvh) */
-html.is-embedded,
+/* Embedded: fill iframe; do not set overflow:hidden on html (WebKit iframe touch scroll bug on nested overflow-y-auto) */
+html.is-embedded {
+  height: 100%;
+  margin: 0;
+  overflow-x: hidden;
+  overflow-y: visible;
+  -webkit-text-size-adjust: 100%;
+}
+
 html.is-embedded body {
   height: 100%;
+  min-height: 100% !important;
   margin: 0;
   overflow: hidden;
 }
 
-html.is-embedded body {
-  min-height: 100% !important;
-}
-
 html.is-embedded #chat-app-root {
   height: 100% !important;
-  min-height: 100% !important;
+  min-height: 0 !important;
   max-height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
-html.is-embedded {
-  overflow-x: hidden;
-  -webkit-text-size-adjust: 100%;
+@media (min-width: 1024px) {
+  html.is-embedded #chat-app-root {
+    flex-direction: row;
+  }
+}
+
+/* Message list scroll inside iframe (iOS / Chrome) */
+html.is-embedded [data-chat-scroll-region] {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
 }
 
 /* Grid background pattern for chat area - light gray grid on white */

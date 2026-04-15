@@ -507,7 +507,7 @@ const AppContent: React.FC<{
     return (
       <div
         id="chat-app-root"
-        className={`min-h-screen h-screen ${isDesktop ? 'flex' : 'block'} ${isDesktop ? 'bg-white' : 'chat-grid-bg'} overflow-hidden relative`}
+        className={`h-screen min-h-0 flex flex-col overflow-hidden lg:flex-row ${isDesktop ? 'bg-white' : 'chat-grid-bg'} relative`}
       >
         {/* Mobile: logo left, hamburger right — only when sidebar is closed */}
         {!isSidebarOpen && (
@@ -674,7 +674,7 @@ const AppContent: React.FC<{
         />
 
         {/* Main Content Area with Grid Background */}
-        <main className={`flex-1 flex overflow-hidden ${isDesktop ? 'chat-grid-bg' : ''} relative w-full h-full`}>
+        <main className={`flex min-h-0 min-w-0 flex-1 overflow-hidden ${isDesktop ? 'chat-grid-bg' : ''} relative h-full w-full`}>
           <div className={`w-full h-full flex flex-col ${isDesktop ? 'relative' : 'mx-auto px-3 sm:px-4'}`}>
             {isDesktop ? (
               <div className="w-full h-full flex justify-center">

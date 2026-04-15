@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Prakriti AI — WordPress embed (copy from this file)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 56rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; color: #111; }
+    h1 { font-size: 1.25rem; }
+    pre, code { background: #f4f4f5; border-radius: 8px; }
+    pre { padding: 1rem; overflow: auto; font-size: 0.8rem; }
+    .note { color: #52525b; font-size: 0.9rem; margin-top: 2rem; }
+  </style>
+</head>
+<body>
+  <h1>Prakriti AI — WordPress embed (one place for HTML + CSS)</h1>
+  <p>Do <strong>not</strong> upload this file to WordPress. Copy the two sections below into the right places.</p>
+
+  <h2>1) Custom HTML block (or Divi Code module) on your embed page</h2>
+  <pre><code>&lt;div class="prakriti-chat-embed"&gt;
+  &lt;iframe
+    src="https://www.prakritischool.ai/?embed=1"
+    title="Prakriti AI Assistant"
+    loading="lazy"
+    allow="clipboard-write; microphone"
+  &gt;&lt;/iframe&gt;
+&lt;/div&gt;</code></pre>
+
+  <h2>2) Where to paste CSS (important)</h2>
+  <p><strong>Best:</strong> <strong>Appearance → Customize → Additional CSS</strong> (or <strong>Divi → Theme Options → Custom CSS</strong>). The site loads real CSS and there is no broken validator.</p>
+  <p><strong>Avoid:</strong> Divi <strong>Code module → Advanced → Custom CSS</strong> — its editor often shows false errors like “Expected RBRACE” for <code>calc()</code>, <code>env()</code>, and CSS variables. If the site looks fine, you can ignore the red warnings; if it refuses to save, use Additional CSS instead.</p>
+
+  <h2>3) Paste this entire block (replace 248253 if needed)</h2>
+  <p>No CSS variables; one line per <code>calc()</code> — works better with strict parsers.</p>
+  <pre><code id="css-block">body.page-id-248253 { overflow-x: hidden; }
+
+body.page-id-248253 #main-content,
+body.page-id-248253 .et_main_content,
+body.page-id-248253 article.type-page,
+body.page-id-248253 .entry-content {
+  max-width: 100% !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+body.page-id-248253 .et_pb_section,
+body.page-id-248253 .et_pb_row,
+body.page-id-248253 .et_pb_column {
+  padding-bottom: 0 !important;
+}
+
+body.page-id-248253 .prakriti-chat-embed {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  line-height: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  min-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+}
+
+body.page-id-248253 .et_pb_row .prakriti-chat-embed,
+body.page-id-248253 .entry-content .prakriti-chat-embed {
+  width: 100vw;
+  max-width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+  position: relative;
+}
+
+body.page-id-248253 .prakriti-chat-embed iframe {
+  display: block;
+  box-sizing: border-box;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  border: 1px solid #e5e7eb;
+  vertical-align: top;
+  height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+  min-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+}
+
+@media (max-width: 640px) {
+  body.page-id-248253 .prakriti-chat-embed iframe {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  body.page-id-248253 .prakriti-chat-embed iframe {
+    border-radius: 12px;
+  }
+}
+
+@media (min-width: 1025px) {
+  body.page-id-248253 .prakriti-chat-embed iframe {
+    border-radius: 12px;
+    max-height: 960px !important;
+    height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+    min-height: 560px !important;
+  }
+}</code></pre>
+
+  <h2>4) Hide main site header + footer on this page only (ID 248253)</h2>
+  <p>Paste into <strong>Additional CSS</strong> (same place as section 3). If something still shows, right‑click it → Inspect and add that element’s selector with <code>display: none !important;</code>.</p>
+  <pre><code>body.page-id-248253 #main-header,
+body.page-id-248253 #top-header,
+body.page-id-248253 header#main-header {
+  display: none !important;
+}
+
+body.page-id-248253 .et-l--header {
+  display: none !important;
+}
+
+body.page-id-248253 #main-footer,
+body.page-id-248253 footer#main-footer,
+body.page-id-248253 .et-l--footer,
+body.page-id-248253 #footer-bottom {
+  display: none !important;
+}
+
+body.page-id-248253.et_fixed_nav #page-container,
+body.page-id-248253 #page-container,
+body.page-id-248253 #main-content {
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+}
+
+body.page-id-248253 .et_pb_section:first-of-type {
+  padding-top: 0 !important;
+}</code></pre>
+
+  <p class="note">
+    <strong>Page ID:</strong> Replace <code>248253</code> with your embed page ID if different.
+    <strong>Header:</strong> Hide the main site header on this page, or the iframe may be taller than the visible area.
+    <strong>Horizontal scroll:</strong> Remove the <code>.et_pb_row .prakriti-chat-embed</code> block if <code>100vw</code> causes scroll.
+    <strong>Chat app:</strong> Use <code>?embed=1</code> in the iframe URL (see HTML above).
+  </p>
+</body>
+</html>

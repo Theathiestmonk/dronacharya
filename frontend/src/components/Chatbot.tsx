@@ -1885,18 +1885,23 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             {/* Spacer at top - reduced for mobile */}
             <div className="flex-shrink-0 pt-10 sm:pt-14 md:pt-20"></div>
             
-            {/* Centered Content: Welcome message - Scrollable if needed */}
-            <div className="flex-1 flex flex-col items-center justify-center px-3 sm:px-4 md:px-6 min-h-0 overflow-y-auto">
-              {/* Welcome Message - Smaller on mobile */}
-              <div className="text-center px-2 sm:px-4 mb-3 sm:mb-4 md:mb-6 flex-shrink-0">
+            {/* Welcome copy — top-aligned in scroll area so input can sit at bottom (embed + mobile UX) */}
+            <div
+              className="flex-1 flex flex-col items-center justify-start px-3 sm:px-4 md:px-6 min-h-0 overflow-y-auto"
+              data-chat-scroll-region
+            >
+              <div className="text-center px-2 sm:px-4 pt-2 pb-4 sm:pb-6 flex-shrink-0 w-full max-w-3xl">
                 <h2 className="text-lg sm:text-xl md:text-2xl lg:text-3xl xl:text-4xl font-normal leading-tight text-gray-600">
                   {welcomeMessage ? renderWelcomeMessage(welcomeMessage) : "Loading..."}
                 </h2>
               </div>
             </div>
-            
-            {/* Input Area - Always visible at bottom with safe area for mobile navigation */}
-            <div className="flex-shrink-0 w-full mx-auto px-3 sm:px-4 md:px-6 pb-20 sm:pb-4 md:pb-6 pt-2 sm:pt-3 bg-transparent" style={{ paddingBottom: 'max(5rem, calc(1rem + env(safe-area-inset-bottom, 0px)))' }}>
+
+            {/* Input docked to bottom; only safe-area padding below field (no huge empty band) */}
+            <div
+              className="flex-shrink-0 w-full mx-auto px-3 sm:px-4 md:px-6 pt-2 sm:pt-3 bg-transparent"
+              style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}
+            >
               <div className="relative w-full">
                 <div className="relative">
                   <textarea
@@ -1981,7 +1986,8 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             </div>
           )}
           <div 
-            ref={messagesContainerRef} 
+            ref={messagesContainerRef}
+            data-chat-scroll-region
             className={`flex-1 overflow-y-auto overflow-x-hidden pt-4 sm:pt-6 mb-3 sm:mb-4 space-y-2 pl-1 sm:pl-2 md:pl-4 pr-4 lg:pr-6 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 relative ${isDesktop ? 'scrollbar-hide-desktop' : ''}`}
             style={{ 
               minHeight: 0,
@@ -2194,7 +2200,10 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="relative w-full max-w-full mt-auto px-2 sm:px-4 pb-20 sm:pb-4 md:pb-6 mx-auto" style={{ paddingBottom: 'max(5rem, calc(1rem + env(safe-area-inset-bottom, 0px)))' }}>
+          <div
+            className="relative w-full max-w-full mt-auto px-2 sm:px-4 mx-auto"
+            style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}
+          >
             <div className="relative">
               <textarea
                 ref={inputRef}
