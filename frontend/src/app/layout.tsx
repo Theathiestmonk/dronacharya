@@ -1,6 +1,7 @@
 import './globals.css';
 import Script from 'next/script';
 
+import { EmbedFrameMode } from '../components/EmbedFrameMode';
 import { SupabaseProvider } from '../providers/SupabaseProvider';
 import { AuthProvider } from '../providers/AuthProvider';
 import type { Metadata } from 'next';
@@ -37,6 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Script src="https://accounts.google.com/gsi/client" strategy="beforeInteractive" />
       </head>
       <body className="min-h-screen" suppressHydrationWarning>
+        <EmbedFrameMode />
         <SupabaseProvider>
           <AuthProvider>
             <div className={`${geistSans.variable} ${geistMono.variable} antialiased`}>

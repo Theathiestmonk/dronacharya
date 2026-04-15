@@ -79,6 +79,24 @@ body {
   font-family: Helvetica, Arial, sans-serif, 'Noto Sans Devanagari', 'Noto Sans Gujarati';
 }
 
+/* Embedded in school site iframe: fill iframe height (parent must set iframe height, e.g. 100dvh) */
+html.is-embedded,
+html.is-embedded body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+html.is-embedded body {
+  min-height: 100% !important;
+}
+
+html.is-embedded #chat-app-root {
+  height: 100% !important;
+  min-height: 100% !important;
+  max-height: 100%;
+}
+
 /* Grid background pattern for chat area - light gray grid on white */
 .chat-grid-bg {
   background-color: #ffffff;
