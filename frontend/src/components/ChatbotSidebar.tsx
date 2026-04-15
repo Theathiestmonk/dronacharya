@@ -188,7 +188,7 @@ const ChatbotSidebar: React.FC<ChatbotSidebarProps> = ({ onQueryClick, onLoginRe
         />
       ) : null}
       <div
-        className={`fixed lg:static top-0 left-0 w-64 h-screen bg-white border-r border-gray-200 flex flex-col sidebar-grid-bg z-50 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        className={`fixed lg:static top-0 left-0 z-50 flex w-64 min-h-0 flex-col border-r border-gray-200 bg-white sidebar-grid-bg transform transition-transform duration-300 ease-in-out h-screen lg:h-full lg:max-h-full lg:shrink-0 ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           }`}
       >
         {/* Close button for mobile - Replace with refresh for guest users */}
