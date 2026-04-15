@@ -119,6 +119,11 @@ html.is-embedded #chat-app-root {
   }
 }
 
+/* Chat-only route: single column (no sidebar row layout) inside embed shell */
+html.is-embedded.is-chat-only #chat-app-root {
+  flex-direction: column !important;
+}
+
 html.is-embedded main,
 html.is-embedded main > div {
   min-height: 0 !important;
