@@ -4,7 +4,7 @@ import Script from 'next/script';
 import { EmbedFrameMode } from '../components/EmbedFrameMode';
 import { SupabaseProvider } from '../providers/SupabaseProvider';
 import { AuthProvider } from '../providers/AuthProvider';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from "next/font/google";
 
 const geistSans = Geist({
@@ -27,6 +27,13 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#23479f',
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
@@ -34,7 +41,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="icon" href="/prakriti_logo.webp" type="image/webp" />
         <link rel="shortcut icon" href="/prakriti_logo.webp" type="image/webp" />
         <link rel="apple-touch-icon" href="/prakriti_logo.webp" />
-        <meta name="theme-color" content="#23479f" />
         <Script src="https://accounts.google.com/gsi/client" strategy="beforeInteractive" />
       </head>
       <body className="min-h-screen" suppressHydrationWarning>

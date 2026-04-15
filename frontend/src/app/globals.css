@@ -97,6 +97,11 @@ html.is-embedded #chat-app-root {
   max-height: 100%;
 }
 
+html.is-embedded {
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
 /* Grid background pattern for chat area - light gray grid on white */
 .chat-grid-bg {
   background-color: #ffffff;
