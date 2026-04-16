@@ -230,6 +230,43 @@ body.page-id-248410 .prakriti-embed-site-footer__nav a {
   <p><strong>Page only (recommended if you do not want this CSS on other pages):</strong> open the page in the backend → <strong>Divi Page Settings</strong> (purple icon in the toolbar, or “Edit Page” in WP admin) → <strong>Advanced</strong> tab → <strong>Custom CSS</strong>. Paste the same rules there. Keep every selector as <code>body.page-id-248410 …</code> (or your real page ID) so this page is the only one targeted; the rules still control the <strong>theme</strong> footer and <code>#page-container</code> on the front end even though the global footer is not built as a visible “section” inside this page’s editor.</p>
   <p><strong>Why the footer does not appear in the Builder:</strong> the dark site footer usually comes from <strong>Theme Builder</strong> (global footer template) or the theme — it is not a row on the page. It will still show on the live site; page-level CSS applies there the same way.</p>
 
+  <h2>2b) Mobile keyboard — input hidden behind keyboard in the iframe (embed only)</h2>
+  <p>On the <strong>standalone</strong> chat site (<code>/chat</code>), the input moves up with the keyboard. Inside a <strong>fixed-height iframe</strong> on WordPress, the parent page often does not shrink, so the iframe cannot detect the keyboard the same way. The chat app now <strong>postMessages</strong> the keyboard overlap to the parent. Add this script on the <strong>same page</strong> as the embed (e.g. <strong>Divi → Theme Options → Integration → Body</strong>, or a Code module at the bottom, or a small plugin). It lifts <code>.prakriti-chat-embed</code> using both the parent window’s Visual Viewport and the iframe’s message.</p>
+  <pre><code>&lt;script&gt;
+(function () {
+  var sel = '.prakriti-chat-embed';
+  function parentOverlap() {
+    if (!window.visualViewport) return 0;
+    var vv = window.visualViewport;
+    return Math.max(0, window.innerHeight - vv.offsetTop - vv.height);
+  }
+  function apply(px) {
+    document.querySelectorAll(sel).forEach(function (wrap) {
+      wrap.style.transform = px &gt; 0 ? 'translateY(-' + px + 'px)' : '';
+      wrap.style.transition = 'transform 0.15s ease-out';
+      wrap.style.willChange = px &gt; 0 ? 'transform' : 'auto';
+    });
+  }
+  function lift() {
+    var p = parentOverlap();
+    var c = window.__prakritiChatInsetFromIframe || 0;
+    apply(Math.max(p, c));
+  }
+  window.addEventListener('message', function (e) {
+    var d = e.data;
+    if (!d || d.source !== 'prakriti-chat' || d.type !== 'keyboard-inset') return;
+    window.__prakritiChatInsetFromIframe = d.insetBottom | 0;
+    lift();
+  });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', lift);
+    window.visualViewport.addEventListener('scroll', lift);
+  }
+  window.addEventListener('resize', lift);
+})();
+&lt;/script&gt;</code></pre>
+  <p class="note">After deploy, hard-refresh the page. If the block moves too far, reduce height on <code>.prakriti-chat-embed</code> slightly on mobile so the iframe is not full-viewport-tall. If you use a different wrapper class than <code>prakriti-chat-embed</code>, change <code>sel</code> in the script.</p>
+
   <h2>3) Full CSS (page ID 248410)</h2>
   <p><strong>Desktop:</strong> Centered card. <strong>Theme footer flush to the bottom of the window:</strong> this block does <strong>not</strong> add bottom padding on <code>#page-container</code> (that padding was the usual cause of a blue strip <em>below</em> the dark theme footer). Use spacing above the footer via the Section/Code module in the Builder if you need air between the white card and the footer.</p>
   <p><strong>Mobile — full width &amp; height:</strong> Divi rows are often ~80–90% width; the mobile block uses <code>100vw</code> + <code>margin-left: calc(50% - 50vw)</code> on <code>.prakriti-embed-stack</code> so the chat goes edge-to-edge. <strong>Spacing from the school header:</strong> use <code>padding-top</code> on <code>#main-content</code> / <code>#et-main-area</code> (not <code>margin-top</code> on the embed card) — margin on the card can <strong>collapse</strong> with Divi wrappers and look like zero gap. The iframe uses <code>calc(100dvh − …)</code> for height. If horizontal scroll appears, remove only the <code>100vw</code> breakout block and rely on <code>width: 100%</code> rules.</p>
