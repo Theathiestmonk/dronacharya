@@ -140,21 +140,21 @@ html.is-embedded [data-chat-scroll-region] {
   transform: translateZ(0);
 }
 
-/* Grid background pattern for chat area - light gray grid on white */
+/* Grid background pattern for chat area — slightly stronger lines (0.11) for readability/appeal */
 .chat-grid-bg {
   background-color: #ffffff;
   background-image:
-    linear-gradient(to right, rgba(156, 163, 175, 0.08) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(156, 163, 175, 0.08) 1px, transparent 1px);
+    linear-gradient(to right, rgba(156, 163, 175, 0.11) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(156, 163, 175, 0.11) 1px, transparent 1px);
   background-size: 16px 16px;
 }
 
-/* Grid background pattern for sidebar - lighter opacity grid on white */
+/* Grid background pattern for sidebar — keep marginally softer than main chat */
 .sidebar-grid-bg {
   background-color: #ffffff;
   background-image:
-    linear-gradient(to right, rgba(156, 163, 175, 0.09) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(156, 163, 175, 0.09) 1px, transparent 1px);
+    linear-gradient(to right, rgba(156, 163, 175, 0.10) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(156, 163, 175, 0.10) 1px, transparent 1px);
   background-size: 16px 16px;
 }
 
