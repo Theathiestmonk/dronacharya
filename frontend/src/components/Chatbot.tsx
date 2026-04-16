@@ -160,8 +160,14 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   const [showTypingAnimation, setShowTypingAnimation] = useState(false); // Control typing animation visibility
   const responseStartedTypingRef = useRef<boolean>(false); // Track if response has started typing to prevent animation from showing again
   const [isDesktop, setIsDesktop] = useState(false); // Track desktop for scrollbar hiding
-  /* Keep dock above soft keyboard on all breakpoints (inset is 0 without keyboard) */
+  const [runsInIframe, setRunsInIframe] = useState(false);
+  /* Keep dock above soft keyboard on standalone /chat (inset is 0 without keyboard) */
   const keyboardInset = useVisualViewportKeyboardInset(true);
+  /**
+   * In WordPress embed, parent script lifts `.prakriti-chat-embed` with translateY.
+   * Using marginBottom here too doubled the lift → huge gap above the keyboard.
+   */
+  const inputDockKeyboardMargin = runsInIframe ? 0 : keyboardInset;
 
   /** Mobile has no Enter key; stop is the icon button next to send */
   const generatingInputPlaceholder = isDesktop
@@ -602,6 +608,10 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
     checkDesktop();
     window.addEventListener('resize', checkDesktop);
     return () => window.removeEventListener('resize', checkDesktop);
+  }, []);
+
+  useEffect(() => {
+    setRunsInIframe(typeof window !== 'undefined' && window.self !== window.top);
   }, []);
 
   // Apply webkit scrollbar hiding styles directly to the element
@@ -1941,7 +1951,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
             <div
               className="relative z-20 flex-shrink-0 w-full mx-auto px-3 sm:px-4 md:px-6 pt-2 sm:pt-3 bg-transparent"
               style={{
-                marginBottom: keyboardInset,
+                marginBottom: inputDockKeyboardMargin,
                 paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))',
               }}
             >
@@ -2249,7 +2259,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           <div
             className="relative z-20 w-full max-w-full mt-auto px-2 sm:px-4 mx-auto"
             style={{
-              marginBottom: keyboardInset,
+              marginBottom: inputDockKeyboardMargin,
               paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))',
             }}
           >
