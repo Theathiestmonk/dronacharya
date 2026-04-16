@@ -160,7 +160,8 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   const [showTypingAnimation, setShowTypingAnimation] = useState(false); // Control typing animation visibility
   const responseStartedTypingRef = useRef<boolean>(false); // Track if response has started typing to prevent animation from showing again
   const [isDesktop, setIsDesktop] = useState(false); // Track desktop for scrollbar hiding
-  const keyboardInset = useVisualViewportKeyboardInset(!isDesktop);
+  /* Keep dock above soft keyboard on all breakpoints (inset is 0 without keyboard) */
+  const keyboardInset = useVisualViewportKeyboardInset(true);
 
   /** Mobile has no Enter key; stop is the icon button next to send */
   const generatingInputPlaceholder = isDesktop
@@ -1917,43 +1918,28 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               data-chat-scroll-region
             >
               <div className="relative flex w-full max-w-2xl flex-col items-center text-center">
-                {isChatOnlyRoute && (
-                  <>
-                    <div className="relative mb-5 inline-flex items-center gap-2 rounded-full border border-[#23479f]/15 bg-white/90 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#23479f] shadow-sm backdrop-blur-sm">
-                      <svg className="h-3.5 w-3.5 shrink-0 text-[#23479f]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
-                      </svg>
-                      Prakriti AI
-                    </div>
-                    <div className="relative mb-6 h-px w-16 bg-gradient-to-r from-transparent via-[#23479f]/35 to-transparent" aria-hidden />
-                  </>
+                {!isChatOnlyRoute && (
+                  <Image
+                    src="/prakriti_logo.webp"
+                    alt="Prakriti School"
+                    width={180}
+                    height={180}
+                    className="mb-[clamp(1rem,4vmin,1.75rem)] h-[clamp(3rem,12vmin,5rem)] w-auto object-contain drop-shadow-sm"
+                    priority
+                  />
                 )}
-                <h2 className="relative text-xl sm:text-2xl md:text-3xl lg:text-[2rem] font-medium leading-snug tracking-tight text-gray-700">
+                <h2 className="relative max-w-[min(36rem,100%)] font-medium leading-[1.25] tracking-tight text-gray-700 text-[clamp(1.35rem,min(5.5vw,5.5dvh),2.35rem)] sm:text-[clamp(1.5rem,4.2vw,2.5rem)] md:leading-[1.2]">
                   {welcomeMessage ? renderWelcomeMessage(welcomeMessage) : 'Loading...'}
                 </h2>
-                <p className="relative mt-4 max-w-md text-sm sm:text-base leading-relaxed text-gray-500">
-                  {isChatOnlyRoute
-                    ? 'Get answers about programmes, admissions, calendars, and campus life—instantly.'
-                    : 'Ask about learning, programmes, admissions, and school life—right here.'}
+                <p className="relative mt-[clamp(0.75rem,3vmin,1.5rem)] max-w-[min(28rem,100%)] leading-relaxed text-gray-500 text-[clamp(0.9375rem,2.8vw+0.2rem,1.1875rem)] sm:text-[clamp(1rem,1.9vw,1.25rem)] px-1">
+                  Ask about learning, programmes, admissions, and school life—right here.
                 </p>
-                {isChatOnlyRoute && (
-                  <div className="relative mt-7 flex flex-wrap justify-center gap-2 sm:gap-2.5">
-                    {['Learning support', 'Programmes', 'Admissions'].map((label) => (
-                      <span
-                        key={label}
-                        className="rounded-full border border-gray-200/90 bg-white/80 px-3.5 py-1.5 text-xs font-medium text-gray-600 shadow-sm backdrop-blur-[2px]"
-                      >
-                        {label}
-                      </span>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
 
-            {/* Input docked to bottom; marginBottom lifts dock above virtual keyboard on mobile */}
+            {/* Input docked to bottom; marginBottom = visual viewport keyboard overlap (see useVisualViewportKeyboardInset) */}
             <div
-              className="flex-shrink-0 w-full mx-auto px-3 sm:px-4 md:px-6 pt-2 sm:pt-3 bg-transparent"
+              className="relative z-20 flex-shrink-0 w-full mx-auto px-3 sm:px-4 md:px-6 pt-2 sm:pt-3 bg-transparent"
               style={{
                 marginBottom: keyboardInset,
                 paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))',
@@ -2261,7 +2247,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           </div>
 
           <div
-            className="relative w-full max-w-full mt-auto px-2 sm:px-4 mx-auto"
+            className="relative z-20 w-full max-w-full mt-auto px-2 sm:px-4 mx-auto"
             style={{
               marginBottom: keyboardInset,
               paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))',

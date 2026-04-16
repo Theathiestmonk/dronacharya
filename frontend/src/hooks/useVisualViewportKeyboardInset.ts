@@ -6,6 +6,9 @@ import { useEffect, useState } from 'react';
  * Height (px) of the screen region covered by the virtual keyboard / browser chrome,
  * derived from the Visual Viewport API. Use margin-bottom on the chat input dock so
  * the field stays above the keyboard (including inside cross-origin iframes).
+ *
+ * Always-on: overlap is 0 when no keyboard; avoids classifying large phones / tablet
+ * landscape as “desktop” and skipping the inset.
  */
 export function useVisualViewportKeyboardInset(enabled: boolean): number {
   const [inset, setInset] = useState(0);
@@ -29,15 +32,27 @@ export function useVisualViewportKeyboardInset(enabled: boolean): number {
       setInset(overlap);
     };
 
+    /** Focus/blur on inputs: mobile Safari sometimes lags viewport events until next frame */
+    const onFocusFlow = () => {
+      requestAnimationFrame(() => {
+        update();
+        requestAnimationFrame(update);
+      });
+    };
+
     update();
     vv.addEventListener('resize', update);
     vv.addEventListener('scroll', update);
     window.addEventListener('resize', update);
+    document.addEventListener('focusin', onFocusFlow);
+    document.addEventListener('focusout', onFocusFlow);
 
     return () => {
       vv.removeEventListener('resize', update);
       vv.removeEventListener('scroll', update);
       window.removeEventListener('resize', update);
+      document.removeEventListener('focusin', onFocusFlow);
+      document.removeEventListener('focusout', onFocusFlow);
     };
   }, [enabled]);
 
