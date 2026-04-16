@@ -432,7 +432,7 @@ const ChatAppShellInner: React.FC<{
   }
 
   const rootClass = chatOnly
-    ? `h-screen min-h-0 flex flex-col overflow-hidden ${isDesktop ? "bg-white" : "chat-grid-bg"} relative`
+    ? "h-screen min-h-0 flex flex-col overflow-hidden chat-grid-bg relative"
     : `h-screen min-h-0 flex flex-col overflow-hidden lg:flex-row ${isDesktop ? "bg-white" : "chat-grid-bg"} relative`;
 
   const externalQuery = chatOnly ? "" : sidebarQuery;

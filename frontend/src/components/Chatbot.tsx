@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/providers/AuthProvider';
 import { useChatHistory } from '@/providers/ChatHistoryProvider';
+import { useVisualViewportKeyboardInset } from '@/hooks/useVisualViewportKeyboardInset';
 
 type Message =
   | { sender: 'user' | 'bot'; text: string }
@@ -159,6 +160,18 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
   const [showTypingAnimation, setShowTypingAnimation] = useState(false); // Control typing animation visibility
   const responseStartedTypingRef = useRef<boolean>(false); // Track if response has started typing to prevent animation from showing again
   const [isDesktop, setIsDesktop] = useState(false); // Track desktop for scrollbar hiding
+  const keyboardInset = useVisualViewportKeyboardInset(!isDesktop);
+
+  /** Mobile has no Enter key; stop is the icon button next to send */
+  const generatingInputPlaceholder = isDesktop
+    ? 'Generating response… Press Enter to stop'
+    : 'Generating response… Tap stop to cancel';
+
+  const handleInputFocus = useCallback((e: React.FocusEvent<HTMLTextAreaElement>) => {
+    requestAnimationFrame(() => {
+      e.target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+  }, []);
   // For copy feedback per message
   const [copiedIdx, setCopiedIdx] = useCopyState<number | null>(null);
   const [showClearedMessage, setShowClearedMessage] = useState(false);
@@ -230,7 +243,9 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       return (
         <>
           {beforeFocus}
-          <span className="font-bold" style={{ color: '#23479f' }}>{message.focusWord}</span>
+          <span className="font-bold" style={{ color: '#23479f' }}>
+            {message.focusWord}
+          </span>
           {afterFocus}
         </>
       );
@@ -1892,9 +1907,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
           {/* Welcome screen: centered copy; /chat gets extra top padding for fixed Sign in + softer background */}
           <div
             className={`flex-1 flex flex-col h-full min-h-0 overflow-hidden ${
-              isChatOnlyRoute
-                ? 'bg-gradient-to-b from-[#eef2ff] via-white to-[#f4f7fb]'
-                : ''
+              isChatOnlyRoute ? 'bg-transparent' : ''
             }`}
           >
             <div
@@ -1906,14 +1919,6 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               <div className="relative flex w-full max-w-2xl flex-col items-center text-center">
                 {isChatOnlyRoute && (
                   <>
-                    <div
-                      className="pointer-events-none absolute -inset-x-12 -top-6 bottom-0 overflow-hidden opacity-[0.55]"
-                      aria-hidden
-                    >
-                      <div className="absolute -right-4 top-0 h-36 w-36 rounded-full bg-[#23479f]/25 blur-3xl" />
-                      <div className="absolute -left-6 top-1/3 h-28 w-28 rounded-full bg-violet-400/20 blur-2xl" />
-                      <div className="absolute bottom-8 left-1/3 h-20 w-20 rounded-full bg-sky-300/25 blur-2xl" />
-                    </div>
                     <div className="relative mb-5 inline-flex items-center gap-2 rounded-full border border-[#23479f]/15 bg-white/90 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#23479f] shadow-sm backdrop-blur-sm">
                       <svg className="h-3.5 w-3.5 shrink-0 text-[#23479f]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
@@ -1946,10 +1951,13 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               </div>
             </div>
 
-            {/* Input docked to bottom; only safe-area padding below field (no huge empty band) */}
+            {/* Input docked to bottom; marginBottom lifts dock above virtual keyboard on mobile */}
             <div
               className="flex-shrink-0 w-full mx-auto px-3 sm:px-4 md:px-6 pt-2 sm:pt-3 bg-transparent"
-              style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}
+              style={{
+                marginBottom: keyboardInset,
+                paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))',
+              }}
             >
               <div className="relative w-full">
                 <div className="relative">
@@ -1962,10 +1970,13 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                       setInput(e.target.value);
                       setTimeout(() => adjustTextareaHeight(), 0);
                     }}
+                    onFocus={handleInputFocus}
                     onKeyDown={handleKeyDown}
-                    placeholder={(isGenerating || isTyping) ? "Generating response... Press Enter to stop" : micPlaceholder}
+                    placeholder={(isGenerating || isTyping) ? generatingInputPlaceholder : micPlaceholder}
                     disabled={loading}
-                    aria-label="Chat input"
+                    aria-label={
+                      isGenerating || isTyping ? generatingInputPlaceholder : 'Chat input'
+                    }
                     rows={1}
                   />
                   {/* Microphone button inside textarea */}
@@ -2026,7 +2037,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
       ) : (
         <>
           {/* Chat Screen - Normal Layout */}
-          {/* Show cleared message */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {showClearedMessage && (
             <div className="mb-4 text-center">
               <div className="inline-block bg-green-100 text-green-800 px-4 py-2 rounded-lg text-sm">
@@ -2251,7 +2262,10 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
 
           <div
             className="relative w-full max-w-full mt-auto px-2 sm:px-4 mx-auto"
-            style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}
+            style={{
+              marginBottom: keyboardInset,
+              paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))',
+            }}
           >
             <div className="relative">
               <textarea
@@ -2263,10 +2277,13 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                   setInput(e.target.value);
                   setTimeout(() => adjustTextareaHeight(), 0);
                 }}
+                onFocus={handleInputFocus}
                 onKeyDown={handleKeyDown}
-                placeholder={(isGenerating || isTyping) ? "Generating response... Press Enter to stop" : micPlaceholder}
+                placeholder={(isGenerating || isTyping) ? generatingInputPlaceholder : micPlaceholder}
                 disabled={loading}
-                aria-label="Chat input"
+                aria-label={
+                  isGenerating || isTyping ? generatingInputPlaceholder : 'Chat input'
+                }
                 rows={1}
               />
               {/* Microphone button inside textarea */}
@@ -2320,6 +2337,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
               )}
             </button>
             </div>
+          </div>
           </div>
         </>
       )}

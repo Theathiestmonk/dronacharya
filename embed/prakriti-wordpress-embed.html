@@ -70,8 +70,8 @@
   <h3>Minimal CSS (page ID 248410)</h3>
   <p>Copy this if you want a <strong>short</strong> stylesheet; then add more from section 3 only if something still looks wrong.</p>
   <pre><code>/* Prakriti embed — minimal — page 248410 */
-body.page-id-248410 #page-container {
-  padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px)) !important;
+body.page-id-248410 #page-container.et-animated-content {
+  padding-bottom: max(0px, env(safe-area-inset-bottom, 0px)) !important;
 }
 
 body.page-id-248410 .et_pb_section,
@@ -135,30 +135,64 @@ body.page-id-248410 .prakriti-embed-site-footer__nav a {
 }
 
 @media (max-width: 768px) {
+  body.page-id-248410 #page-container.et-animated-content,
   body.page-id-248410 .entry-content {
     padding-left: 0 !important;
     padding-right: 0 !important;
+    padding-top: 0 !important;
     padding-bottom: 0 !important;
+    margin-top: 0 !important;
+    max-width: none !important;
+    width: 100% !important;
+  }
+
+  /* Non-collapsing gap below theme header (margin on .prakriti-embed-stack can collapse to 0) */
+  body.page-id-248410 #main-content,
+  body.page-id-248410 #et-main-area,
+  body.page-id-248410 .et-l--body {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    padding-top: clamp(0.75rem, 5vw, 1.25rem) !important;
+    padding-bottom: 0 !important;
+    margin-top: 0 !important;
+    max-width: none !important;
+    width: 100% !important;
+  }
+
+  body.page-id-248410 .et_pb_row,
+  body.page-id-248410 .et_pb_column {
+    max-width: 100% !important;
+    padding-top: 0 !important;
   }
 
   body.page-id-248410 .prakriti-embed-stack {
-    max-width: 100% !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    margin-left: calc(50% - 50vw) !important;
+    margin-right: calc(50% - 50vw) !important;
+    margin-top: 0 !important;
     border-radius: 0;
     border-left: none;
     border-right: none;
-    margin-bottom: 0.5rem !important;
+    margin-bottom: 0 !important;
   }
 
   body.page-id-248410 .prakriti-chat-embed {
-    height: min(58dvh, 520px);
+    height: calc(100dvh - 11.5rem) !important;
+    min-height: min(52dvh, 420px);
   }
 
   body.page-id-248410 .prakriti-chat-embed iframe {
     border-radius: 0;
+    min-height: 240px !important;
   }
 
   body.page-id-248410 .prakriti-embed-site-footer {
     border-radius: 0;
+  }
+
+  body.page-id-248410 #page-container.et-animated-content {
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
   }
 }</code></pre>
 
@@ -192,11 +226,13 @@ body.page-id-248410 .prakriti-embed-site-footer__nav a {
 &lt;/div&gt;</code></pre>
 
   <h2>2) Where to paste CSS</h2>
-  <p><strong>Appearance → Customize → Additional CSS</strong> (or Divi → Theme Options → Custom CSS).</p>
+  <p><strong>Site-wide (all pages):</strong> <strong>Appearance → Customize → Additional CSS</strong> (or Divi → Theme Options → Custom CSS).</p>
+  <p><strong>Page only (recommended if you do not want this CSS on other pages):</strong> open the page in the backend → <strong>Divi Page Settings</strong> (purple icon in the toolbar, or “Edit Page” in WP admin) → <strong>Advanced</strong> tab → <strong>Custom CSS</strong>. Paste the same rules there. Keep every selector as <code>body.page-id-248410 …</code> (or your real page ID) so this page is the only one targeted; the rules still control the <strong>theme</strong> footer and <code>#page-container</code> on the front end even though the global footer is not built as a visible “section” inside this page’s editor.</p>
+  <p><strong>Why the footer does not appear in the Builder:</strong> the dark site footer usually comes from <strong>Theme Builder</strong> (global footer template) or the theme — it is not a row on the page. It will still show on the live site; page-level CSS applies there the same way.</p>
 
   <h2>3) Full CSS (page ID 248410)</h2>
-  <p><strong>Desktop:</strong> Centered card; modest bottom spacing before the theme footer.</p>
-  <p><strong>Mobile:</strong> Edge-to-edge embed, <strong>tight gap</strong> above the theme footer (earlier versions stacked too much <code>padding-bottom</code>—if the footer overlaps the blue link bar, add a little <code>padding-bottom</code> only on <code>#page-container</code> in the mobile block).</p>
+  <p><strong>Desktop:</strong> Centered card. <strong>Theme footer flush to the bottom of the window:</strong> this block does <strong>not</strong> add bottom padding on <code>#page-container</code> (that padding was the usual cause of a blue strip <em>below</em> the dark theme footer). Use spacing above the footer via the Section/Code module in the Builder if you need air between the white card and the footer.</p>
+  <p><strong>Mobile — full width &amp; height:</strong> Divi rows are often ~80–90% width; the mobile block uses <code>100vw</code> + <code>margin-left: calc(50% - 50vw)</code> on <code>.prakriti-embed-stack</code> so the chat goes edge-to-edge. <strong>Spacing from the school header:</strong> use <code>padding-top</code> on <code>#main-content</code> / <code>#et-main-area</code> (not <code>margin-top</code> on the embed card) — margin on the card can <strong>collapse</strong> with Divi wrappers and look like zero gap. The iframe uses <code>calc(100dvh − …)</code> for height. If horizontal scroll appears, remove only the <code>100vw</code> breakout block and rely on <code>width: 100%</code> rules.</p>
   <p><strong>Scroll chaining:</strong> Deploy the chat app with <code>overscroll-behavior-y: contain</code> on scroll regions (<code>globals.css</code>).</p>
   <pre><code id="css-block">/* --- Prakriti embed: card + clearance above theme footer — page 248410 --- */
 body.page-id-248410 {
@@ -205,9 +241,10 @@ body.page-id-248410 {
   -webkit-overflow-scrolling: touch;
 }
 
-/* Desktop: a little room before theme footer (mobile overrides below) */
-body.page-id-248410 #page-container {
-  padding-bottom: max(2rem, env(safe-area-inset-bottom, 0px)) !important;
+/* No padding-bottom here — it sits *below* the theme footer and shows as a gap (e.g. blue body).
+   Use .et-animated-content so this beats any old rule: padding-bottom: max(2rem, …) */
+body.page-id-248410 #page-container.et-animated-content {
+  padding-bottom: max(0px, env(safe-area-inset-bottom, 0px)) !important;
 }
 
 body.page-id-248410 #main-content,
@@ -219,7 +256,7 @@ body.page-id-248410 .entry-content {
   padding-right: clamp(0.75rem, 4vw, 1.5rem) !important;
   margin-left: auto !important;
   margin-right: auto !important;
-  padding-bottom: clamp(1.25rem, 3vh, 2.5rem) !important;
+  padding-bottom: 0 !important;
   box-sizing: border-box;
 }
 
@@ -363,52 +400,103 @@ body.page-id-248410 .prakriti-embed-site-footer__sep {
   user-select: none;
 }
 
-/* Mobile: full-width embed, shorter chat column, extra clearance for theme footer */
+/* Mobile: true full width (break out of Divi’s ~80% row) + air below header (padding — margin on card can collapse) */
 @media (max-width: 768px) {
+  body.page-id-248410 #page-container.et-animated-content {
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+  }
+
+  body.page-id-248410 #et-main-area,
+  body.page-id-248410 .et-l--body,
+  body.page-id-248410 #main-content {
+    width: 100% !important;
+    max-width: none !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    /* Tune clamp max (third value) if header + chat still look stuck together */
+    padding-top: clamp(0.75rem, 5vw, 1.25rem) !important;
+    margin-top: 0 !important;
+  }
+
   body.page-id-248410 .entry-content,
   body.page-id-248410 article.type-page {
     padding-left: 0 !important;
     padding-right: 0 !important;
+    padding-top: 0 !important;
+    margin-top: 0 !important;
   }
 
   body.page-id-248410 .entry-content .et_pb_row .et_pb_column {
     padding-left: 0 !important;
     padding-right: 0 !important;
+    padding-top: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
   }
 
-  /* Divi mobile: repeat — builder “custom spacing” can add 30–80px+ under the module */
+  /* Divi rows are often max-width 1080px / ~90% — force full bleed */
   body.page-id-248410 .et_pb_section,
   body.page-id-248410 .et_pb_row,
   body.page-id-248410 .et_pb_column {
     padding-bottom: 0 !important;
     margin-bottom: 0 !important;
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
   }
 
-  body.page-id-248410 .prakriti-embed-stack {
+  body.page-id-248410 .et_pb_row_inner {
+    width: 100% !important;
     max-width: 100% !important;
+  }
+
+  body.page-id-248410 .container,
+  body.page-id-248410 .et_pb_row .et_pb_container {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  /* Edge-to-edge: break out of any remaining narrow wrapper */
+  body.page-id-248410 .prakriti-embed-stack {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    margin-left: calc(50% - 50vw) !important;
+    margin-right: calc(50% - 50vw) !important;
+    margin-top: 0 !important;
+    position: relative;
+    left: auto;
+    right: auto;
     border-radius: 0;
     border-left: none;
     border-right: none;
-    margin-bottom: 0.5rem !important;
-    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.07);
+    margin-bottom: 0 !important;
+    box-shadow: none;
   }
 
+  /*
+   * Chat height ≈ viewport minus site header, school link bar, theme footer, and main-content padding-top.
+   * Tune 11.5rem if needed (larger value = shorter iframe = more gap; smaller = taller chat).
+   */
   body.page-id-248410 .prakriti-chat-embed {
-    height: min(58dvh, 480px);
-    min-height: 260px;
+    flex: 1 1 auto;
+    min-height: min(52dvh, 420px);
+    height: calc(100dvh - 11.5rem) !important;
+    max-height: none;
   }
 
   body.page-id-248410 .prakriti-chat-embed iframe {
     border-radius: 0;
+    min-height: 240px !important;
+    height: 100% !important;
   }
 
   body.page-id-248410 .prakriti-embed-site-footer {
     border-radius: 0;
-  }
-
-  /* Tight spacing — do not stack large paddings (was causing a huge white gap) */
-  body.page-id-248410 #page-container {
-    padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px)) !important;
   }
 
   body.page-id-248410 #main-content,
@@ -417,12 +505,45 @@ body.page-id-248410 .prakriti-embed-site-footer__sep {
   body.page-id-248410 article.type-page {
     padding-bottom: 0 !important;
   }
+}</code></pre>
+
+  <h2>3b) Footer still slightly above the bottom (blue strip under dark theme footer)</h2>
+  <p>If DevTools shows <code>#page-container</code> with <strong><code>padding-bottom: max(2rem, …)</code></strong>, that <strong>2rem</strong> is the gap (it sits <em>below</em> the theme footer). Search <strong>Additional CSS</strong> and <strong>page Custom CSS</strong> for <code>2rem</code> + <code>page-container</code> and <strong>delete</strong> that line, <em>or</em> paste the block below <strong>at the very end</strong>. The selector includes Divi’s <code>.et-animated-content</code> so it beats the old <code>max(2rem, …)</code> rule. Replace <code>248410</code> if your page ID differs. Hard-refresh (Ctrl+Shift+R).</p>
+  <pre><code>/* Flush theme footer — must load LAST — page 248410 */
+html,
+body.page-id-248410 {
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
-@media (max-width: 640px) {
-  body.page-id-248410 .prakriti-embed-stack {
-    margin-bottom: 0.5rem !important;
+/* Extra class = higher specificity than body.page-id-248410 #page-container { padding-bottom: max(2rem,…) } */
+body.page-id-248410 #page-container.et-animated-content {
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 100vh !important;
+  min-height: 100dvh !important;
+  padding-bottom: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+@supports (padding: max(0px)) {
+  body.page-id-248410 #page-container.et-animated-content {
+    padding-bottom: max(0px, env(safe-area-inset-bottom, 0px)) !important;
   }
+}
+
+body.page-id-248410 #et-main-area {
+  flex: 1 1 auto !important;
+}
+
+body.page-id-248410 #main-footer,
+body.page-id-248410 footer#main-footer,
+body.page-id-248410 .et-l--footer,
+body.page-id-248410 #footer-bottom,
+body.page-id-248410 .et_pb_footer {
+  flex-shrink: 0 !important;
+  margin-bottom: 0 !important;
+  padding-bottom: 0 !important;
 }</code></pre>
 
   <h2>4) Divi Builder — if the gap is still huge (section / row spacing)</h2>
@@ -456,11 +577,12 @@ body.page-id-248410 #footer-bottom {
 }
 
 body.page-id-248410.et_fixed_nav #page-container,
-body.page-id-248410 #page-container,
-body.page-id-248410 #main-content {
+body.page-id-248410 #page-container {
   padding-top: 0 !important;
   margin-top: 0 !important;
 }
+
+/* Keep #main-content out of this block — it would undo mobile padding-top on the embed page */
 
 body.page-id-248410 .et_pb_section:first-of-type {
   padding-top: 0 !important;

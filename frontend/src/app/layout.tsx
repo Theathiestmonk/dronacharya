@@ -32,6 +32,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: 'cover',
   themeColor: '#23479f',
+  // Chrome/Android: shrink layout when keyboard opens so fixed UI can reflow
+  interactiveWidget: 'resizes-content',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
