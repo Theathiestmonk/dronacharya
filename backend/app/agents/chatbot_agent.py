@@ -935,6 +935,49 @@ def detect_holiday_context(date):
 
     return None
 
+
+def is_brief_social_acknowledgment(query: str) -> bool:
+    """True when the message is only a short thanks, ack, or greeting—no substantive follow-up."""
+    import re
+
+    q = (query or "").strip().lower()
+    if len(q) > 80:
+        return False
+    # Avoid classifying real questions as "brief social"
+    if any(
+        w in q
+        for w in (
+            "what ",
+            "how ",
+            "why ",
+            "when ",
+            "where ",
+            "explain",
+            "solve",
+            "calculate",
+            "find ",
+            "show ",
+            "give me",
+            "tell me",
+            "can you",
+            "could you",
+            "help ",
+            "homework",
+            "assignment",
+        )
+    ):
+        return False
+    patterns = (
+        r"^(thanks?|thank you|thx|ty|cheers|much appreciated|appreciate it)[\s!.]*$",
+        r"^(ok+|okay|got it|cool|nice|great|sounds good|perfect|alright|all good)[\s!.]*$",
+        r"^(bye|goodbye|see you|later|cya)[\s!.]*$",
+        r"^(hi|hello|hey)[\s!.]*$",
+        r"^(good morning|good afternoon|good evening)\b[\s!.]*$",
+        r"^(namaste|namaskar|dhanyavad|shukriya)[\s!.]*$",
+    )
+    return any(re.match(p, q, re.IGNORECASE) for p in patterns)
+
+
 def generate_chatbot_response(request):
     """
     Use OpenAI GPT-4 to generate a chatbot response with RAG logic and fuzzy matching.
@@ -3076,6 +3119,14 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
 """
                 system_content += submission_status_instruction
 
+            is_brief_social = is_brief_social_acknowledgment(user_query)
+            if is_brief_social:
+                system_content += (
+                    "\n\n**Short reply mode:** The user only sent a brief thanks, acknowledgment, or greeting. "
+                    "Reply in 1–3 short, warm sentences. Do **not** summarize, recap, or re-list prior homework "
+                    "or topics unless they clearly ask something new."
+                )
+
             messages = [{"role": "system", "content": system_content}]
 
             # Detect query intent first (needed for history optimization)
@@ -3131,7 +3182,12 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             MAX_HISTORY_DATA = 12  # data-heavy prompts: shorter tail to limit tokens
 
             recent_history = []
-            if is_translation_query:
+            if is_brief_social and not is_translation_query:
+                recent_history = []
+                print(
+                    "[Chatbot] 👋 Brief thanks/greeting — no prior turns (simple, warm reply only)"
+                )
+            elif is_translation_query:
                 recent_history = _hist_for_llm[-12:] if _hist_for_llm else []
                 print(
                     f"[Chatbot] 🔄 Translation/reference — including {len(recent_history)} prior messages"

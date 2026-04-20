@@ -45,11 +45,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="apple-touch-icon" href="/prakriti_logo.webp" />
         <Script src="https://accounts.google.com/gsi/client" strategy="beforeInteractive" />
       </head>
-      <body className="min-h-screen" suppressHydrationWarning>
+      <body className="min-h-screen overflow-x-hidden" suppressHydrationWarning>
         <EmbedFrameMode />
         <SupabaseProvider>
           <AuthProvider>
-            <div className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+            <div className={`${geistSans.variable} ${geistMono.variable} antialiased min-w-0`}>
               {children}
             </div>
           </AuthProvider>
