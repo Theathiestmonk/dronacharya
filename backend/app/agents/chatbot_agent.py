@@ -2250,6 +2250,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     # Early detection of teacher/subject queries (needed before drive query check)
     is_teacher_drive_query = False
     is_teacher_subject_query = False
+    analysis = None
     try:
         from grade_exam_detector import GradeExamDetector
         detector = GradeExamDetector()
@@ -2265,6 +2266,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         print(f"[Chatbot] Error checking teacher queries: {e}")
         is_teacher_drive_query = False
         is_teacher_subject_query = False
+        analysis = None
 
     # Check for exam queries and teacher queries - use drive integration (HIGH PRIORITY - bypass classroom logic)
     drive_response = ""
@@ -2287,24 +2289,31 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             if drive_response:
                 print(f"[Chatbot] 📄 Response preview: {drive_response[:100]}...")
 
-            # Check if drive integration returned a "no data" error
-            if drive_response and (drive_response.lower().startswith("sorry") or drive_response.lower().startswith("i couldn't")):
+            # Check if drive integration returned a "no data" style message (Drive layer already has friendly copy)
+            dr_low = (drive_response or "").lower()
+            drive_looks_like_error = dr_low.startswith("sorry") or dr_low.startswith("i couldn't") or dr_low.startswith("i'm not able")
+            if drive_response and drive_looks_like_error:
                 print(f"[Chatbot] ⚠️ Drive integration returned no data error: {drive_response[:100]}")
-                # Return a context-aware message based on query type
+                qtype = (analysis or {}).get("query_type")
+                # Timetable / teacher lookups: always surface Drive's message (do not swap for exam text)
+                if qtype in ("timetable", "teacher", "teacher_subject"):
+                    return drive_response
                 if is_teacher_drive_query:
-                    return f"I couldn't find teacher information for that subject in the timetable."
+                    return drive_response
                 elif is_exam_query:
-                    # Check if it's a timetable query vs exam query
                     query_lower = user_query.lower()
-                    if 'timetable' in query_lower or 'time table' in query_lower or 'schedule' in query_lower:
-                        # It's a timetable query
-                        return f"I couldn't find the timetable information. The information sheet for your grade may not be available or accessible. Please contact your administrator for assistance."
-                    else:
-                        # It's an exam query
-                        return "There are no upcoming exams scheduled at this time."
+                    is_timetable_ask = (
+                        qtype == "timetable"
+                        or "timetable" in query_lower
+                        or "time table" in query_lower
+                        or "time tabl" in query_lower
+                        or ("time" in query_lower and "tabl" in query_lower)
+                    )
+                    if is_timetable_ask:
+                        return drive_response
+                    return "There are no upcoming exams scheduled at this time."
                 else:
-                    # Generic fallback
-                    return drive_response  # Return the original error message from drive integration
+                    return drive_response
             elif drive_response and drive_response.startswith("TEACHER_INFO:"):
                 print(f"[Chatbot] 👨‍🏫 Teacher info detected, enhancing with AI model")
                 # Extract the raw teacher info and enhance it with AI
