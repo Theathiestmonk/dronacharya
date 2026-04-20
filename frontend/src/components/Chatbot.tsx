@@ -169,11 +169,6 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
    */
   const inputDockKeyboardMargin = runsInIframe ? 0 : keyboardInset;
 
-  /** Mobile has no Enter key; stop is the icon button next to send */
-  const generatingInputPlaceholder = isDesktop
-    ? 'Generating response… Press Enter to stop'
-    : 'Generating response… Tap stop to cancel';
-
   const handleInputFocus = useCallback((e: React.FocusEvent<HTMLTextAreaElement>) => {
     requestAnimationFrame(() => {
       e.target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -1968,11 +1963,9 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                     }}
                     onFocus={handleInputFocus}
                     onKeyDown={handleKeyDown}
-                    placeholder={(isGenerating || isTyping) ? generatingInputPlaceholder : micPlaceholder}
+                    placeholder={micPlaceholder}
                     disabled={loading}
-                    aria-label={
-                      isGenerating || isTyping ? generatingInputPlaceholder : 'Chat input'
-                    }
+                    aria-label="Chat input"
                     rows={1}
                   />
                   {/* Microphone button inside textarea */}
@@ -2275,11 +2268,9 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                 }}
                 onFocus={handleInputFocus}
                 onKeyDown={handleKeyDown}
-                placeholder={(isGenerating || isTyping) ? generatingInputPlaceholder : micPlaceholder}
+                placeholder={micPlaceholder}
                 disabled={loading}
-                aria-label={
-                  isGenerating || isTyping ? generatingInputPlaceholder : 'Chat input'
-                }
+                aria-label="Chat input"
                 rows={1}
               />
               {/* Microphone button inside textarea */}

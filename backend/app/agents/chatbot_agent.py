@@ -419,22 +419,13 @@ def get_admin_data(user_email: str = None,
         
         supabase = get_supabase_client()
         user_id = None
-        
-        # Canonical auth.users.id for `google_classroom_courses` when DWD sync runs as one school account.
-        # Without this, we use the logged-in user's id — they may only have a test course (e.g. G6) while
-        # Grade 7+ rows in Supabase belong to another user_id (see Table Editor).
-        _ref_uid = (os.getenv("CLASSROOM_CHATBOT_REFERENCE_USER_ID") or "").strip()
-        if _ref_uid:
-            user_id = _ref_uid
-            print(
-                f"[Chatbot] Classroom scope: CLASSROOM_CHATBOT_REFERENCE_USER_ID → {user_id} "
-                "(school-wide sync; overrides chat user's Classroom owner)"
-            )
-        
+
+        # Resolve auth.users.id for `google_classroom_courses`: always prefer the **logged-in user's** sync.
+        # Do not override with a global "reference" user id — that mixed school-wide data into every chat.
         # If user_email provided, try to get their synced data
-        # IMPORTANT: Use user_id (auth.users.id) not id (user_profiles.id) 
+        # IMPORTANT: Use user_id (auth.users.id) not id (user_profiles.id)
         # because google_classroom_courses.user_id references auth.users.id
-        if not user_id and user_email:
+        if user_email:
             user_profile = supabase.table('user_profiles').select('user_id, id').eq('email', user_email).eq('is_active', True).limit(1).execute()
             if user_profile.data and len(user_profile.data) > 0:
                 # Use user_id (auth.users.id) not id (user_profiles.id)
@@ -1000,25 +991,13 @@ def generate_chatbot_response(request):
     if not query_stripped:
         # If there's homework context in history and user is guest, prompt to connect
         if homework_context_in_history and not user_profile:
-            return """Hello! I noticed you're asking about homework help. To provide you with the most relevant assistance, I need access to your assignments and coursework.
+            return """Hello! I noticed you're asking about homework help. To personalize answers with your grade and profile, please **sign in**.
 
-**To get personalized homework help:**
+**Sign in**
+- Click the profile icon in the top right corner
+- Choose **Sign In** or **Log In** and use your Google account
 
-**Step 1: Sign In**
-- Click on the profile icon in the top right corner
-- Select "Sign In" or "Log In"
-- Use your Google account to authenticate
-
-**Step 2: Connect Google Classroom**
-- After signing in, click on your profile icon again
-- Go to "Profile Settings" or "Edit Profile"
-- Click on "Connect Google Classroom" button
-- Authorize the connection with your Google account
-
-**Step 3: Sync Your Data**
-- Once connected, click "Sync Classroom Data" to load your courses, assignments, and announcements
-
-After connecting, I'll be able to help you with your specific assignments and provide subject-specific guidance!"""
+After you’re signed in, I can help with your assignments and coursework more effectively."""
         
         # If there's homework context and logged-in user, ask for subject/topic
         elif homework_context_in_history and user_profile:
@@ -1086,7 +1065,23 @@ Once you provide the subject and topic, I'll be able to give you detailed, step-
         'home', 'homework', 'my assignments', 'my coursework', 'my classes', 'my courses',
         'help with homework', 'help with assignment'
     ])
-    
+    # Faculty / teacher directory — sourced from Google Classroom in this chatbot; guests must sign in first
+    is_faculty_directory_query = any(
+        phrase in query_lower
+        for phrase in (
+            'faculty list',
+            'list of faculty',
+            'list of teachers',
+            'teacher list',
+            'teachers list',
+            'all teachers',
+            'all faculty',
+            'school faculty',
+            'faculty members',
+            'faculty directory',
+        )
+    )
+
     # For guest users: Tell them to login first (but public school calendar does not need Classroom)
     # "What does the calendar page cover?" etc. must still work for guests (Year Flow is public).
     _guest_calendar_overview_ok = (
@@ -1095,28 +1090,36 @@ Once you provide the subject and topic, I'll be able to give you detailed, step-
     )
     if (
         not user_profile
+        and is_faculty_directory_query
+        and not is_public_cal
+        and not _guest_calendar_overview_ok
+    ):
+        print(
+            "[Chatbot] 🚫 Guest asking for faculty/teacher list — sign-in required "
+            "(Classroom-related information)"
+        )
+        return """The faculty list here comes from **Google Classroom** data linked to your account, so it’s **classroom-related information**. Please **sign in** first.
+
+**Sign in**
+- Click the profile icon in the top right corner
+- Choose **Sign In** or **Log In** with your Google account
+
+After you’re signed in, ask again for the faculty list and I can help."""
+
+    if (
+        not user_profile
         and (is_classroom_related_query_early or is_home_related_query_early)
         and not is_public_cal
         and not _guest_calendar_overview_ok
     ):
         print(f"[Chatbot] 🚫 Guest user asking about classroom/home - returning early (user needs to login first)")
-        return """To access your assignments, homework, and coursework information, please follow these steps:
+        return """Please **sign in** to use features tied to your profile (assignments, coursework, and your grade).
 
-**Step 1: Sign In**
-- Click on the profile icon in the top right corner
-- Select "Sign In" or "Log In"
-- Use your Google account to authenticate
+**Sign in**
+- Click the profile icon in the top right corner
+- Choose **Sign In** or **Log In** and use your Google account
 
-**Step 2: Connect Google Classroom**
-- After signing in, click on your profile icon again
-- Go to "Profile Settings" or "Edit Profile"
-- Click on "Connect Google Classroom" button
-- Authorize the connection with your Google account
-
-**Step 3: Sync Your Data**
-- Once connected, click "Sync Classroom Data" to load your courses, assignments, and announcements
-
-After completing these steps, I'll be able to help you with all your coursework-related questions!"""
+After you’re signed in, I can help with your school-specific questions and coursework."""
     
     # For logged-in users: Check if they have Google Classroom connected
     if user_profile and (is_coursework_query_early or is_home_related_query_early):
@@ -1131,23 +1134,17 @@ After completing these steps, I'll be able to help you with all your coursework-
                 has_classroom_connected = courses_check.data and len(courses_check.data) > 0
                 
                 if not has_classroom_connected:
-                    print(f"[Chatbot] 🚫 Logged-in user asking about coursework/homework but no Google Classroom connection found")
+                    print(
+                        f"[Chatbot] Logged-in user asking about coursework/homework but no synced "
+                        f"google_classroom_courses rows yet (account may still be Classroom-linked)"
+                    )
                     first_name = user_profile.get('first_name', '') or ''
                     capitalized_first_name = first_name.capitalize() if first_name else ''
-                    return f"""Hi {capitalized_first_name}! To access your assignments, homework, and coursework information, please connect your Google Classroom account. Here's how:
+                    return f"""Hi {capitalized_first_name}! Your account is signed in; **Google Classroom is linked when you sign up**, so you don’t need a separate “connect” step.
 
-**Step 1: Access Profile Settings**
-- Click on your profile icon in the top right corner
-- Select "Profile Settings" or "Edit Profile"
+We don’t see any **courses** in our system for you yet—this can happen if classes aren’t assigned yet, sync is still catching up, or your school uses a different setup. Try again later, or ask your coordinator if you expect to see courses.
 
-**Step 2: Connect Google Classroom**
-- Look for the "Connect Google Classroom" button in your profile settings
-- Click on it and authorize the connection with your Google account
-
-**Step 3: Sync Your Data**
-- After connecting, click "Sync Classroom Data" to load your courses, assignments, and announcements
-
-Once you've completed these steps, I'll be able to help you with all your coursework-related questions!"""
+For **general** homework help (not tied to your live Classroom list), ask a **specific subject or topic** and I can still help."""
             except Exception as e:
                 print(f"[Chatbot] ⚠️ Error checking Google Classroom connection: {e}")
                 # Continue anyway - don't block the user if there's an error checking
@@ -1442,32 +1439,16 @@ By incorporating these elements into its educational framework, Prakriti School 
     
     # For guest users asking for ACTUAL homework help (not general educational queries)
     if not user_profile and is_homework_help_query:
-        print(f"[Chatbot] 🚫 Guest user asking for homework help - prompting to connect Google Classroom")
-        return """Hello! I'd love to help you with your homework and studies! To provide you with the most relevant assistance, I need access to your assignments and coursework.
+        print(f"[Chatbot] 🚫 Guest user asking for homework help - prompting to sign in")
+        return """Hello! I can help with homework and studies. **Sign in** first so I can use your profile and grade when it helps.
 
-**To get personalized homework help:**
+**Sign in**
+- Click the profile icon in the top right corner
+- Choose **Sign In** or **Log In** with your Google account
 
-**Step 1: Sign In**
-- Click on the profile icon in the top right corner
-- Select "Sign In" or "Log In"
-- Use your Google account to authenticate
+You can also ask a **specific subject or problem** (e.g. algebra, photosynthesis) without signing in—I can still explain concepts.
 
-**Step 2: Connect Google Classroom**
-- After signing in, click on your profile icon again
-- Go to "Profile Settings" or "Edit Profile"
-- Click on "Connect Google Classroom" button
-- Authorize the connection with your Google account
-
-**Step 3: Sync Your Data**
-- Once connected, click "Sync Classroom Data" to load your courses, assignments, and announcements
-
-After connecting, I'll be able to:
-- Help you with your specific assignments
-- Provide subject-specific guidance
-- Answer questions about your coursework
-- Track your progress and deadlines
-
-**Note:** If you have a specific question about a subject (like math, science, etc.), feel free to ask me directly! I can still help with general academic questions."""
+After you sign in, I can tailor help to your coursework when your account is linked to Google Classroom."""
     
     # For logged-in users asking generic homework help without subject/topic
     if user_profile and is_generic_homework_request and not (has_subject or has_topic):
@@ -2330,15 +2311,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
 
     is_classroom_related_query = (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_event_query or is_calendar_query) and not is_subject_faculty_query and not is_exam_query and not is_holiday_query and not is_teacher_drive_query
     is_home_related_query = any(kw in query_lower for kw in ['home', 'homework', 'my assignments', 'my coursework', 'my classes', 'my courses'])
-    
-    # For guest users: Tell them to login first (but public school calendar does not need Classroom)
-    # Public school website calendar (calendar_event_data) is still loaded for guests when applicable.
-    is_guest_classroom_query = (
-        not user_profile
-        and (is_classroom_related_query or is_home_related_query or is_holiday_query)
-        and not is_public_cal
-    )
-    
+
     # Check for teacher-specific queries (submissions, grading, student work)
     is_submission_query = any(kw in query_lower for kw in ['submission', 'submitted', 'submitted work', 'student submission', 'check submission', 'grade submission', 'review submission', 'view submission'])
     # Do not use bare "grade" — it matches "Grade 5" (year level) and mis-triggers grading intent
@@ -2385,7 +2358,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query or is_public_cal
     )
     
-    # For guest users: Skip loading classroom data for classroom/home queries - they need to connect first
+    # For guest users: Skip loading classroom data for classroom/home queries until they sign in
     # Public school website calendar (calendar_event_data) is still loaded for guests when applicable.
     is_guest_classroom_query = (
         not user_profile
@@ -2404,7 +2377,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     )
     
     if is_guest_classroom_query:
-        print(f"[Chatbot] 🚫 Guest user asking about classroom/home - skipping data load (user needs to connect first)")
+        print(f"[Chatbot] 🚫 Guest user asking about classroom/home - skipping data load (sign in for profile-linked data)")
         admin_data = {"classroom_data": [], "calendar_data": []}
     elif is_teacher_needing_connection:
         print(f"[Chatbot] 🚫 Teacher asking about submissions/grading/their courses - requires their own Google Classroom connection")
@@ -3142,18 +3115,53 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             # 🌍 LANGUAGE LOGGING - Language already detected above for system prompt
             print(f"[Chatbot] 🌍 DETECTED LANGUAGE: {query_language}")
 
-    # Skip conversation history for data queries (TOKEN OPTIMIZATION - saves ~100-200 tokens)
-            # BUT include history for translation/reference queries (they need previous context)
+            # Multi-turn context (ChatGPT-style): prior user/assistant turns inform follow-ups.
+            # The current message is appended again below as `user_content`; drop a trailing user
+            # turn that duplicates `user_query` so we do not repeat the same line twice.
+            _hist_for_llm = list(conversation_history or [])
+            if _hist_for_llm:
+                _last = _hist_for_llm[-1]
+                if isinstance(_last, dict) and _last.get("role") == "user":
+                    _last_c = (_last.get("content") or "").strip()
+                    _q = (user_query or "").strip()
+                    if _last_c == _q:
+                        _hist_for_llm = _hist_for_llm[:-1]
+
+            MAX_HISTORY_GENERAL = 24  # ~12 back-and-forth turns
+            MAX_HISTORY_DATA = 12  # data-heavy prompts: shorter tail to limit tokens
+
             recent_history = []
             if is_translation_query:
-                # For translation queries, include last 3 messages to get previous response context
-                recent_history = conversation_history[-3:] if conversation_history else []
-                print(f"[Chatbot] 🔄 Translation/reference query detected - including {len(recent_history)} previous messages for context")
-            elif not (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_calendar_query or is_calendar_prompt_keyword):
-                recent_history = conversation_history[-1:] if conversation_history else []  # Max 1 message for conversational queries
-            
+                recent_history = _hist_for_llm[-12:] if _hist_for_llm else []
+                print(
+                    f"[Chatbot] 🔄 Translation/reference — including {len(recent_history)} prior messages"
+                )
+            elif (
+                is_announcement_query
+                or is_coursework_query
+                or is_student_query
+                or is_teacher_query
+                or is_calendar_query
+                or is_calendar_prompt_keyword
+            ):
+                recent_history = _hist_for_llm[-MAX_HISTORY_DATA:] if _hist_for_llm else []
+                print(
+                    f"[Chatbot] 📚 Data-oriented query — including {len(recent_history)} prior messages "
+                    f"(follow-up context)"
+                )
+            else:
+                recent_history = _hist_for_llm[-MAX_HISTORY_GENERAL:] if _hist_for_llm else []
+                print(
+                    f"[Chatbot] 💬 General query — including {len(recent_history)} prior messages for context"
+                )
+
             for msg in recent_history:
-                messages.append({"role": msg["role"], "content": msg["content"]})
+                if not isinstance(msg, dict):
+                    continue
+                r, c = msg.get("role"), msg.get("content")
+                if r not in ("user", "assistant") or c is None:
+                    continue
+                messages.append({"role": r, "content": str(c)})
             
             # Get today's date for filtering
             from datetime import datetime, timezone, timedelta
@@ -3386,7 +3394,30 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                     user_content += "\n✅ FACULTY QUERY: This is a query about a faculty member with a specific subject/role. Use team_member_data as the PRIMARY source. Do NOT check Classroom data for this - team_member_data contains the accurate information about faculty members and their roles/subjects. Provide information directly from team_member_data without mentioning Classroom data.\n"
             
             # Check again for guest classroom query and teacher connection requirements (re-check in this scope)
-            is_guest_classroom_query_local = not user_profile and (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query or is_holiday_query or any(kw in query_lower for kw in ['home', 'homework', 'my assignments', 'my coursework', 'my classes', 'my courses'])) and not is_public_cal
+            is_guest_classroom_query_local = (
+                not user_profile
+                and (
+                    is_announcement_query
+                    or is_coursework_query
+                    or is_student_query
+                    or is_teacher_query
+                    or is_course_query
+                    or is_calendar_query
+                    or is_holiday_query
+                    or any(
+                        kw in query_lower
+                        for kw in [
+                            'home',
+                            'homework',
+                            'my assignments',
+                            'my coursework',
+                            'my classes',
+                            'my courses',
+                        ]
+                    )
+                )
+                and not is_public_cal
+            )
             user_role_local = user_profile.get('role', '').lower() if user_profile else None
             is_submission_query_local = any(kw in query_lower for kw in ['submission', 'submitted', 'submitted work', 'student submission', 'check submission', 'grade submission', 'review submission', 'view submission'])
             is_grading_query_local = any(
@@ -3398,13 +3429,14 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             
             # For guest users: If asking about classroom/home, instruct to connect (data was not loaded)
             if is_guest_classroom_query_local:
-                user_content += "\n⚠️⚠️⚠️ CLASSROOM CONNECTION REQUIRED: ⚠️⚠️⚠️\n"
+                user_content += "\n⚠️⚠️⚠️ SIGN-IN REQUIRED (GUEST): ⚠️⚠️⚠️\n"
                 user_content += "**CRITICAL: You are a guest user asking about classroom/home-related information.**\n"
-                user_content += "**DO NOT provide any classroom data or answer with classroom information.**\n"
-                user_content += "**ONLY tell the user:** To access classroom information, announcements, assignments, or calendar events, you need to sign in and connect your Google Classroom account first.\n"
-                user_content += "**RESPONSE FORMAT:** Please sign in to your account and connect Google Classroom to access this information.\n"
-                user_content += "**DO NOT ATTEMPT TO ANSWER THE QUERY WITH CLASSROOM DATA - YOU DON'T HAVE ACCESS TO IT.**\n"
-                user_content += f"**IMPORTANT: The user is asking: '{user_query}' - DO NOT answer this query. Instead, ONLY tell them they need to sign in and connect Google Classroom first.**\n\n"
+                user_content += "**DO NOT invent classroom data.** Classroom-linked data was not loaded for this session.\n"
+                user_content += "**ONLY tell the user:** They should **sign in** (profile → Sign In / Log In with Google) to use features tied to their profile, assignments, and coursework.\n"
+                user_content += "**Do NOT** ask them to sync data or list multi-step Classroom/sync flows—sign-in is the main requirement.\n"
+                user_content += "**RESPONSE FORMAT:** Briefly explain they need to sign in; optional one line that optional Google Classroom connection in Profile can load their courses after sign-in.\n"
+                user_content += "**DO NOT ATTEMPT TO ANSWER WITH CLASSROOM DATA YOU DON'T HAVE.**\n"
+                user_content += f"**IMPORTANT: The user asked: '{user_query}' — if you cannot answer without their account, say they should sign in first.**\n\n"
             # For teachers: If asking about submissions/grading/their courses, they need their own connection
             elif is_teacher_needing_connection_local:
                 user_content += "\n⚠️⚠️⚠️ TEACHER CLASSROOM CONNECTION REQUIRED: ⚠️⚠️⚠️\n"

@@ -2,9 +2,10 @@
 
 import sys
 import os
+import re
 import requests
 import json
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple, Set
 
 # Add backend to path for imports
 sys.path.append(os.path.dirname(__file__))
@@ -15,6 +16,15 @@ from token_refresh_service import TokenRefreshService
 
 class DriveChatbotIntegrator:
     """Integrates Google Drive data with chatbot responses"""
+
+    # Preschool / early years: Drive sheet titles use colour + InfoSheet (not G{n}).
+    # Pre-Nursery → blue, Nursery → green, KG → yellow
+    PRESCHOOL_COLOR_KEYS: tuple = ("BLUE", "GREEN", "YELLOW")
+    PRESCHOOL_COLOR_TO_LABEL: dict = {
+        "BLUE": "Pre-Nursery",
+        "GREEN": "Nursery",
+        "YELLOW": "KG",
+    }
 
     # Daily timetable tab names differ by infosheet; try in order (Sheets API names are case-sensitive).
     TIMETABLE_TAB_CANDIDATES: tuple = (
@@ -28,9 +38,224 @@ class DriveChatbotIntegrator:
         "Daily Timetable",
     )
 
+    # Facilitator / subject / email — used when TT does not list teacher names (e.g. image timetable).
+    DIYAS_TAB_CANDIDATES: tuple = (
+        "Diyas",
+        "DIYAS",
+        "diyas",
+        "Diyas List",
+        "Facilitators",
+    )
+
     def __init__(self):
         self.detector = GradeExamDetector()
         self.supabase = get_supabase_client()
+
+    @staticmethod
+    def _a1_range_for_sheet_tab(sheet_name: str) -> str:
+        """Build a valid A1 range for values.get. Bare tab names (e.g. ``Timetable``) are not valid ranges."""
+        esc = sheet_name.replace("'", "''")
+        return f"'{esc}'!A1:ZZ1000"
+
+    @staticmethod
+    def _sheet_title_looks_like_timetable(title: str) -> bool:
+        """Heuristic for discovery when fixed tab names do not match the workbook."""
+        t = title.lower().strip()
+        if re.search(r"\b(tt|timetable|time\s*table)\b", t):
+            return True
+        if "daily" in t and ("time" in t or "tt" in t or "table" in t):
+            return True
+        return False
+
+    @staticmethod
+    def _sheet_title_is_secondary_alt_timetable(title: str) -> bool:
+        """Seasonal / online / special schedules — avoid using as the main daily school-week grid."""
+        t = title.lower()
+        needles = (
+            "winter",
+            "summer",
+            "online",
+            "offline",
+            "interhouse",
+            "inter-house",
+            "sports day",
+            "carnival",
+            "holiday week",
+            "exam week",
+        )
+        return any(n in t for n in needles)
+
+    WEEKDAY_NAMES: frozenset = frozenset(
+        ("MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY")
+    )
+
+    @staticmethod
+    def _normalize_weekday_cell(cell: Optional[str]) -> Optional[str]:
+        """Map 'Monday', 'MONDAY', etc. to canonical weekday name, or None."""
+        if cell is None:
+            return None
+        u = str(cell).strip().upper()
+        if u in DriveChatbotIntegrator.WEEKDAY_NAMES:
+            return u
+        return None
+
+    @staticmethod
+    def _timetable_has_weekday_in_first_column(data: Optional[List[List[str]]]) -> bool:
+        """True if the sheet looks like a Mon–Fri grid (weekday label in column A).
+
+        Values may be title case (``Monday``); Sheets may omit empty column A on other rows.
+        """
+        if not data:
+            return False
+        for row in data:
+            if not row or not row[0]:
+                continue
+            if DriveChatbotIntegrator._normalize_weekday_cell(str(row[0])):
+                return True
+        return False
+
+    @staticmethod
+    def _row_cells_for_time_slot_parsing(row: List[str]) -> List[str]:
+        """Period/time cells for the timetable header row.
+
+        Google Sheets ``values.get`` omits **leading empty cells** in each row. If column A is
+        blank (typical for a time-only header row), ``row[0]`` is actually column B — using
+        ``row[1:]`` would drop the first period (e.g. ``8:10-8:25``).
+        """
+        if not row:
+            return []
+        first = str(row[0]).strip() if row[0] else ""
+        if DriveChatbotIntegrator._normalize_weekday_cell(first):
+            return [c.strip() if c else "" for c in row[1:]]
+        if not first:
+            return [c.strip() if c else "" for c in row[1:]]
+        return [c.strip() if c else "" for c in row]
+
+    # First row of many timetables is ``Day | 8:10–8:25 | …`` — strip label cells, not times.
+    TIMETABLE_TIME_HEADER_LABELS: frozenset = frozenset(
+        (
+            "DAY",
+            "TIME",
+            "PERIOD",
+            "PERIODS",
+            "SLOT",
+            "SLOTS",
+            "TIMING",
+            "TIMINGS",
+        )
+    )
+
+    @classmethod
+    def _strip_time_row_header_labels(cls, row_slots: List[str]) -> List[str]:
+        """Remove leading column-title cells (e.g. ``Day``) so slots align with subject columns."""
+        out = list(row_slots)
+        while out and str(out[0]).strip().upper() in cls.TIMETABLE_TIME_HEADER_LABELS:
+            out = out[1:]
+        return out
+
+    @staticmethod
+    def _canonical_sheet_title(title: str) -> str:
+        """Match tab names modulo stray quotes/backticks (e.g. `` `TT`` vs ``TT``)."""
+        t = (title or "").strip()
+        strip_edge = "'\"`\u2018\u2019\u201c\u201d"
+        changed = True
+        while changed and t:
+            changed = False
+            if t[0] in strip_edge:
+                t = t[1:].strip()
+                changed = True
+            if t and t[-1] in strip_edge:
+                t = t[:-1].strip()
+                changed = True
+        return t.strip()
+
+    def _resolve_spreadsheet_tab_name(
+        self, all_titles: List[str], preferred: str
+    ) -> str:
+        """Return the exact ``properties.title`` string to pass to the Sheets API."""
+        if preferred in all_titles:
+            return preferred
+        p = self._canonical_sheet_title(preferred).casefold()
+        for t in all_titles:
+            if self._canonical_sheet_title(t).casefold() == p:
+                return t
+        return preferred
+
+    @staticmethod
+    def _query_wants_timetable_faculty_column(user_query: str) -> bool:
+        """Include Teacher column only when the user mentions faculty/teachers explicitly."""
+        q = (user_query or "").lower()
+        return any(
+            w in q
+            for w in (
+                "teacher",
+                "teachers",
+                "faculty",
+                "facilitator",
+                "facilitators",
+                "professor",
+                "instructors",
+                "instructor",
+            )
+        )
+
+    def _list_spreadsheet_sheet_titles(self, file_id: str, token: Dict[str, Any]) -> List[str]:
+        """Return tab titles in order from the spreadsheet metadata."""
+        try:
+            access_token = token["access_token"]
+            headers = {"Authorization": f"Bearer {access_token}"}
+            url = (
+                f"https://sheets.googleapis.com/v4/spreadsheets/{file_id}"
+                "?fields=sheets.properties(title)"
+            )
+            r = requests.get(url, headers=headers)
+            if r.status_code != 200:
+                print(f"[DriveChatbot] list sheets HTTP {r.status_code}: {r.text[:500]}")
+                return []
+            payload = r.json()
+            sheets = payload.get("sheets") or []
+            return [s["properties"]["title"] for s in sheets if s.get("properties", {}).get("title")]
+        except Exception as e:
+            print(f"[DriveChatbot] Error listing spreadsheet tabs: {e}")
+            return []
+
+    @staticmethod
+    def preschool_color_from_profile_grade(profile_grade: str) -> Optional[str]:
+        """Map student profile grade text to BLUE / GREEN / YELLOW sheet family, or None."""
+        if not profile_grade or not str(profile_grade).strip():
+            return None
+        g = " ".join(str(profile_grade).strip().lower().replace("_", " ").replace("-", " ").split())
+        if g in ("pre nursery", "prenursery", "pre-nursery"):
+            return "BLUE"
+        if "pre" in g and ("nursery" in g or "nursary" in g):
+            return "BLUE"
+        if g == "nursery":
+            return "GREEN"
+        if g in ("kg", "k g", "k.g", "kindergarten"):
+            return "YELLOW"
+        return None
+
+    @staticmethod
+    def _infosheet_year_rank(sheet_name: str) -> int:
+        """Prefer newer academic year in the Drive filename (e.g. ``2026-27`` over ``2025-26``). Higher = newer."""
+        if not sheet_name:
+            return 0
+        # 2026-27, 2026 - 27, 2026–27
+        m = re.search(r"(20\d{2})\s*[-–]\s*(\d{2})", sheet_name)
+        if m:
+            return int(m.group(1)) * 100 + int(m.group(2))
+        # Single calendar year mention
+        m2 = re.search(r"(20\d{2})", sheet_name)
+        if m2:
+            return int(m2.group(1)) * 100
+        return 0
+
+    @staticmethod
+    def _grade_display_label(grade_key: str) -> str:
+        """User-facing label: ``Grade 7`` for numeric keys; Pre-Nursery / Nursery / KG for preschool."""
+        if grade_key in DriveChatbotIntegrator.PRESCHOOL_COLOR_TO_LABEL:
+            return DriveChatbotIntegrator.PRESCHOOL_COLOR_TO_LABEL[grade_key]
+        return f"Grade {grade_key}"
 
     def get_active_drive_token(self) -> Optional[Dict[str, Any]]:
         """Get the active Google Drive token, refreshing if necessary"""
@@ -60,88 +285,179 @@ class DriveChatbotIntegrator:
             print(f"[DriveChatbot] Error getting token: {e}")
             return None
 
-    def find_grade_sheet(self, grade: str, token: Dict[str, Any]) -> Optional[str]:
-        """Find the Google Sheet file ID for a specific grade"""
+    def _list_drive_spreadsheet_files(self, token: Dict[str, Any]) -> Optional[List[dict]]:
+        """List accessible Google Sheets on Drive (same query as grade infosheet lookup)."""
         try:
-            access_token = token['access_token']
-            headers = {'Authorization': f'Bearer {access_token}'}
-
-            # First, let's see what files are accessible
-            print(f"[DriveChatbot] Checking accessible files for grade {grade}...")
-            print(f"[DriveChatbot] Using token: {access_token[:20]}...")
-
-            # Search for all Google Sheets first
+            access_token = token["access_token"]
+            headers = {"Authorization": f"Bearer {access_token}"}
             search_url = "https://www.googleapis.com/drive/v3/files"
             search_params = {
-                'q': "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false",
-                'fields': 'files(id,name)',
-                'pageSize': 20
+                "q": "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false",
+                "fields": "files(id,name)",
+                "pageSize": 100,
+                "orderBy": "modifiedTime desc",
             }
-
             print(f"[DriveChatbot] Making request to: {search_url}")
             response = requests.get(search_url, headers=headers, params=search_params)
             print(f"[DriveChatbot] Response status: {response.status_code}")
-
             if response.status_code == 200:
-                all_sheets = response.json().get('files', [])
+                all_sheets = response.json().get("files", [])
                 print(f"[DriveChatbot] Found {len(all_sheets)} total Google Sheets:")
                 for sheet in all_sheets:
                     print(f"  - {sheet['name']} (ID: {sheet['id']})")
+                return all_sheets
+            print(f"[DriveChatbot] Error listing files: {response.status_code} - {response.text}")
+            return None
+        except Exception as e:
+            print(f"[DriveChatbot] Error listing Drive spreadsheets: {e}")
+            return None
 
-                # Now search for grade-specific sheet
-                # Try multiple patterns to match different naming conventions:
-                # - "G8- InfoSheet" (with dash and space)
-                # - "G8_InfoSheet" (with underscore)
-                # - "G8 InfoSheet" (with space)
-                # - "G8-InfoSheet" (with dash, no space)
-                # - "G9 - Luminosity - InfoSheet" (with additional text)
-                grade_patterns = [
-                    f'G{grade}- InfoSheet',  # Original pattern: "G8- InfoSheet"
-                    f'G{grade}_InfoSheet',   # Underscore pattern: "G8_InfoSheet"
-                    f'G{grade} InfoSheet',   # Space pattern: "G8 InfoSheet"
-                    f'G{grade}-InfoSheet',   # Dash no space: "G8-InfoSheet"
-                    f'G{grade}_InfoSheet_',  # Underscore with year: "G8_InfoSheet_2025-26"
-                    f'Grade {grade} B Infosheet',  # e.g. "Grade 5 B Infosheet"
-                    f'Grade {grade} B InfoSheet',
-                    f'Grade {grade} Infosheet',
-                    f'Grade {grade} InfoSheet',
-                ]
+    def _find_preschool_infosheet_id(self, grade: str, all_sheets: List[dict]) -> Optional[str]:
+        """Return sheet id for Blue / Green / Yellow InfoSheet, or None."""
 
-                def _name_has_infosheet(name: str) -> bool:
-                    n = name.lower()
-                    return 'infosheet' in n or 'info sheet' in n
+        def _name_has_infosheet(name: str) -> bool:
+            n = name.lower()
+            return "infosheet" in n or "info sheet" in n
 
-                # First try exact patterns (substring match, case-sensitive for G-prefixed names)
-                for pattern in grade_patterns:
-                    grade_sheets = [s for s in all_sheets if pattern in s['name']]
-                    if grade_sheets:
-                        print(f"[DriveChatbot] Found matching sheet: {grade_sheets[0]['name']} (matched pattern: {pattern})")
-                        return grade_sheets[0]['id']
+        g_upper = (grade or "").strip().upper()
+        if g_upper not in self.PRESCHOOL_COLOR_KEYS:
+            return None
+        color = g_upper.capitalize()
+        preschool_patterns = [
+            f"{color} InfoSheet",
+            f"{color} Infosheet",
+            f"{color}- InfoSheet",
+            f"{color}-InfoSheet",
+            f"{color} Info Sheet",
+            f"{color} infosheet",
+        ]
+        print(f"[DriveChatbot] Preschool colour sheet lookup: {g_upper} → patterns {preschool_patterns}")
+        for pattern in preschool_patterns:
+            for sheet in all_sheets:
+                if pattern.lower() in sheet["name"].lower() and _name_has_infosheet(sheet["name"]):
+                    print(f"[DriveChatbot] Found preschool sheet: {sheet['name']!r}")
+                    return sheet["id"]
+        for sheet in all_sheets:
+            sn = sheet["name"]
+            slo = sn.lower()
+            if slo.startswith(color.lower()) and _name_has_infosheet(sn):
+                print(f"[DriveChatbot] Found preschool sheet (flexible): {sn!r}")
+                return sheet["id"]
+        print(f"[DriveChatbot] No preschool colour sheet for {g_upper}")
+        return None
 
-                # "Grade 5 B Infosheet" etc.: word Grade + number + optional section letter (case-insensitive infosheet)
-                g_prefix = f'grade {grade}'
-                for sheet in all_sheets:
-                    sheet_name = sheet['name']
-                    snl = sheet_name.lower()
-                    if snl.startswith(g_prefix) and _name_has_infosheet(sheet_name):
-                        print(f"[DriveChatbot] Found matching sheet: {sheet_name} (Grade-prefix flexible match)")
-                        return sheet['id']
+    def _collect_grade_infosheet_candidates(self, grade: str, all_sheets: List[dict]) -> List[dict]:
+        """Collect every numeric-grade InfoSheet match (may include multiple academic years)."""
+        grade_patterns = [
+            f"G{grade}- InfoSheet",
+            f"G{grade}_InfoSheet",
+            f"G{grade} InfoSheet",
+            f"G{grade}-InfoSheet",
+            f"G{grade}_InfoSheet_",
+            f"Grade {grade} B Infosheet",
+            f"Grade {grade} B InfoSheet",
+            f"Grade {grade} Infosheet",
+            f"Grade {grade} InfoSheet",
+        ]
 
-                # If no exact match, try flexible matching: sheet name starts with "G{grade}" and contains infosheet
-                # This handles cases like "G9 - Luminosity - InfoSheet 2025-26"
-                flexible_pattern = f'G{grade}'
-                for sheet in all_sheets:
-                    sheet_name = sheet['name']
-                    if sheet_name.startswith(flexible_pattern) and _name_has_infosheet(sheet_name):
-                        print(f"[DriveChatbot] Found matching sheet: {sheet_name} (flexible match)")
-                        return sheet['id']
-                
-                print(f"[DriveChatbot] No sheet found for grade {grade}")
-                print(f"[DriveChatbot] Tried patterns: {grade_patterns}")
+        def _name_has_infosheet(name: str) -> bool:
+            n = name.lower()
+            return "infosheet" in n or "info sheet" in n
+
+        candidates: List[dict] = []
+        seen_ids: Set[str] = set()
+
+        def _add_candidate(sheet: dict) -> None:
+            sid = sheet.get("id")
+            if sid and sid not in seen_ids:
+                seen_ids.add(sid)
+                candidates.append(sheet)
+
+        for pattern in grade_patterns:
+            for s in all_sheets:
+                if pattern in s["name"]:
+                    _add_candidate(s)
+
+        g_prefix = f"grade {grade}"
+        for sheet in all_sheets:
+            sheet_name = sheet["name"]
+            snl = sheet_name.lower()
+            if snl.startswith(g_prefix) and _name_has_infosheet(sheet_name):
+                _add_candidate(sheet)
+
+        flexible_pattern = f"G{grade}"
+        for sheet in all_sheets:
+            sheet_name = sheet["name"]
+            if sheet_name.startswith(flexible_pattern) and _name_has_infosheet(sheet_name):
+                _add_candidate(sheet)
+
+        return candidates
+
+    def find_grade_sheet_ids_by_year_desc(self, grade: str, token: Dict[str, Any]) -> List[str]:
+        """Infosheet file ids for this grade, newest academic year in filename first."""
+        all_sheets = self._list_drive_spreadsheet_files(token)
+        if not all_sheets:
+            return []
+        g_upper = (grade or "").strip().upper()
+        if g_upper in self.PRESCHOOL_COLOR_KEYS:
+            pid = self._find_preschool_infosheet_id(grade, all_sheets)
+            return [pid] if pid else []
+        candidates = self._collect_grade_infosheet_candidates(grade, all_sheets)
+        if not candidates:
+            return []
+        ranked = sorted(
+            candidates,
+            key=lambda s: self._infosheet_year_rank(s.get("name", "")),
+            reverse=True,
+        )
+        return [s["id"] for s in ranked]
+
+    def find_grade_sheet(self, grade: str, token: Dict[str, Any]) -> Optional[str]:
+        """Find the Google Sheet file ID for a specific grade.
+
+        ``grade`` is usually a number string (e.g. ``\"7\"``) for ``G7- InfoSheet`` style names.
+        For Pre-Nursery / Nursery / KG it is one of ``BLUE``, ``GREEN``, ``YELLOW`` matching
+        colour-named InfoSheets on Drive.
+        """
+        try:
+            access_token = token["access_token"]
+            print(f"[DriveChatbot] Checking accessible files for grade {grade}...")
+            print(f"[DriveChatbot] Using token: {access_token[:20]}...")
+            all_sheets = self._list_drive_spreadsheet_files(token)
+            if not all_sheets:
                 return None
-            else:
-                print(f"[DriveChatbot] Error listing files: {response.status_code} - {response.text}")
-                return None
+
+            g_upper = (grade or "").strip().upper()
+            if g_upper in self.PRESCHOOL_COLOR_KEYS:
+                return self._find_preschool_infosheet_id(grade, all_sheets)
+
+            candidates = self._collect_grade_infosheet_candidates(grade, all_sheets)
+            if candidates:
+                best = max(
+                    candidates,
+                    key=lambda s: self._infosheet_year_rank(s.get("name", "")),
+                )
+                rank = self._infosheet_year_rank(best.get("name", ""))
+                print(
+                    f"[DriveChatbot] Picked infosheet for grade {grade} (newest year in name, rank={rank}): "
+                    f"{best['name']!r} (from {len(candidates)} candidate(s))"
+                )
+                return best["id"]
+
+            grade_patterns = [
+                f"G{grade}- InfoSheet",
+                f"G{grade}_InfoSheet",
+                f"G{grade} InfoSheet",
+                f"G{grade}-InfoSheet",
+                f"G{grade}_InfoSheet_",
+                f"Grade {grade} B Infosheet",
+                f"Grade {grade} B InfoSheet",
+                f"Grade {grade} Infosheet",
+                f"Grade {grade} InfoSheet",
+            ]
+            print(f"[DriveChatbot] No sheet found for grade {grade}")
+            print(f"[DriveChatbot] Tried patterns: {grade_patterns}")
+            return None
 
         except Exception as e:
             print(f"[DriveChatbot] Error finding grade sheet: {e}")
@@ -153,14 +469,14 @@ class DriveChatbotIntegrator:
             access_token = token['access_token']
             headers = {'Authorization': f'Bearer {access_token}'}
 
-            # Get data from specific sheet - URL encode the sheet name
+            # Valid A1 range required — a bare tab name often fails (e.g. "Timetable" → INVALID_ARGUMENT).
             import urllib.parse
             if sheet_name:
-                encoded_sheet_name = urllib.parse.quote(sheet_name, safe='')
-                range_url = f"https://sheets.googleapis.com/v4/spreadsheets/{file_id}/values/{encoded_sheet_name}"
+                range_a1 = self._a1_range_for_sheet_tab(sheet_name)
             else:
-                # Get the first sheet (default) - try different approaches
-                range_url = f"https://sheets.googleapis.com/v4/spreadsheets/{file_id}/values/Sheet1"
+                range_a1 = "Sheet1!A1:ZZ1000"
+            encoded_range = urllib.parse.quote(range_a1, safe="")
+            range_url = f"https://sheets.googleapis.com/v4/spreadsheets/{file_id}/values/{encoded_range}"
 
             print(f"[DriveChatbot] Requesting data from: {range_url}")
             response = requests.get(range_url, headers=headers)
@@ -204,14 +520,148 @@ class DriveChatbotIntegrator:
     ) -> tuple[Optional[List[List[str]]], Optional[str]]:
         """Load daily timetable from the first tab that exists with enough rows.
         Tries ``TT`` then ``Time Table`` and other common names — grade sheets vary by school.
+
+        Use ``min_rows`` >= 3 for timetable parsing: some workbooks have an empty or header-only
+        ``TT`` tab; a low threshold would lock onto that and skip richer tabs later in the list.
         """
+        def _usable_timetable(data: Optional[List[List[str]]]) -> bool:
+            if not data or len(data) < min_rows:
+                return False
+            if min_rows >= 3 and not self._timetable_has_weekday_in_first_column(data):
+                return False
+            return True
+
+        all_tab_titles = self._list_spreadsheet_sheet_titles(file_id, token)
+
+        tried: set[str] = set()
         for tab in self.TIMETABLE_TAB_CANDIDATES:
+            resolved = self._resolve_spreadsheet_tab_name(all_tab_titles, tab)
+            tried.add(tab)
+            tried.add(resolved)
+            data = self.extract_sheet_data(file_id, resolved, token)
+            if _usable_timetable(data):
+                print(
+                    f"[DriveChatbot] Using timetable tab {resolved!r} ({len(data)} rows, min_rows={min_rows})"
+                )
+                return data, resolved
+            if data and len(data) >= min_rows and not self._timetable_has_weekday_in_first_column(data):
+                print(
+                    f"[DriveChatbot] Tab {resolved!r} has {len(data)} rows but no Mon–Fri day labels in column A; skipping..."
+                )
+            else:
+                print(
+                    f"[DriveChatbot] Tab {resolved!r} missing or has < {min_rows} rows, trying next timetable name..."
+                )
+
+        # Discover tab names from the spreadsheet (names differ by year / school).
+        for title in all_tab_titles:
+            if title in tried:
+                continue
+            if not self._sheet_title_looks_like_timetable(title):
+                continue
+            if self._sheet_title_is_secondary_alt_timetable(title):
+                print(f"[DriveChatbot] Skipping non-daily timetable tab {title!r} (seasonal/online/special).")
+                continue
+            tried.add(title)
+            print(f"[DriveChatbot] Trying discovered timetable-like tab {title!r}...")
+            data = self.extract_sheet_data(file_id, title, token)
+            if _usable_timetable(data):
+                print(f"[DriveChatbot] Using timetable tab {title!r} ({len(data)} rows, min_rows={min_rows})")
+                return data, title
+            if data and len(data) >= min_rows and not self._timetable_has_weekday_in_first_column(data):
+                print(
+                    f"[DriveChatbot] Tab {title!r} has {len(data)} rows but no Mon–Fri day labels in column A; skipping..."
+                )
+
+        print(f"[DriveChatbot] No timetable tab matched: {self.TIMETABLE_TAB_CANDIDATES} (+ discovery)")
+        return None, None
+
+    @staticmethod
+    def _sheet_title_looks_like_diyas(title: str) -> bool:
+        t = title.lower().strip()
+        return "diyas" in t or "facilitator" in t
+
+    @staticmethod
+    def _diyas_column_indices(row: List[str]) -> Optional[Tuple[int, int, Optional[int]]]:
+        """Return (facilitator_col, subject_col, email_col_or_None) if the row looks like a Diyas header."""
+        fac_i = sub_i = email_i = None
+        for i, cell in enumerate(row):
+            if not cell or not str(cell).strip():
+                continue
+            c = str(cell).strip().lower()
+            if "email" in c or "e-mail" in c:
+                email_i = i
+            elif "subject" in c and "subjective" not in c:
+                if sub_i is None:
+                    sub_i = i
+            elif "facilitat" in c or c == "faculty":
+                fac_i = i
+            elif "teacher" in c and fac_i is None:
+                fac_i = i
+        if fac_i is not None and sub_i is not None:
+            return fac_i, sub_i, email_i
+        return None
+
+    def _rows_from_diyas_tab(self, data: List[List[str]]) -> List[Dict[str, str]]:
+        """Parse facilitator / subject / email rows from a Diyas-style sheet."""
+        if not data:
+            return []
+        header_idx = None
+        fac_i: Optional[int] = None
+        sub_i: Optional[int] = None
+        email_i: Optional[int] = None
+        for i, row in enumerate(data[:50]):
+            if not row:
+                continue
+            parsed = self._diyas_column_indices(row)
+            if parsed:
+                header_idx = i
+                fac_i, sub_i, email_i = parsed
+                break
+        if header_idx is None or fac_i is None or sub_i is None:
+            return []
+        out: List[Dict[str, str]] = []
+        need = max(fac_i, sub_i)
+        for row in data[header_idx + 1 :]:
+            if not row or len(row) <= need:
+                continue
+            fac = row[fac_i].strip() if row[fac_i] else ""
+            subj = row[sub_i].strip() if row[sub_i] else ""
+            em = ""
+            if email_i is not None and email_i < len(row) and row[email_i]:
+                em = str(row[email_i]).strip()
+            if fac or subj:
+                out.append({"facilitator": fac, "subject": subj, "email": em})
+        return out
+
+    def extract_diyas_sheet_data(
+        self, file_id: str, token: Dict[str, Any], min_rows: int = 2
+    ) -> tuple[Optional[List[List[str]]], Optional[str]]:
+        """Load the Diyas / facilitator list tab (facilitator, subject, email)."""
+        tried: set[str] = set()
+        for tab in self.DIYAS_TAB_CANDIDATES:
+            tried.add(tab)
             data = self.extract_sheet_data(file_id, tab, token)
             if data and len(data) >= min_rows:
-                print(f"[DriveChatbot] Using timetable tab {tab!r} ({len(data)} rows, min_rows={min_rows})")
-                return data, tab
-            print(f"[DriveChatbot] Tab {tab!r} missing or has < {min_rows} rows, trying next timetable name...")
-        print(f"[DriveChatbot] No timetable tab matched: {self.TIMETABLE_TAB_CANDIDATES}")
+                rows_dict = self._rows_from_diyas_tab(data)
+                if rows_dict or any(self._diyas_column_indices(r or []) for r in data[:15]):
+                    print(f"[DriveChatbot] Using Diyas tab {tab!r} ({len(data)} rows)")
+                    return data, tab
+            print(f"[DriveChatbot] Diyas tab {tab!r} missing or unusable, trying next...")
+        for title in self._list_spreadsheet_sheet_titles(file_id, token):
+            if title in tried:
+                continue
+            if not self._sheet_title_looks_like_diyas(title):
+                continue
+            tried.add(title)
+            print(f"[DriveChatbot] Trying discovered Diyas-like tab {title!r}...")
+            data = self.extract_sheet_data(file_id, title, token)
+            if data and len(data) >= min_rows:
+                rows_dict = self._rows_from_diyas_tab(data)
+                if rows_dict or any(self._diyas_column_indices(r or []) for r in data[:15]):
+                    print(f"[DriveChatbot] Using Diyas tab {title!r} ({len(data)} rows)")
+                    return data, title
+        print("[DriveChatbot] No Diyas tab matched")
         return None, None
 
     def format_exam_schedule(self, data: List[List[str]], exam_type: str, subject_filter: str = None) -> str:
@@ -380,8 +830,13 @@ class DriveChatbotIntegrator:
         filter_day: str = None,
         filter_days: list[str] = None,
         user_timezone: str = None,
+        include_teachers: bool = False,
     ) -> str:
-        """Format timetable data into readable table with proper null handling"""
+        """Format timetable data into a markdown table.
+
+        ``include_teachers``: if False (default), only Day / Time / Subject — users who want
+        facilitator names should ask using words like *teacher* or *faculty*.
+        """
         if not data or len(data) < 3:
             return "No timetable data found."
 
@@ -449,74 +904,95 @@ class DriveChatbotIntegrator:
         # Times can be in row 1, row 2, or other rows - not fixed position
         time_slots = []
         import re
-        
+
         # Enhanced time pattern to match various formats:
         # - "8:30" or "8:30 AM" (simple time)
         # - "8:30-8:40" or "8:30 AM - 8:40 AM" (time range)
         # - "8:30 AM-8:40 AM" (time range without spaces)
         time_pattern = re.compile(r'^\d{1,2}:\d{2}(\s*-\s*\d{1,2}:\d{2})?(\s*(AM|PM|am|pm))?$')
         time_range_pattern = re.compile(r'\d{1,2}:\d{2}')  # Matches any time format
-        
+
+        def _cell_looks_like_time(cell: str) -> bool:
+            if not cell:
+                return False
+            if time_pattern.match(cell):
+                return True
+            if "-" in cell and time_range_pattern.search(cell):
+                return True
+            if ":" in cell and re.search(r"\d{1,2}:\d{2}", cell):
+                return True
+            return False
+
         # Search through first 10 rows to find time slots (times can be in any row)
         time_row_found = False
+        time_row_idx = 0
         for row_idx in range(min(10, len(data))):
             row = data[row_idx]
             if not row or len(row) < 2:
                 continue
-            
-            row_slots = [cell.strip() if cell else "" for cell in row[1:]]  # Skip first column
-            
-            # Check if this row contains time patterns
-            # Count how many cells look like times
+
+            row_slots = self._row_cells_for_time_slot_parsing(row)
+            row_slots = self._strip_time_row_header_labels(row_slots)
+
             time_count = 0
             for cell in row_slots:
-                if cell:
-                    # Check for simple time format
-                    if time_pattern.match(cell):
-                        time_count += 1
-                    # Check for time range format (e.g., "8:30-8:40")
-                    elif '-' in cell and time_range_pattern.search(cell):
-                        time_count += 1
-                    # Check if cell contains colon and looks like time (e.g., "8:30 AM")
-                    elif ':' in cell and re.search(r'\d{1,2}:\d{2}', cell):
-                        time_count += 1
-            
-            # If at least 3 cells in this row look like times, use this row
+                if _cell_looks_like_time(cell):
+                    time_count += 1
+
             if time_count >= 3:
                 time_slots = row_slots
                 time_row_found = True
+                time_row_idx = row_idx
                 print(f"[DriveChatbot] Found time row at index {row_idx} with {time_count} time entries")
                 break
-        
+
         # If no time row found, try to map lesson identifiers (L1, L2, etc.) to default times
         if not time_row_found:
-            # Get first row to check for lesson identifiers
             if len(data) > 0 and data[0]:
-                raw_slots = [cell.strip() if cell else "" for cell in data[0][1:]]
-                # Check if first row has lesson identifiers
-                has_lesson_ids = any(re.match(r'^L\d+$', slot.upper()) for slot in raw_slots if slot)
-                
+                raw_slots = self._strip_time_row_header_labels(
+                    self._row_cells_for_time_slot_parsing(data[0])
+                )
+                has_lesson_ids = any(re.match(r"^L\d+$", slot.upper()) for slot in raw_slots if slot)
+
                 if has_lesson_ids:
-                    # Map lesson identifiers to default times (last resort)
                     lesson_to_time = {
-                        'L1': '8:00 AM', 'L2': '9:00 AM', 'L3': '10:00 AM',
-                        'L4': '11:00 AM', 'L5': '12:00 PM', 'L6': '1:00 PM',
-                        'L7': '2:00 PM', 'L8': '3:00 PM', 'L9': '4:00 PM',
-                        'L10': '5:00 PM'
+                        "L1": "8:00 AM",
+                        "L2": "9:00 AM",
+                        "L3": "10:00 AM",
+                        "L4": "11:00 AM",
+                        "L5": "12:00 PM",
+                        "L6": "1:00 PM",
+                        "L7": "2:00 PM",
+                        "L8": "3:00 PM",
+                        "L9": "4:00 PM",
+                        "L10": "5:00 PM",
                     }
                     time_slots = [lesson_to_time.get(slot.upper(), "") if slot else "" for slot in raw_slots]
                     print(f"[DriveChatbot] ⚠️ No time row found, mapped lesson identifiers to default times")
                 else:
-                    # No lesson identifiers either, use empty time slots
                     time_slots = [""] * len(raw_slots) if raw_slots else []
                     print(f"[DriveChatbot] ⚠️ No time row or lesson identifiers found, using empty time slots")
 
-        # Create table header
-        response += "| Day | Time Slot | Subject | Teacher |\n"
-        response += "|-----|-----------|---------|---------|\n"
+        if time_row_found:
+            first_day_row_idx = time_row_idx + 1
+        else:
+            first_day_row_idx = 1
+            for j in range(min(15, len(data))):
+                r = data[j]
+                if r and r[0] and self._normalize_weekday_cell(str(r[0])):
+                    first_day_row_idx = j
+                    break
 
-        # Process each day row by row
-        i = 1  # Start from row 1 (after time slots)
+        # Create table header (Teacher column only when user asked for faculty/teachers)
+        if include_teachers:
+            response += "| Day | Time Slot | Subject | Teacher |\n"
+            response += "|-----|-----------|---------|---------|\n"
+        else:
+            response += "| Day | Time Slot | Subject |\n"
+            response += "|-----|-----------|---------|\n"
+
+        # Process each day row by row (start after the header time row when detected)
+        i = first_day_row_idx
         found_matching_day = False
         processed_days = set()  # Track which days we've already processed to avoid duplicates (works for both filtered and all days)
 
@@ -527,16 +1003,15 @@ class DriveChatbotIntegrator:
                 continue
 
             day_name = row[0].strip() if len(row) > 0 and row[0] else ""
+            current_day = self._normalize_weekday_cell(day_name) if day_name else None
 
-            # Check if this is a day row (has day name in first column)
-            if day_name and day_name.upper() in ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]:
-                current_day = day_name.upper()
+            if current_day:
 
                 # Skip this day if we're filtering and it doesn't match any of the target days
                 if target_days and current_day not in target_days:
                     i += 1
                     continue
-                
+
                 # Always skip duplicate day entries (whether filtering or showing all days)
                 if current_day in processed_days:
                     print(f"[DriveChatbot] Skipping duplicate {current_day} entry")
@@ -546,25 +1021,29 @@ class DriveChatbotIntegrator:
                 found_matching_day = True
                 processed_days.add(current_day)  # Mark this day as processed
 
-                # Get subjects for this day (from column 1 onwards, preserve nulls)
+                # Get subjects for this day (from column B onward; column A is the weekday label)
                 subjects = []
                 for cell in row[1:]:
                     subjects.append(cell.strip() if cell else "")
 
-                # Check if next row has teachers (first cell should be empty/blank)
                 teachers = []
                 next_row = data[i + 1] if i + 1 < len(data) else None
 
-                if (next_row and len(next_row) > 0 and
-                    (not next_row[0] or not next_row[0].strip()) and  # First cell is blank
-                    (len(next_row) <= 1 or not next_row[1] or not next_row[1].strip() or next_row[1].strip().upper() not in ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"])):
-
-                    # This is a teacher row - extract teacher data from column 1 onwards to match subjects
-                    for cell in next_row[1:]:
-                        teachers.append(cell.strip() if cell else "")
-                    i += 1  # Skip the teacher row we just processed
+                # Facilitator row: column A blank, or blank omitted by API (first cell is first teacher)
+                if next_row and len(next_row) > 0 and any(str(c).strip() for c in next_row):
+                    nf = str(next_row[0]).strip() if next_row[0] else ""
+                    next_is_weekday = bool(self._normalize_weekday_cell(nf))
+                    if not next_is_weekday:
+                        if not nf:
+                            for cell in next_row[1:]:
+                                teachers.append(cell.strip() if cell else "")
+                        else:
+                            for cell in next_row:
+                                teachers.append(cell.strip() if cell else "")
+                        i += 1
+                    else:
+                        teachers = [""] * len(subjects)
                 else:
-                    # No teacher row found, use empty teachers
                     teachers = [""] * len(subjects)
 
                 # Now create table rows for this day, ensuring all columns align
@@ -578,11 +1057,17 @@ class DriveChatbotIntegrator:
                     # First row shows the day name, subsequent rows are blank in day column
                     day_display = f"**{current_day}**" if slot_idx == 0 else ""
 
-                    response += f"| {day_display} | {time_slot} | {subject} | {teacher} |\n"
+                    if include_teachers:
+                        response += f"| {day_display} | {time_slot} | {subject} | {teacher} |\n"
+                    else:
+                        response += f"| {day_display} | {time_slot} | {subject} |\n"
 
                 # Add separator row between days (but not at the end)
                 if target_days and len(target_days) > 1:  # Only add separator if showing multiple days
-                    response += "|  |  |  |  |\n"
+                    if include_teachers:
+                        response += "|  |  |  |  |\n"
+                    else:
+                        response += "|  |  |  |\n"
 
             i += 1
 
@@ -615,18 +1100,28 @@ class DriveChatbotIntegrator:
             profile_grade = user_profile.get('grade')
             print(f"[DriveChatbot] 🔍 Profile grade field: {profile_grade}")
             if profile_grade:
-                # Extract grade number from profile (e.g., "Grade 7" -> "7")
                 import re
-                grade_match = re.search(r'(\d+)', str(profile_grade))
-                if grade_match:
-                    grade = grade_match.group(1)
-                    print(f"[DriveChatbot] Using grade {grade} from user profile")
+                preschool = self.preschool_color_from_profile_grade(str(profile_grade))
+                if preschool:
+                    grade = preschool
+                    print(
+                        f"[DriveChatbot] Using preschool colour sheet key {grade} "
+                        f"({self.PRESCHOOL_COLOR_TO_LABEL.get(grade)}) from profile"
+                    )
                 else:
-                    print(f"[DriveChatbot] Could not extract grade number from: {profile_grade}")
+                    # Extract grade number from profile (e.g., "Grade 7" -> "7")
+                    grade_match = re.search(r'(\d+)', str(profile_grade))
+                    if grade_match:
+                        grade = grade_match.group(1)
+                        print(f"[DriveChatbot] Using grade {grade} from user profile")
+                    else:
+                        print(f"[DriveChatbot] Could not extract grade number from: {profile_grade}")
             else:
                 print(f"[DriveChatbot] No grade field in user profile")
 
         print(f"[DriveChatbot] Query Analysis: Grade={grade}, Exam={exam_type}, Type={query_type}, Subject={subject_filter}, Subjects={subjects_filter}, Day={day_filter}, Days={days_filter}")
+
+        include_teachers_in_timetable = self._query_wants_timetable_faculty_column(user_query)
 
         # Step 2: Check for weekend days BEFORE fetching any sheet
         # If user asks for Saturday or Sunday timetable, return weekend message immediately
@@ -651,19 +1146,11 @@ class DriveChatbotIntegrator:
         if not token:
             return "Sorry, the Google Drive connection is not available right now. Please contact your administrator."
 
-        # Step 5: Find the grade-specific sheet
-        file_id = self.find_grade_sheet(grade, token)
-        if not file_id:
-            return f"Sorry, I couldn't find the Grade {grade} information sheet. Please contact your administrator."
-
-        print(f"[DriveChatbot] Found sheet for Grade {grade}: {file_id}")
-
-        # Step 6: Determine which tab to read
-        # If query has day filter but query_type is 'general', treat it as timetable query
+        # Step 5: If query has day filter but type was generic, treat as timetable
         if (day_filter or days_filter) and query_type == 'general':
             query_type = 'timetable'
             print(f"[DriveChatbot] Detected day filter with general query type, treating as timetable")
-        
+
         target_sheet = None
         use_timetable_tabs = query_type in ("teacher", "teacher_subject", "timetable")
 
@@ -688,17 +1175,63 @@ class DriveChatbotIntegrator:
         else:
             target_sheet = "Examination Schedule"
 
+        # Step 6: Load sheet (timetable/teacher: try infosheets by academic year until one works)
+        sheet_data = None
+        file_id: Optional[str] = None
+
         if use_timetable_tabs:
-            sheet_data, _timetable_tab = self.extract_timetable_sheet_data(file_id, token, min_rows=1)
-            if not sheet_data:
+            candidate_ids = self.find_grade_sheet_ids_by_year_desc(grade, token)
+            if not candidate_ids:
+                label = self._grade_display_label(grade)
                 return (
-                    f"Sorry, I couldn't find a daily timetable tab for Grade {grade} "
-                    f"(tried: {', '.join(repr(t) for t in self.TIMETABLE_TAB_CANDIDATES)})."
+                    f"Sorry, I couldn't find the information sheet for **{label}**. "
+                    "Please contact your administrator."
                 )
+            for cand_id in candidate_ids:
+                sd, _tt = self.extract_timetable_sheet_data(cand_id, token, min_rows=3)
+                if not sd:
+                    continue
+                if query_type == "timetable":
+                    if days_filter and len(days_filter) > 1:
+                        preview = self.format_timetable(
+                            sd, None, days_filter, tz, include_teachers=include_teachers_in_timetable
+                        )
+                    else:
+                        preview = self.format_timetable(
+                            sd, day_filter, days_filter, tz, include_teachers=include_teachers_in_timetable
+                        )
+                    if preview.startswith("No timetable data found for"):
+                        print(
+                            "[DriveChatbot] Timetable tab had no rows for requested day(s); "
+                            "trying next infosheet year if available..."
+                        )
+                        continue
+                sheet_data = sd
+                file_id = cand_id
+                break
+            if not sheet_data:
+                gl = self._grade_display_label(grade)
+                return (
+                    f"Sorry, I couldn't read a text timetable for {gl}. "
+                    f"If the schedule is only an **image** in the infosheet, the assistant cannot parse it—"
+                    f"please ask your school to add the same timetable as **text in cells** on a tab "
+                    f"(e.g. TT), or share a link. "
+                    f"(Looked for tabs like: {', '.join(repr(t) for t in self.TIMETABLE_TAB_CANDIDATES)}.)"
+                )
+            print(f"[DriveChatbot] Found sheet for grade key {grade}: {file_id}")
         else:
+            file_id = self.find_grade_sheet(grade, token)
+            if not file_id:
+                label = self._grade_display_label(grade)
+                return (
+                    f"Sorry, I couldn't find the information sheet for **{label}**. "
+                    "Please contact your administrator."
+                )
+            print(f"[DriveChatbot] Found sheet for grade key {grade}: {file_id}")
             sheet_data = self.extract_sheet_data(file_id, target_sheet, token)
             if not sheet_data:
-                return f"Sorry, I couldn't find the '{target_sheet}' information for Grade {grade}."
+                gl = self._grade_display_label(grade)
+                return f"Sorry, I couldn't find the '{target_sheet}' information for {gl}."
 
         # Step 7: Format the response based on query type
         if query_type == 'teacher':
@@ -729,9 +1262,13 @@ class DriveChatbotIntegrator:
         elif query_type == 'timetable':
             # Check if multiple days were requested
             if days_filter and len(days_filter) > 1:
-                return self.format_timetable(sheet_data, None, days_filter, tz)
+                return self.format_timetable(
+                    sheet_data, None, days_filter, tz, include_teachers=include_teachers_in_timetable
+                )
             else:
-                return self.format_timetable(sheet_data, day_filter, days_filter, tz)
+                return self.format_timetable(
+                    sheet_data, day_filter, days_filter, tz, include_teachers=include_teachers_in_timetable
+                )
         else:
             # General exam info - show a summary of upcoming exams
             # Check if multiple subjects were requested
@@ -1127,7 +1664,27 @@ class DriveChatbotIntegrator:
                 sheet_data, _tab = self.extract_timetable_sheet_data(file_id, token, min_rows=3)
                 if not sheet_data or len(sheet_data) < 3:
                     print(f"[DriveChatbot] No timetable tab had enough rows: {sheet_data}")
-                    return f"I couldn't find timetable data for Grade {grade}."
+                    diyas_data, diyas_tab = self.extract_diyas_sheet_data(file_id, token)
+                    if diyas_data:
+                        rows = self._rows_from_diyas_tab(diyas_data)
+                        found_subjects: List[str] = []
+                        for r in rows:
+                            if (
+                                r.get("facilitator")
+                                and self._teacher_names_match(r["facilitator"], teacher_name)
+                                and r.get("subject", "").strip()
+                            ):
+                                subj = r["subject"].strip()
+                                if subj not in found_subjects:
+                                    found_subjects.append(subj)
+                        if found_subjects:
+                            print(f"[DriveChatbot] Subjects from Diyas tab {diyas_tab!r} (no usable timetable)")
+                            if len(found_subjects) == 1:
+                                return f"TEACHER_SUBJECT: {teacher_name} teaches {found_subjects[0]}."
+                            subject_list = ", ".join(found_subjects[:-1]) + " and " + found_subjects[-1]
+                            return f"TEACHER_SUBJECT: {teacher_name} teaches {subject_list}."
+                    gl = self._grade_display_label(grade)
+                    return f"I couldn't find timetable data for {gl}."
 
             print(f"[DriveChatbot] Sheet data type: {type(sheet_data)}")
             print(f"[DriveChatbot] Sheet data length: {len(sheet_data) if sheet_data else 0}")
@@ -1186,7 +1743,26 @@ class DriveChatbotIntegrator:
                 i += 1
 
             if not found_subjects:
-                return f"I couldn't find any subjects taught by {teacher_name} in the Grade {grade} timetable."
+                diyas_data, diyas_tab = self.extract_diyas_sheet_data(file_id, token)
+                if diyas_data:
+                    rows = self._rows_from_diyas_tab(diyas_data)
+                    print(f"[DriveChatbot] Diyas fallback for teacher subjects from tab {diyas_tab!r}")
+                    for r in rows:
+                        if (
+                            r.get("facilitator")
+                            and self._teacher_names_match(r["facilitator"], teacher_name)
+                            and r.get("subject", "").strip()
+                        ):
+                            subj = r["subject"].strip()
+                            if subj not in found_subjects:
+                                found_subjects.append(subj)
+
+            if not found_subjects:
+                gl = self._grade_display_label(grade)
+                return (
+                    f"I couldn't find any subjects taught by {teacher_name} in the {gl} timetable "
+                    f"or Diyas list."
+                )
 
             if len(found_subjects) == 1:
                 return f"TEACHER_SUBJECT: {teacher_name} teaches {found_subjects[0]}."
@@ -1226,79 +1802,112 @@ class DriveChatbotIntegrator:
 
         return False
 
+    @staticmethod
+    def _dedupe_teacher_email_pairs(names: List[str], emails: List[str]) -> Tuple[List[str], List[str]]:
+        if not emails:
+            emails = [""] * len(names)
+        seen = set()
+        out_n: List[str] = []
+        out_e: List[str] = []
+        for n, e in zip(names, emails):
+            k = n.lower().strip()
+            if k not in seen:
+                seen.add(k)
+                out_n.append(n)
+                out_e.append(e or "")
+        return out_n, out_e
+
+    def _format_teacher_info_response(
+        self, subject: str, names: List[str], emails: List[str]
+    ) -> str:
+        names, emails = self._dedupe_teacher_email_pairs(names, emails)
+        display: List[str] = []
+        for n, em in zip(names, emails):
+            ft = self._format_teacher_name(n)
+            if em:
+                display.append(f"{ft} ({em})")
+            else:
+                display.append(ft)
+        if len(display) == 1:
+            return f"TEACHER_INFO: The {subject.title()} teacher is {display[0]}."
+        return f"TEACHER_INFO: The {subject.title()} teachers are {', '.join(display[:-1])} and {display[-1]}."
+
     def get_subject_teacher(self, file_id: str, token: Dict[str, Any], grade: str, subject: str) -> str:
-        """Find and return the teacher name for a specific subject from timetable data"""
+        """Find and return the teacher name for a specific subject from timetable data, then Diyas tab."""
         try:
-            sheet_data, _tab = self.extract_timetable_sheet_data(file_id, token, min_rows=1)
-            if not sheet_data:
-                return f"Sorry, I couldn't find timetable information for Grade {grade}."
+            sheet_data, _tab = self.extract_timetable_sheet_data(file_id, token, min_rows=3)
+            found_teachers: List[str] = []
+            emails: List[str] = []
 
-            # Look for the subject in the timetable and get associated teacher
-            found_teachers = []
+            if sheet_data:
+                i = 1
+                while i < len(sheet_data):
+                    row = sheet_data[i]
+                    if not row or len(row) == 0:
+                        i += 1
+                        continue
 
-            i = 1  # Start from row 1 (after time slots)
-            while i < len(sheet_data):
-                row = sheet_data[i]
-                if not row or len(row) == 0:
+                    day_name = row[0].strip() if len(row) > 0 and row[0] else ""
+
+                    if day_name and day_name.upper() in ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]:
+                        subjects = []
+                        for cell in row[1:]:
+                            subjects.append(cell.strip() if cell else "")
+
+                        teachers = []
+                        next_row = sheet_data[i + 1] if i + 1 < len(sheet_data) else None
+
+                        if (next_row and len(next_row) > 0 and
+                            (not next_row[0] or not next_row[0].strip()) and
+                            (len(next_row) <= 1 or not next_row[1] or not next_row[1].strip() or next_row[1].strip().upper() not in ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"])):
+
+                            for cell in next_row[1:]:
+                                teachers.append(cell.strip() if cell else "")
+                            i += 1
+                        else:
+                            teachers = [""] * len(subjects)
+
+                        for subj_idx, subj in enumerate(subjects):
+                            if subj and self._subjects_match(subj, subject) and subj_idx < len(teachers):
+                                teacher_name = teachers[subj_idx]
+                                if teacher_name:
+                                    if '/' in teacher_name:
+                                        combined_names = [name.strip() for name in teacher_name.split('/') if name.strip()]
+                                        for name in combined_names:
+                                            if name and name not in found_teachers:
+                                                found_teachers.append(name)
+                                                emails.append("")
+                                    else:
+                                        if teacher_name not in found_teachers:
+                                            found_teachers.append(teacher_name)
+                                            emails.append("")
+
                     i += 1
-                    continue
-
-                day_name = row[0].strip() if len(row) > 0 and row[0] else ""
-
-                # Check if this is a day row
-                if day_name and day_name.upper() in ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]:
-                    # Get subjects for this day
-                    subjects = []
-                    for cell in row[1:]:
-                        subjects.append(cell.strip() if cell else "")
-
-                    # Check if next row has teachers
-                    teachers = []
-                    next_row = sheet_data[i + 1] if i + 1 < len(sheet_data) else None
-
-                    if (next_row and len(next_row) > 0 and
-                        (not next_row[0] or not next_row[0].strip()) and
-                        (len(next_row) <= 1 or not next_row[1] or not next_row[1].strip() or next_row[1].strip().upper() not in ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"])):
-
-                        # This is a teacher row - extract teacher data
-                        for cell in next_row[1:]:
-                            teachers.append(cell.strip() if cell else "")
-                        i += 1  # Skip the teacher row we just processed
-                    else:
-                        # No teacher row found, use empty teachers
-                        teachers = [""] * len(subjects)
-
-                    # Look for the requested subject and get the corresponding teacher
-                    for subj_idx, subj in enumerate(subjects):
-                        if subj and self._subjects_match(subj, subject) and subj_idx < len(teachers):
-                            teacher_name = teachers[subj_idx]
-                            if teacher_name:
-                                # Handle combined teacher names (e.g., "Mohit/Krishna")
-                                if '/' in teacher_name:
-                                    # Split combined names and add each one
-                                    combined_names = [name.strip() for name in teacher_name.split('/') if name.strip()]
-                                    for name in combined_names:
-                                        if name and name not in found_teachers:
-                                            found_teachers.append(name)
-                                else:
-                                    # Single teacher name
-                                    if teacher_name not in found_teachers:
-                                        found_teachers.append(teacher_name)
-
-                i += 1
 
             if not found_teachers:
-                return f"I couldn't find a teacher for {subject.title()} in the Grade {grade} timetable."
+                diyas_data, diyas_tab = self.extract_diyas_sheet_data(file_id, token)
+                if diyas_data:
+                    rows = self._rows_from_diyas_tab(diyas_data)
+                    print(f"[DriveChatbot] Diyas fallback from tab {diyas_tab!r}, {len(rows)} rows")
+                    for r in rows:
+                        subj = r.get("subject", "")
+                        if self._subjects_match(subj, subject) and r.get("facilitator", "").strip():
+                            found_teachers.append(r["facilitator"].strip())
+                            emails.append(r.get("email", "").strip() if r.get("email") else "")
 
-            # Remove duplicates and format response
-            unique_teachers = list(set(found_teachers))
-            formatted_teachers = [self._format_teacher_name(teacher) for teacher in unique_teachers]
+            if not found_teachers:
+                gl = self._grade_display_label(grade)
+                if not sheet_data:
+                    return (
+                        f"No timetable or Diyas list found for {gl} to look up the "
+                        f"{subject.title()} teacher."
+                    )
+                return (
+                    f"I couldn't find a teacher for {subject.title()} in the {gl} timetable "
+                    f"or the Diyas list."
+                )
 
-            if len(formatted_teachers) == 1:
-                return f"TEACHER_INFO: The {subject.title()} teacher is {formatted_teachers[0]}."
-            else:
-                teacher_list = ", ".join(formatted_teachers[:-1]) + " and " + formatted_teachers[-1]
-                return f"TEACHER_INFO: The {subject.title()} teachers are {teacher_list}."
+            return self._format_teacher_info_response(subject, found_teachers, emails)
 
         except Exception as e:
             print(f"[DriveChatbot] Error getting subject teacher: {e}")

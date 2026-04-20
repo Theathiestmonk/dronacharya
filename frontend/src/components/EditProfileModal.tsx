@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/providers/AuthProvider';
 import Image from 'next/image';
+import { STUDENT_GRADE_OPTIONS } from '@/constants/studentGrades';
 
 interface EditProfileModalProps {
   isOpen: boolean;
@@ -305,10 +306,7 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose }) 
             }}
           >
             <option value="">Select Grade</option>
-            <option value="Pre-Nursery">Pre-Nursery</option>
-            <option value="Nursery">Nursery</option>
-            <option value="KG">KG</option>
-            {Array.from({ length: 12 }, (_, i) => `Grade ${i + 1}`).map(grade => (
+            {STUDENT_GRADE_OPTIONS.map((grade) => (
               <option key={grade} value={grade}>{grade}</option>
             ))}
           </select>
