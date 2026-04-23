@@ -41,6 +41,20 @@ async def chat_with_bot(request: ChatbotRequest):
 
         # Use the chatbot agent
         result = generate_chatbot_response(request)
+
+        # Engagement analytics: one row per successful response (fails open if table missing)
+        try:
+            from app.utils.ai_chat_analytics import record_ai_chat_event
+
+            _uid = request.user_id if request.user_id else None
+            record_ai_chat_event(
+                user_id=_uid,
+                is_authenticated=bool(_uid),
+                source="web",
+            )
+        except Exception as _e:
+            print(f"[Chatbot] ai_chat_events: {_e}")
+
         print(f"Chatbot agent result: {result}")  # Debug log
         
         # Handle different response types

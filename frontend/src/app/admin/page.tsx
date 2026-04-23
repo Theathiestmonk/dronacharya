@@ -93,6 +93,13 @@ export default function AdminPage() {
             {/* Right Section - Buttons and Welcome */}
             <div className="flex items-center space-x-2 sm:space-x-3 md:space-x-4 gap-2 flex-nowrap flex-shrink-0 ml-auto">
               <button
+                onClick={() => router.push('/admin/analytics')}
+                className="bg-white border border-gray-300 text-gray-800 px-3 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0 hover:bg-gray-50"
+              >
+                <span className="hidden sm:inline">AI analytics</span>
+                <span className="sm:hidden">Analytics</span>
+              </button>
+              <button
                 onClick={() => router.push('/admin/management')}
                 className="text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm transition-colors whitespace-nowrap flex-shrink-0"
                 style={{ backgroundColor: 'var(--brand-primary)' }}

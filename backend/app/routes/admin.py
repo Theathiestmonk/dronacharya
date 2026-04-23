@@ -3470,3 +3470,188 @@ async def sync_assignments_oauth(email: str = Query(..., description="Teacher em
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to sync assignments: {str(e)}")
 
+
+def _admin_profile_allows_analytics(profile: dict) -> bool:
+    if not profile:
+        return False
+    if profile.get("admin_privileges"):
+        return True
+    return (profile.get("role") or "").lower() == "admin"
+
+
+@router.get("/ai-analytics/summary")
+async def get_ai_analytics_summary(
+    email: Optional[str] = None,
+    days: int = 28,
+    include_legacy_chat_sessions: bool = True,
+    include_question_themes: bool = True,
+    max_question_theme_samples: int = 8000,
+):
+    """
+    Daily engagement: ai_chat_events plus, when enabled, saved chat_sessions (bot messages) for
+    pre-log or offline history — never double counts once server logging is live.
+    """
+    if days < 7 or days > 120:
+        days = 28
+    if max_question_theme_samples < 500:
+        max_question_theme_samples = 500
+    elif max_question_theme_samples > 20000:
+        max_question_theme_samples = 20000
+    try:
+        admin_service = SupabaseAdminService()
+        if email:
+            profile = admin_service.get_user_profile_by_email(email)
+            if not _admin_profile_allows_analytics(profile or {}):
+                raise HTTPException(status_code=403, detail="Admin privileges required")
+        else:
+            raise HTTPException(status_code=400, detail="email query parameter is required")
+
+        from collections import defaultdict
+
+        from ..utils.ai_chat_analytics import (
+            aggregate_user_question_themes,
+            merge_chat_sessions_into_by_day,
+        )
+
+        now = datetime.now(timezone.utc)
+        # Need at least 14d of data for "last 7 vs previous 7" comparison
+        fetch_span = max(days, 14)
+        start = now - timedelta(days=fetch_span)
+
+        # First event row ever (for legacy merge cutoff)
+        earliest_event_at: Optional[str] = None
+        earliest_event_dt: Optional[datetime] = None
+        try:
+            er = (
+                admin_service.supabase.table("ai_chat_events")
+                .select("created_at")
+                .order("created_at", desc=False)
+                .limit(1)
+                .execute()
+            )
+            if er.data and len(er.data) > 0:
+                earliest_event_at = er.data[0].get("created_at")
+                ts0 = er.data[0].get("created_at")
+                if isinstance(ts0, str):
+                    try:
+                        earliest_event_dt = datetime.fromisoformat(
+                            ts0.replace("Z", "+00:00")
+                        )
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        res = (
+            admin_service.supabase.table("ai_chat_events")
+            .select("created_at")
+            .gte("created_at", start.isoformat())
+            .execute()
+        )
+        rows = res.data or []
+
+        by_day: dict = defaultdict(int)
+        for row in rows:
+            ts = row.get("created_at")
+            if not ts:
+                continue
+            d = None
+            if isinstance(ts, str):
+                try:
+                    d = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                except Exception:
+                    continue
+            elif isinstance(ts, datetime):
+                d = ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+            if d is None:
+                continue
+            by_day[d.date().isoformat()] += 1
+
+        legacy_bot_replies = 0
+        if include_legacy_chat_sessions:
+            # Widen lookback for saved sessions so older activity is still bucketed into real days
+            # on the chart (up to 120d lookback; chart still shows last `days` only).
+            leg_start = now - timedelta(days=max(120, fetch_span + 1))
+            legacy_bot_replies = merge_chat_sessions_into_by_day(
+                admin_service.supabase,
+                by_day,
+                leg_start,
+                now,
+                earliest_event_dt,
+            )
+
+        # Build ordered series for chart (last `days` calendar days, zero-filled)
+        series = []
+        for i in range(days - 1, -1, -1):
+            d = (now - timedelta(days=i)).date()
+            dk = d.isoformat()
+            series.append({"date": dk, "count": int(by_day.get(dk, 0))})
+
+        # Last 7d vs previous 7d
+        def count_days_back(from_now_idx_start: int, n: int) -> int:
+            t = 0
+            for j in range(n):
+                d0 = (now - timedelta(days=from_now_idx_start + j)).date().isoformat()
+                t += int(by_day.get(d0, 0))
+            return t
+
+        last_7 = count_days_back(0, 7)
+        prev_7 = count_days_back(7, 7)
+        pct = None
+        if prev_7 > 0:
+            pct = round(100.0 * (last_7 - prev_7) / prev_7, 1)
+        elif last_7 > 0:
+            pct = 100.0
+
+        metric = (
+            "One count per successful /chatbot response (server log). "
+            "When needed, we also add bot replies from saved session history (signed-in users), "
+            "attributed to the day that best matches last activity; "
+            "once server logging is live, those sessions are not double counted."
+        )
+
+        question_themes_block = None
+        if include_question_themes:
+            theme_leg = now - timedelta(days=max(120, fetch_span + 1))
+            try:
+                question_themes_block = aggregate_user_question_themes(
+                    admin_service.supabase,
+                    theme_leg,
+                    now,
+                    max_user_messages=max_question_theme_samples,
+                )
+            except Exception as _qe:
+                print(f"[ai-analytics] question_themes: {_qe}")
+                question_themes_block = {
+                    "themes": [],
+                    "user_messages_sampled": 0,
+                    "capped": False,
+                    "note": "Theme summary could not be loaded.",
+                    "top_theme": None,
+                    "general_other_percent": 0.0,
+                    "avg_user_messages_per_session": None,
+                    "sessions_with_user_messages": 0,
+                }
+
+        return {
+            "metric": metric,
+            "days": days,
+            "series": series,
+            "last_7_days_total": last_7,
+            "previous_7_days_total": prev_7,
+            "percent_change_vs_prev_week": pct,
+            "earliest_event_at": earliest_event_at,
+            "total_in_range": int(len(rows) + legacy_bot_replies),
+            "event_rows_in_range": len(rows),
+            "legacy_bot_replies_merged": legacy_bot_replies,
+            "include_legacy_chat_sessions": bool(include_legacy_chat_sessions),
+            "question_themes": question_themes_block,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ai-analytics] {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
