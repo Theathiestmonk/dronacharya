@@ -1,6 +1,7 @@
 import os
 import json
 import re
+from typing import Optional, Tuple
 from app.core.openai_client import get_openai_client, get_default_gpt_model
 from app.agents.youtube_intent_classifier import process_video_query
 from app.agents.web_crawler_agent import get_web_enhanced_response
@@ -25,6 +26,7 @@ from app.utils.calendar_intent import (
     filter_calendar_events_by_month_phrase,
     filter_calendar_events_by_week_phrase,
 )
+from app.utils.roots_article_resolver import is_article_by_title_query, resolve_roots_substack_intent
 from app.utils.calendar_grade_scope import (
     CALENDAR_DISPLAY_LEGEND,
     normalize_user_grade_for_calendar,
@@ -771,8 +773,9 @@ def detect_query_language(query):
     """
     query_lower = query.lower()
 
-    # Hindi indicators - removed generic substrings that cause false positives
-    hindi_words = ['hai', 'kya', 'meri', 'mere', 'aaj', 'kal', 'school', 'event', 'koi', 'mein', 'बजे', 'घंटे']
+    # Hindi indicators — use Devanagari / clearly Hindi tokens only; English "school"/"event" are not Hindi
+    # and spuriously matched queries like "schoolaroo" (Bookaroo) when used with substring checks in logs.
+    hindi_words = ['hai', 'kya', 'meri', 'mere', 'aaj', 'kal', 'koi', 'mein', 'बजे', 'घंटे']
     hindi_chars = ['अ', 'आ', 'इ', 'ई', 'उ', 'ऊ', 'ए', 'ऐ', 'ओ', 'औ', 'अं', 'अः', 'क', 'ख', 'ग', 'घ', 'ङ', 'च', 'छ', 'ज', 'झ', 'ञ', 'ट', 'ठ', 'ड', 'ढ', 'ण', 'त', 'थ', 'द', 'ध', 'न', 'प', 'फ', 'ब', 'भ', 'म', 'य', 'र', 'ल', 'व', 'श', 'ष', 'स', 'ह']
 
     # Gujarati indicators - removed generic substrings that cause false positives
@@ -794,8 +797,14 @@ def detect_query_language(query):
     # Debug logging
     print(f"[Chatbot] Language detection debug:")
     print(f"  Query: '{query}'")
-    print(f"  Hindi words found: {[word for word in hindi_words if word in query_lower]}")
-    print(f"  Gujarati words found: {[word for word in gujarati_words if word in query_lower]}")
+    print(
+        f"  Hindi words found: "
+        f"{[w for w in hindi_words if re.search(r'\\b' + re.escape(w) + r'\\b', query_lower)]}"
+    )
+    print(
+        f"  Gujarati words found: "
+        f"{[w for w in gujarati_words if re.search(r'\\b' + re.escape(w) + r'\\b', query_lower)]}"
+    )
     print(f"  Hindi count: {hindi_count}, Gujarati count: {gujarati_count}")
 
     if gujarati_count > hindi_count and gujarati_count > 2:
@@ -1097,7 +1106,7 @@ Once you provide the subject and topic, I'll be able to give you detailed, step-
         'student', 'classmate', 'roster',
         'teacher', 'instructor', 'faculty',
         'course', 'class', 'subject',
-        'event', 'events', 'calendar', 'calender', 'schedule', 'planning',
+        'calendar', 'calender', 'schedule', 'planning', 'school events', 'upcoming event',
         'my assignments', 'my coursework', 'my classes', 'my courses', 'my homework',
         'help with homework', 'help with assignment', 'help with coursework',
         'need help with homework', 'need help with assignment',
@@ -1923,10 +1932,20 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         'about prakriti', 'tell me about prakriti', 'what is prakriti school', 'about prakriti school',
     )
     is_general_school_info_query = any(p in query_lower for p in _general_school_about_phrases)
+    roots_rss_substack_intent: Optional[Tuple[str, str, float]] = None
+    try:
+        roots_rss_substack_intent = resolve_roots_substack_intent(user_query.strip())
+    except Exception as e:
+        print(f"[Chatbot] resolve_roots_substack_intent: {e}")
+    is_roots_rss_grounded_query = roots_rss_substack_intent is not None
+    wants_grounded_roots_post = is_article_by_title_query(
+        user_query
+    ) or is_roots_rss_grounded_query
     is_person_detail_query = (
         any(kw in query_lower for kw in person_detail_keywords)
         and not is_coursework_query
         and not is_general_school_info_query
+        and not wants_grounded_roots_post
     )
     
     # Check if query mentions a specific person name (capitalized words or known names)
@@ -2034,10 +2053,22 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                    'chemistry', 'biology', 'geography', 'computer', 'french', 'music', 'drama', 
                                    'literature', 'philosophy', 'economics', 'business', 'technology']
     faculty_role_keywords = ['facilitator', 'teacher', 'instructor', 'faculty', 'staff']
-    has_subject_with_faculty = any(subj in query_lower for subj in subject_keywords_for_faculty) and \
-                               any(role in query_lower for role in faculty_role_keywords)
-    is_subject_faculty_query = has_subject_with_faculty or \
-                               (is_person_detail_query and any(subj in query_lower for subj in subject_keywords_for_faculty))
+
+    def _faculty_subject_mentioned(ql: str, subj: str) -> bool:
+        # "article" must not count as the subject "art"
+        if subj == "art":
+            return bool(re_module.search(r"\bart\b", ql))
+        return subj in ql
+
+    has_subject_with_faculty = any(
+        _faculty_subject_mentioned(query_lower, subj) for subj in subject_keywords_for_faculty
+    ) and any(role in query_lower for role in faculty_role_keywords)
+    is_subject_faculty_query = has_subject_with_faculty or (
+        is_person_detail_query
+        and any(_faculty_subject_mentioned(query_lower, subj) for subj in subject_keywords_for_faculty)
+    )
+    if wants_grounded_roots_post:
+        is_subject_faculty_query = False
     
     # Note: is_coursework_query, is_homework_query, and is_assignment_query are already defined above
     is_course_query = any(kw in query_lower for kw in ['course', 'courses', 'class', 'classes', 'subject', 'subjects'])
@@ -2045,53 +2076,91 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     holiday_keywords = ['holiday', 'holidays', 'vacation', 'school holidays', 'holiday calendar', 'vacation calendar', 'holidays calendar', 'show holidays', 'holiday list', 'holidy', 'holidya']
     is_holiday_query = any(kw in query_lower for kw in holiday_keywords)
 
-    event_keywords = ['event', 'events', 'calendar', 'calender', 'schedule', 'meeting',
-                      # Date/time question patterns
-                      'when is', 'when will', 'when does', 'when do', 'when are',
-                      'what date', 'what day', 'which date', 'which day',
-                      'date of', 'day of', 'when', 'date', 'dates',
-                      'where is the calendar', 'where is the calender',
-                      'link for calendar', 'link for calender',
-                      'calendar link', 'calender link',
-                      'calendar page', 'calender page',
-                      'school events',
-                      # Week/month patterns
-                      'first week', 'second week', 'third week', 'fourth week', 'last week',
-                      'this week', 'next week', 'upcoming week',
-                      'events in', 'events on', 'events for', 'events during',
-                      'held on', 'held in', 'scheduled on', 'scheduled in',
-                      # Hindi calendar keywords (with common typos)
-                      'ko kya hai', 'ko kya hota hai', 'ko kaya hai',
-                      'ko kya hia', 'kya hai', 'kya hota hai', 'kya hia',
-                      'mere school', 'school me', 'schoolm me', 'mere schoolm',
-                      'merre schoolm', 'schoolm', 'mere']
-    # NOTE: Do not add bare 'school' — it matches every English "about school" question and
-    # forces calendar/classroom intent. Use phrases like 'school events', 'mere school', etc.
-    # Normalize common "calender" typo so substring checks stay reliable (unicode etc.)
-    query_lower_for_events = query_lower.replace('calender', 'calendar')
-    is_event_query = any(kw in query_lower_for_events for kw in event_keywords)
-    
-    # Also check for common event names (sports day, spring break, etc.)
-    # This helps detect queries like "when is sports day" even without explicit event keywords
-    common_event_names = ['sports day', 'spring break', 'book swap', 'session begins', 
-                         'holiday', 'holidays', 'festival', 'festivals', 'diwali', 'holi',
-                         'eid', 'christmas', 'vacation', 'break', 'semester', 'term']
-    has_event_name = any(event_name in query_lower_for_events for event_name in common_event_names)
-    
-    # Check for "upcoming events" patterns (even with typos like "even s")
-    upcoming_event_patterns = ['upcoming event', 'upcoming even', 'coming event', 'coming even',
-                              'future event', 'future even', 'next event', 'next even']
-    has_upcoming_pattern = any(pattern in query_lower_for_events for pattern in upcoming_event_patterns)
-    
-    # If query has event name, date/time question pattern, or upcoming events pattern, treat as event query
-    if has_event_name or has_upcoming_pattern or any(pattern in query_lower_for_events for pattern in ['when is', 'when will', 'what date', 'what day', 'which date', 'which event', 'events on', 'events in', 'held on', 'held in']):
-        is_event_query = True
-
-    # Combined calendar query for backward compatibility (include public school website / Year Flow asks)
+    # Year Flow (events.prakriti.edu.in / DB): explicit schedule/date/school-calendar intent only.
+    # Bare words "event"/"events" alone must NOT send users to the calendar — prefer “Roots of All Beings”
+    # and programme/philosophy pages for general questions (see is_conceptual_school_event_query below).
+    # NOTE: Do not add bare 'school' — it matches every "about school" question and misroutes. Use
+    # phrases like 'school events', 'mere school' (Hindi), etc.
+    query_lower_for_events = query_lower.replace("calender", "calendar")
+    _qf = query_lower_for_events
+    _bookaroo_mention = bool(re.search(r"\b(?:book|school)aroo\b", _qf))
+    year_flow_phrase_keywords = [
+        "calendar", "meeting", "schedule",
+        "school events",
+        "where is the calendar", "link for calendar", "calendar link", "calendar page",
+        "this week", "next week", "upcoming week", "coming week", "current week", "last week", "past week",
+        "previous week", "first week", "second week", "third week", "fourth week",
+        "this month", "next month", "last month",
+        "upcoming event", "upcoming even", "coming event", "coming even", "future event", "future even",
+        "next event", "next even",
+        "events on", "events in", "events for", "events during", "event on", "event in",
+        "year flow", "academic year flow",
+        "held on", "held in", "scheduled on", "scheduled in",
+        # Hindi / Hingish school calendar phrasing
+        "ko kya hai", "ko kya hota hai", "ko kaya hai", "ko kya hia", "kya hai", "kya hota hai", "kya hia",
+        "mere school", "school me", "schoolm me", "mere schoolm", "merre schoolm", "schoolm", "mere",
+    ]
+    date_or_schedule_event_patterns = [
+        "when is", "when will", "when does", "when do", "when are",
+        "what date", "what day", "which date", "which day", "which event", "date of", "day of",
+    ]
+    has_date_or_schedule_event_pattern = any(p in _qf for p in date_or_schedule_event_patterns)
+    is_bookaroo_article_or_reading_query = (
+        _bookaroo_mention
+        and any(
+            p in _qf
+            for p in (
+                "article",
+                "articles",
+                "blog",
+                "write-up",
+                "writeup",
+                "read about",
+                "reading",
+                "story about",
+                "news about",
+                "substack",
+                "piece on",
+                "post about",
+            )
+        )
+        and not has_date_or_schedule_event_pattern
+    )
+    # "What is Schoolaroo/Bookaroo?" = meaning (Roots), not "show me the calendar" as primary
+    is_bookaroo_event_meaning_query = bool(
+        _bookaroo_mention
+        and (
+            re.search(r"\bwhat\s+is(\s+the)?\s*(book|school)aroo", _qf)
+            or re.search(r"\bwhat['\u2019]s(\s+the)?\s*(book|school)aroo", _qf)
+            or re.search(
+                r"\b(?:tell me about|explain|describe)(\s+the)?\s*(book|school)aroo", _qf
+            )
+        )
+        and not has_date_or_schedule_event_pattern
+        and "event calendar" not in _qf
+    )
+    is_year_flow_calendar_intent = any(kw in _qf for kw in year_flow_phrase_keywords) or has_date_or_schedule_event_pattern
+    # Also check for common event names (sports day, spring break, etc.) — usually date-seeking
+    common_event_names = [
+        "sports day", "spring break", "book swap", "session begins",
+        "holiday", "holidays", "festival", "festivals", "diwali", "holi", "eid", "christmas",
+        "vacation", "break", "semester", "term",
+    ]
+    has_event_name = any(n in _qf for n in common_event_names)
+    if has_event_name:
+        is_year_flow_calendar_intent = True
+    upcoming_event_patterns = [
+        "upcoming event", "upcoming even", "coming event", "coming even", "future event", "future even",
+        "next event", "next even",
+    ]
+    has_upcoming_pattern = any(p in _qf for p in upcoming_event_patterns)
+    if has_upcoming_pattern:
+        is_year_flow_calendar_intent = True
+    if _bookaroo_mention and not is_bookaroo_article_or_reading_query and not is_bookaroo_event_meaning_query:
+        is_year_flow_calendar_intent = True
     is_public_cal = is_public_cal or is_public_school_website_calendar_query(
         query_lower_for_events
     ) or is_public_calendar_event_lookup_query(query_lower_for_events)
-    is_calendar_query = is_holiday_query or is_event_query or is_public_cal
     is_calendar_link_only = is_calendar_link_only_query(query_lower_for_events)
     is_calendar_page_content = is_calendar_page_content_query(query_lower_for_events)
     if is_calendar_link_only:
@@ -2108,6 +2177,32 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         print(
             "[Chatbot] 📅 Calendar page overview — public school calendar (guest OK, no Classroom required)"
         )
+    is_calendar_query = is_holiday_query or is_year_flow_calendar_intent or is_public_cal
+    is_conceptual_school_event_query = bool(
+        re.search(r"\bevents?\b", _qf)
+    ) and not is_holiday_query and not is_year_flow_calendar_intent and not is_public_cal
+    is_bookaroo_festival_context_query = _bookaroo_mention
+    # "What is this event" / "tell me about this event" — meaning & culture, not schedule (Roots / web, no default calendar link)
+    is_event_nature_explanation_query = bool(
+        (
+            any(
+                p in _qf
+                for p in (
+                    "what is this event",
+                    "what's this event",
+                    "whats this event",
+                    "tell me about this event",
+                    "tell me more about this event",
+                    "explain this event",
+                    "describe this event",
+                    "more about this event",
+                )
+            )
+            and not has_date_or_schedule_event_pattern
+            and "event calendar" not in _qf
+        )
+        or is_bookaroo_event_meaning_query
+    )
     # Detect existence check queries
     is_existence_check_query = any(kw in query_lower for kw in ['exists', 'exist', 'check if', 'is there', 'is there a']) and \
                                (is_student_query or is_teacher_query)
@@ -2121,11 +2216,21 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     print(f"  - Teacher: {is_teacher_query}")
     print(f"  - Coursework: {is_coursework_query}")
     print(f"  - Course: {is_course_query}")
-    print(f"  - Calendar: {is_calendar_query}")
+    print(f"  - Calendar (incl. Year Flow): {is_calendar_query}")
+    print(f"  - Year Flow / date-scoped school calendar: {is_year_flow_calendar_intent}")
+    print(f"  - Conceptual school events (not Year Flow first): {is_conceptual_school_event_query}")
+    print(f"  - Bookaroo / schoolaroo (web + Roots priority): {is_bookaroo_festival_context_query}")
+    print(f"  - book|school+aroo + article/reading (no Year Flow; web only): {is_bookaroo_article_or_reading_query}")
+    print(f"  - Event nature / what is this event (Roots; no default calendar): {is_event_nature_explanation_query}")
     print(f"  - Calendar link-only (URL / where — no long event list): {is_calendar_link_only}")
     print(f"  - Calendar page overview (what it covers — short summary, not full list): {is_calendar_page_content}")
     print(f"  - Existence Check: {is_existence_check_query}")
     print(f"  - is_subject_faculty_query: {is_subject_faculty_query}")
+    _rss_m = f" (score={roots_rss_substack_intent[2]:.1f})" if roots_rss_substack_intent else ""
+    print(
+        f"  - Specific article title in query: {is_article_by_title_query(user_query)}; "
+        f"Roots RSS match (implicit tell-me-about / title in feed): {is_roots_rss_grounded_query}{_rss_m}"
+    )
     print(f"  - is_classroom_related_query (early): {(is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query) and not is_subject_faculty_query}")
     
     # Detect exam-related queries for drive integration (HIGH PRIORITY - before classroom detection)
@@ -2183,7 +2288,12 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         
         # Exclude academic/educational queries that don't need web crawling
         academic_keywords = ['newton', 'einstein', 'darwin', 'law of', 'laws', 'theorem', 'formula', 'solve', 'explain', 'understand', 'learn', 'study', 'help me with', 'teach me', 'how to', 'what is', 'concept', 'example']
-        is_pure_academic_query = any(keyword in user_query.lower() for keyword in academic_keywords) and not any(school_keyword in user_query.lower() for school_keyword in ['prakriti', 'prakrit', 'school'])
+        # Titles like "Understanding Our Bodies…" match substring "understand" and must not skip the web/RSS path.
+        is_pure_academic_query = (
+            any(keyword in user_query.lower() for keyword in academic_keywords)
+            and not any(school_keyword in user_query.lower() for school_keyword in ['prakriti', 'prakrit', 'school'])
+            and not wants_grounded_roots_post
+        )
         
         # Also exclude translation/reference queries (they reference previous responses, not website)
         translation_keywords = ['translate', 'translation', 'gujrati', 'gujarati', 'hindi', 'english', 'language', 'below response', 'previous response', 'that response', 'last response', 'above response']
@@ -2208,14 +2318,34 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         # Trigger for any article query that might be philosophical/educational in nature
         is_article_query_override = 'article' in normalized_query.lower() and any(word in normalized_query.lower() for word in ['prakriti', 'philosophy', 'learning', 'education', 'environment', 'shaping', 'guide', 'voice', 'student'])
 
-        should_use_web_crawling = any(keyword in normalized_query for keyword in web_enhancement_keywords) and not is_pure_academic_query and not is_translation_query and (not is_classroom_related_query or is_article_query_override) and not is_subject_faculty_query
+        # Bookaroo: fetch Roots / blog for narrative; calendar still supplies dates
+        is_bookaroo_festival_web_override = is_bookaroo_festival_context_query
+        is_event_nature_web_override = is_event_nature_explanation_query
+
+        should_use_web_crawling = (
+            any(keyword in normalized_query for keyword in web_enhancement_keywords)
+            or is_conceptual_school_event_query
+            or is_bookaroo_festival_web_override
+            or is_event_nature_web_override
+            or wants_grounded_roots_post
+        ) and not is_pure_academic_query and not is_translation_query and (
+            not is_classroom_related_query
+            or is_article_query_override
+            or is_bookaroo_festival_web_override
+            or is_event_nature_web_override
+            or wants_grounded_roots_post
+        ) and not is_subject_faculty_query
 
         # For calendar queries with no events, skip web crawling to avoid showing generic fallback data
         # Note: calendar_events will be checked later after admin_data is loaded
 
         # Log why web crawling was skipped for classroom queries (but not for article queries)
-        if is_classroom_related_query and any(keyword in user_query.lower() for keyword in web_enhancement_keywords) and not is_article_query_override:
+        if is_classroom_related_query and any(keyword in user_query.lower() for keyword in web_enhancement_keywords) and not is_article_query_override and not is_bookaroo_festival_web_override and not is_event_nature_web_override:
             print(f"[Chatbot] ⚠️ Web crawling skipped - Classroom-related query detected. Using Classroom/Calendar data instead.")
+        elif is_event_nature_web_override:
+            print("[Chatbot] 🌱 Event nature / what is this event — web crawl (Roots + philosophy, no default calendar).")
+        elif is_bookaroo_festival_web_override:
+            print("[Chatbot] 📚 book|school+aroo — web crawl enabled (ground answers in Web/Data; no fixed festival blurb).")
         elif is_article_query_override:
             print(f"[Chatbot] 📝 Article query override - allowing web crawling for Prakriti/philosophy content despite classroom detection.")
     
@@ -2361,7 +2491,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     # AND exclude holiday queries (use classroom data, not admin drive data)
     # AND exclude teacher queries that should go to drive integration (timetable teacher lookup)
 
-    is_classroom_related_query = (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_event_query or is_calendar_query) and not is_subject_faculty_query and not is_exam_query and not is_holiday_query and not is_teacher_drive_query
+    is_classroom_related_query = (is_announcement_query or is_coursework_query or is_student_query or is_teacher_query or is_course_query or is_calendar_query) and not is_subject_faculty_query and not is_exam_query and not is_holiday_query and not is_teacher_drive_query
     is_home_related_query = any(kw in query_lower for kw in ['home', 'homework', 'my assignments', 'my coursework', 'my classes', 'my courses'])
 
     # Check for teacher-specific queries (submissions, grading, student work)
@@ -2459,7 +2589,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             should_load_students = is_student_query or is_assignment_status_query
             should_load_announcements = is_announcement_query
             should_load_coursework = is_coursework_query or is_assignment_status_query
-            should_load_calendar = is_calendar_query or is_event_query or is_public_cal  # Load calendar for event queries too
+            should_load_calendar = is_calendar_query  # Year Flow + holidays + public school calendar
             should_load_submissions = is_submission_query or is_grading_query or is_assignment_status_query
             
             # Public school calendar lives in calendar_event_data (Year Flow); skip Classroom course rows if not needed
@@ -2780,6 +2910,22 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
 
                 # Special handling for calendar queries with no events
                 calendar_events = admin_data.get('calendar_data', [])
+                # Bookaroo (common typo: "schoolaroo") — only rows that mention the festival, not the full list
+                if is_calendar_query and calendar_events and re.search(
+                    r"\b(?:book|school)aroo\b", query_lower
+                ):
+                    _hay = "bookaroo"
+                    _matched = [
+                        e
+                        for e in calendar_events
+                        if _hay in (e.get("summary") or "").lower()
+                    ]
+                    if _matched:
+                        admin_data["calendar_data"] = _matched
+                        calendar_events = _matched
+                        print(
+                            f"[Chatbot] 📅 Bookaroo filter: {len(calendar_events)} event(s) matching title"
+                        )
                 if is_calendar_query and calendar_events:
                     filtered_cal, scope_lbl = filter_calendar_events_by_month_phrase(query_lower, calendar_events)
                     if scope_lbl is None:
@@ -3092,6 +3238,14 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 coursework_instruction = """ CRITICAL: For assignment/coursework queries, you MUST extract assignments from the provided Data section and show them immediately. DO NOT create fake assignments or generate examples like 'Topic: Algebra'. Use ONLY the actual assignment titles, descriptions, due dates, and links from the Data section. DO NOT ask for more information - the data is already provided. START your response directly with the assignments from the data, not with greetings or fake examples.""" if (is_coursework_query and not is_assignment_status_query) else ""
                 system_content = """You are Prakriti School's AI assistant. Progressive K-12 school in Greater Noida. Philosophy: "Learning for happiness". Use Markdown. Never say "as an AI". Present data directly. Use provided data to answer questions.""" + homework_instruction + coursework_instruction
 
+            if wants_grounded_roots_post and (web_enhanced_info or "").strip():
+                system_content += (
+                    "\n\n**Substack / Roots (blog) answers:** The user message may include a **Web** excerpt from one school publication post. "
+                    "Reply in a warm, conversational chat style: answer the question in the first sentence or two, then add detail in **short paragraphs**. "
+                    "Do not default to stiff report layout (e.g. 'Key highlights', 'Event overview', many ### sections) unless the Web text itself is written that way. "
+                    "Use bullet lists only for genuine lists in the source (dates, schedule items, program points)."
+                )
+
             # Detect query language for system prompt
             query_language = detect_query_language(user_query)
 
@@ -3159,14 +3313,8 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                                        (is_student_query or is_teacher_query)
             is_today_query = any(kw in query_lower for kw in ['today', 'todays', "today's"])
             is_yesterday_query = any(kw in query_lower for kw in ['yesterday', "yesterday's"])
-            calendar_keywords = ['event', 'events', 'calendar', 'calender', 'schedule', 'meeting', 'holiday',
-                               # Hindi calendar keywords (with common typos)
-                               'ko kya hai', 'ko kya hota hai', 'ko kaya hai',
-                               'ko kya hia', 'kya hai', 'kya hota hai', 'kya hia',
-                               'mere school', 'school me', 'schoolm me', 'mere schoolm',
-                               'merre schoolm', 'schoolm', 'mere', 'school']
             # Do not assign to is_calendar_query here — it would overwrite intent from Step 1.5 and drop calendar context.
-            is_calendar_prompt_keyword = any(kw in query_lower for kw in calendar_keywords)
+            is_calendar_prompt_keyword = is_calendar_query or is_conceptual_school_event_query
 
             # Detect translation/reference queries (need previous response context)
             translation_keywords = ['translate', 'translation', 'gujrati', 'gujarati', 'hindi', 'english', 'language', 'below response', 'previous response', 'that response', 'last response', 'above response', 'send me in', 'give me in']
@@ -3433,6 +3581,30 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                     # Person query - use full information (up to 2000 chars to be safe)
                     max_web_chars = 2000
                     print(f"[Chatbot] Person query detected - using full web info ({len(web_enhanced_info)} chars)")
+                elif wants_grounded_roots_post:
+                    max_web_chars = 8000
+                    print(
+                        f"[Chatbot] Specific article title in query — web excerpt cap {max_web_chars} "
+                        f"(have {len(web_enhanced_info)} chars)"
+                    )
+                elif is_bookaroo_article_or_reading_query:
+                    max_web_chars = 2200
+                    print(
+                        f"[Chatbot] book|school+aroo + article/reading request — web excerpt cap {max_web_chars} "
+                        f"(have {len(web_enhanced_info)} chars)"
+                    )
+                elif is_event_nature_explanation_query:
+                    max_web_chars = 2000
+                    print(
+                        f"[Chatbot] Event nature (what is this event) — web excerpt cap {max_web_chars} "
+                        f"(have {len(web_enhanced_info)} chars)"
+                    )
+                elif is_bookaroo_festival_context_query:
+                    max_web_chars = 1500
+                    print(
+                        f"[Chatbot] Bookaroo / literature festival — extended web excerpt "
+                        f"(cap {max_web_chars} chars, have {len(web_enhanced_info)})"
+                    )
                 else:
                     # If classroom data exists, use less web info to prioritize classroom data
                     max_web_chars = 300 if admin_data.get('classroom_data') else 400
@@ -3441,6 +3613,24 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 user_content += f"Web:\n{truncated_web_info}\n"
                 if len(web_enhanced_info) > max_web_chars:
                     print(f"[Chatbot] Truncated web_enhanced_info from {len(web_enhanced_info)} to {max_web_chars} chars to save tokens")
+                if is_bookaroo_article_or_reading_query and web_enhanced_info:
+                    user_content += (
+                        "\n**GROUNDING:** Build your answer **only** from the **Web** text above. If the word *bookaroo* (or a clear event title) "
+                        "does not appear in that text, do **not** improvise a full “Bookaroo Literature Festival” description—say the pages did not return "
+                        "a matching article and point to the blog/roots links from the prior instructions.\n"
+                        "**STYLE:** Same as Roots/Substack posts—conversational, direct opening, short paragraphs; bullets only for real lists in the Web text; avoid stiff report headings.\n"
+                    )
+                if wants_grounded_roots_post and web_enhanced_info:
+                    user_content += (
+                        "\n**GROUNDING (Roots / Substack post):** Answer using **only** the **Web** section above. "
+                        "If it says the post was not found, or the excerpt does not match what the user asked for, say that plainly—**do not** invent details or copy from a different post.\n"
+                        "\n**RESPONSE STYLE (required for best UX):** "
+                        "Write like a warm, clear school chat assistant—not a report, essay, or marketing brochure. "
+                        "Start with one or two short sentences that **directly** address the user’s question, then add useful detail in **short paragraphs** (2–4 sentences). "
+                        "Use bullet points **only** when the Web text is clearly a list (e.g. schedule, activities, dates). Avoid generic “Key highlights / Event overview” section headers unless the Web is structured that way. "
+                        "Mention the real post title once in natural language; if you add a link, a single *Read the full post* line with the Substack URL is enough. "
+                        "Do not pad with generic education platitudes that are not in the Web text. Keep the total reply focused and scannable on mobile.\n"
+                    )
                 
                 # CRITICAL: For person queries, use the Web information to answer
                 if should_use_web_crawling_first:
@@ -3527,6 +3717,60 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                     "- **Do NOT** output a Markdown table of many events, long bullet lists of dates, or enumerate the term—"
                     "optional: one line that all dates and events are on that page.\n\n"
                 )
+
+            if (
+                is_conceptual_school_event_query
+                and not is_guest_classroom_query_local
+                and not is_teacher_needing_connection_local
+            ):
+                user_content += (
+                    "\n🌱 **SCHOOL EVENTS (CONCEPTUAL):** The user is asking about school **events** in a **general** way "
+                    "(culture, life at school, kinds of activities)—not **which day** something is or a list of upcoming **dates**.\n"
+                    "- **Prioritize** [Roots of all beings](https://prakriti.edu.in/roots-of-all-beings/) and "
+                    "[Our programmes](https://prakriti.edu.in/our-programmes/) (or Prakriti way of learning) over the raw Year Flow page.\n"
+                    "- Mention the [School calendar / Year Flow](https://events.prakriti.edu.in/) only **secondarily** as the place for "
+                    "**dated** milestones and term-wide listings—not as the main link or embedded view for this answer.\n\n"
+                )
+
+            if (
+                is_event_nature_explanation_query
+                and not is_guest_classroom_query_local
+                and not is_teacher_needing_connection_local
+            ):
+                user_content += (
+                    "\n🌱 **EVENT MEANING (NOT SCHEDULE):** The user is asking *what* an event is (context, experience, school culture), "
+                    "not for dates, Week Flow, or the school **calendar** page.\n"
+                    "- **Use the Web section first** (Roots / philosophy / news). Favour: "
+                    "[Roots of all beings](https://prakriti.edu.in/roots-of-all-beings/) and "
+                    "[Prakriti way of learning](https://prakriti.edu.in/prakriti-way-of-learning/).\n"
+                    "- **Do not** link to or mention **https://events.prakriti.edu.in/**, “Year Flow”, or the public event calendar, "
+                    "unless the user’s message also asks for **when** / **which day** / **schedule** / or **dates**.\n"
+                    "This phrasing (what the event is) is **not** a date request by itself.\n"
+                    "- If the Web text does not name a specific event, **say that honestly**; do not invent a full write-up or paste a date table from nowhere.\n\n"
+                )
+
+            if (
+                is_bookaroo_festival_context_query
+                and not is_guest_classroom_query_local
+                and not is_teacher_needing_connection_local
+            ):
+                if is_bookaroo_article_or_reading_query:
+                    user_content += (
+                        "\n📰 **ARTICLE / READING (book/school + aroo):** User asked for **articles** or reading material—**not** a canned festival pitch or a schedule.\n"
+                        "- **Do not** fill in a generic “vibrant celebration / literature festival” story unless a sentence in **Web** (or, if present, **Data** calendar) supports it **verbatim** or you can clearly paraphrase that text.\n"
+                        "- The **Web** section is the only allowed source of factual detail. If it does not mention the festival or “Bookaroo” by name, say so in one sentence and offer: "
+                        "[News & blog](https://prakriti.edu.in/blog-and-news/) and [Roots of all beings](https://prakriti.edu.in/roots-of-all-beings/) — do **not** invent authors, workshops, or impact claims.\n"
+                        "- The user’s spelling (e.g. *Schoolaroo*) is likely informal; the school’s materials often use **Bookaroo**—**only** say that and use the exact official title if **bookaroo** (or the title) appears in **Web** or **Data**. Otherwise: “I couldn’t find that exact name in the fetched page text; it may be the same as the event listed in school materials as …” is OK **only** if the Web/ Data shows the title.\n"
+                        "- **Do not** add a Data / Year Flow calendar table for this request.\n"
+                        "- **Do not** link to **https://events.prakriti.edu.in/** unless the user asked for dates or the calendar.\n\n"
+                    )
+                elif not is_event_nature_explanation_query:
+                    user_content += (
+                        "\n📚 **School event (book/school + aroo) — from Web + Data when loaded:**\n"
+                        "- **Do not** open with a marketing template (“vibrant celebration”, etc.)—use the **Web** text and, if you have them, **Data** calendar **titles and dates** as written.\n"
+                        "- The **official name** in your reply should match the **Data** event title and/or **Web** text, not a fixed phrase. The user’s spelling (e.g. *Schoolaroo*) is informal; you may **once** note that school pages usually say **Bookaroo** **only** if the fetched text or calendar row contains *bookaroo* or that title.\n"
+                        "- [Roots of all beings](https://prakriti.edu.in/roots-of-all-beings/), [News & blog](https://prakriti.edu.in/blog-and-news/); Year Flow: [Prakriti events](https://events.prakriti.edu.in/) is for **when**—use **Data** or Web for wording.\n\n"
+                    )
             
             # Add admin data if available - MINIMAL HEADER to save tokens
             # BUT skip for guest users asking classroom/home queries OR teachers needing their own connection
@@ -4327,7 +4571,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 
                 if (
                     admin_data.get("calendar_data")
-                    and (is_calendar_query or is_event_query)
+                    and is_calendar_query
                     and not is_calendar_link_only
                 ):
                     # Include calendar for both calendar and event queries (DB rows already limited by cal_limit)

@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.utils.calendar_grade_scope import parse_queried_grade_targets
 
 import calendar as cal_module
+import re
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -188,7 +189,12 @@ def is_public_school_website_calendar_query(query_lower: str) -> bool:
         return True
     if ("calendar" in query_lower or "calender" in query_lower) and ("where" in query_lower or "link" in query_lower or "url" in query_lower or "site" in query_lower or "page" in query_lower):
         return True
-    if "school" in query_lower and ("event" in query_lower or "calendar" in query_lower or "calender" in query_lower):
+    # Whole word "school" only — e.g. "Bookaroo" / "schoolaroo" must not match via substring "school".
+    if re.search(r"\bschool\b", query_lower) and (
+        re.search(r"\bevents?\b", query_lower)
+        or re.search(r"\bcalendars?\b", query_lower)
+        or "calender" in query_lower
+    ):
         if any(
             x in query_lower
             for x in (

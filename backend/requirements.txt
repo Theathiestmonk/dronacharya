@@ -27,3 +27,4 @@ google-auth-httplib2>=0.1.1
 google-api-python-client>=2.100.0
 PyPDF2>=3.0.0
 sentence-transformers>=2.2.0
+pytest>=7.0.0

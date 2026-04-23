@@ -3,6 +3,9 @@ Essential Prakriti School pages for chatbot queries
 Only these 10 pages are needed for accurate, fast responses
 """
 
+# The team page is maintained via admin "Sync" / manual flows only—excluded from scheduled daily auto-crawl.
+TEAM_PAGE_URL = "https://prakriti.edu.in/team/"
+
 ESSENTIAL_PRAKRITI_PAGES = [
     # 1. Homepage - General school info
     "https://prakriti.edu.in/",
@@ -33,6 +36,8 @@ ESSENTIAL_PRAKRITI_PAGES = [
     # 9. Parents Testimonials - For "what say about parents" queries
     "https://prakriti.edu.in/what-our-parents-say-about-us/",
 ]
+
+ESSENTIAL_PRAKRITI_PAGES_FOR_AUTO_CRAWL = [u for u in ESSENTIAL_PRAKRITI_PAGES if u != TEAM_PAGE_URL]
 
 # Content type mapping for each page
 PAGE_CONTENT_TYPES = {

@@ -59,9 +59,6 @@ class WebCrawlerAgent:
             "https://prakriti.edu.in/our-programmes/",
             "https://prakriti.edu.in/roots-of-all-beings/",
             
-            # Team/Staff
-            "https://prakriti.edu.in/team/",
-            
             # Academic
             "https://prakriti.edu.in/igcse-cambridge-grade-x-results-2022-25/",
             "https://prakriti.edu.in/launching-new-as-a-level-and-igcse-subjects/",
@@ -406,6 +403,21 @@ class WebCrawlerAgent:
                     if remaining and any(role in remaining for role in role_titles):
                         print(f"[WebCrawler] Excluding role title query from person query detection: '{query}'")
                         return False
+
+        # Roots Substack RSS title match (e.g. "tell me about can we save the planet") — not a person/team query
+        try:
+            from app.utils.roots_article_resolver import resolve_roots_substack_intent
+
+            _roots_intent = resolve_roots_substack_intent(query, self.session)
+        except Exception as e:
+            _roots_intent = None
+            print(f"[WebCrawler] resolve_roots_substack_intent in person check: {e}")
+        if _roots_intent:
+            print(
+                f"[WebCrawler] Excluding: Roots Substack post intent (feed match score={_roots_intent[2]:.1f}): "
+                f"'{query[:80]}{'…' if len(query) > 80 else ''}'"
+            )
+            return False
         
         # CRITICAL: Check for "tell me about" pattern FIRST - this is ALWAYS a person query if it has a name
         if 'tell me about' in query_lower:
@@ -1051,6 +1063,51 @@ class WebCrawlerAgent:
             except Exception as e:
                 print(f"[WebCrawler] Error checking cached URL: {e}")
                 # Continue to crawl if cache check fails
+
+        # Team page: never live-fetch in chatbot/automated paths (admin "Sync" uses force_refresh=True).
+        if (
+            "prakriti.edu.in" in (url or "").lower()
+            and "/team" in (url or "").lower()
+            and not force_refresh
+        ):
+            if SUPABASE_AVAILABLE:
+                try:
+                    supabase = get_supabase_client()
+                    stale = (
+                        supabase.table("web_crawler_data")
+                        .select("title, description, main_content, headings, links, crawled_at")
+                        .eq("url", url)
+                        .eq("is_active", True)
+                        .order("crawled_at", desc=True)
+                        .limit(1)
+                        .execute()
+                    )
+                    if stale.data and len(stale.data) > 0:
+                        c = stale.data[0]
+                        main_content = c.get("main_content", "") or ""
+                        if len(main_content) > 2000:
+                            main_content = main_content[:2000] + "..."
+                        print(
+                            f"[WebCrawler] Team page — using last cached copy (crawled_at={c.get('crawled_at')}), no live fetch"
+                        )
+                        return {
+                            "title": c.get("title", ""),
+                            "description": c.get("description", ""),
+                            "main_content": main_content,
+                            "headings": (c.get("headings") or [])[:10],
+                            "links": (c.get("links") or [])[:10],
+                            "url": url,
+                        }
+                except Exception as e:
+                    print(f"[WebCrawler] Error loading stale team cache: {e}")
+            print(
+                "[WebCrawler] Team page — no cache; skipping live crawl (use admin Sync this page to populate)"
+            )
+            return {
+                "url": url,
+                "error": "team_page_no_auto_crawl",
+                "main_content": "",
+            }
         
         # If no cache found, proceed with crawling
         try:
@@ -3605,71 +3662,275 @@ class WebCrawlerAgent:
 
         query_lower = query.lower()
 
-        # SPECIAL CASE: If query contains "article" or specific article titles, force crawl Roots of All Beings pages FIRST
+        # "What is this event" / "tell me about this event" — meaning, not dates (Roots / philosophy first)
+        _event_nature = (
+            any(
+                p in query_lower
+                for p in (
+                    "what is this event",
+                    "what's this event",
+                    "whats this event",
+                    "tell me about this event",
+                    "explain this event",
+                    "describe this event",
+                )
+            )
+            and not re.search(
+                r"\b(when|which day|which date|what date|what time|schedule|calendar|calender|upcoming|next week|event calendar)\b",
+                query_lower,
+            )
+            and not re.search(r"\b(?:book|school)aroo\b", query_lower)
+        )
+        if _event_nature:
+            print(
+                "[WebCrawler] 🎯 Event meaning — Roots + Prakriti way of learning + blog (not events calendar)"
+            )
+            for url in (
+                "https://prakriti.edu.in/roots-of-all-beings/",
+                "https://prakriti.edu.in/prakriti-way-of-learning/",
+                "https://prakriti.edu.in/blog-and-news/",
+                "https://prakriti.edu.in/",
+            ):
+                try:
+                    content = self.extract_content_from_url(
+                        url, query, skip_link_following=True
+                    )
+                    if content and "error" not in content and content.get("main_content", "").strip():
+                        relevant_info = self.extract_relevant_info([content], query)
+                        if relevant_info and relevant_info.strip():
+                            print(f"[WebCrawler] ✅ Event-meaning context from {url}")
+                            return relevant_info
+                except Exception as e:
+                    print(f"[WebCrawler] Error crawling {url} for event-meaning: {e}")
+
+        # Bookaroo / "Schoolaroo" typo — Substack (RSS-matched posts) before prakriti blog-and-news;
+        # event copy usually lives on Roots of All Beings, not the school "Blog & news" page.
+        if re.search(r"\b(?:book|school)aroo\b", query_lower):
+            article_reading = (
+                "article" in query_lower
+                or "articles" in query_lower
+                or "blog" in query_lower
+                or "substack" in query_lower
+                or "read about" in query_lower
+            )
+            from app.utils.roots_article_resolver import (
+                get_substack_post_urls_for_bookaroo_event_context,
+            )
+
+            substack_hits: List[str] = []
+            try:
+                substack_hits = get_substack_post_urls_for_bookaroo_event_context(
+                    self.session, limit=5
+                )
+            except Exception as e:
+                print(f"[WebCrawler] Bookaroo Substack feed URL list (skipped): {e}")
+            if substack_hits:
+                print(
+                    f"[WebCrawler] 📬 Substack feed: {len(substack_hits)} post(s) for Schoolaroo/Bookaroo context"
+                )
+            base_roots = "https://prakriti.edu.in/roots-of-all-beings/"
+            substack_publication = "https://rootsofallbeings.substack.com/"
+            prakriti_blog_and_news = "https://prakriti.edu.in/blog-and-news/"
+            prakriti_home = "https://prakriti.edu.in/"
+            if article_reading:
+                print(
+                    "[WebCrawler] 🎯 Bookaroo + article/reading — Roots, Substack post(s) & publication, then prakriti blog (fallback)"
+                )
+            else:
+                print(
+                    "[WebCrawler] 🎯 Bookaroo / Schoolaroo event — Roots, Substack post(s) & publication, then prakriti blog (fallback), homepage"
+                )
+            # Substack /p/ posts first (event copy and programme details); the school "Roots" hub
+            # often has short or generic text — it must not short-circuit before the feed-matched post(s).
+            bookaroo_urls: List[str] = []
+            for u in substack_hits:
+                if u and u not in bookaroo_urls:
+                    bookaroo_urls.append(u)
+            if base_roots not in bookaroo_urls:
+                bookaroo_urls.append(base_roots)
+            for u in (substack_publication, prakriti_blog_and_news, prakriti_home):
+                if u not in bookaroo_urls:
+                    bookaroo_urls.append(u)
+            for url in bookaroo_urls:
+                try:
+                    content = self.extract_content_from_url(
+                        url, query, skip_link_following=True
+                    )
+                    if content and "error" not in content and content.get("main_content", "").strip():
+                        relevant_info = self.extract_relevant_info([content], query)
+                        if relevant_info and relevant_info.strip():
+                            print(f"[WebCrawler] ✅ Bookaroo context from {url}")
+                            return relevant_info
+                except Exception as e:
+                    print(f"[WebCrawler] Error crawling {url} for Bookaroo: {e}")
+            print(
+                "[WebCrawler] ⚠️ No Bookaroo-specific excerpt from priority URLs; continuing with normal discovery"
+            )
+
+        # SPECIAL CASE: "article" / Roots-leaning keywords OR a confident RSS match (e.g. "tell me about can we save the planet")
+        substack_rss_intent = None
+        try:
+            from app.utils.roots_article_resolver import resolve_roots_substack_intent
+
+            substack_rss_intent = resolve_roots_substack_intent(query, self.session)
+        except Exception as e:
+            print(f"[WebCrawler] resolve_roots_substack_intent: {e}")
+
         is_article_query = ('article' in query_lower or 'student voice' in query_lower or
                            'guide for shaping' in query_lower or 'roots of all beings' in query_lower or
                            'green school' in query_lower or 'environment' in query_lower)
 
-        if is_article_query:
-            print(f"[WebCrawler] 🎯 ARTICLE QUERY DETECTED - Forcing direct crawl to Roots of All Beings pages")
+        if is_article_query or substack_rss_intent:
+            from app.utils.roots_article_resolver import (
+                extract_article_title_from_query,
+                extract_implicit_roots_post_phrase,
+                fetch_roots_substack_feed_entries,
+                ranked_feed_matches,
+                content_references_title,
+                not_found_message_for_title,
+            )
 
-            # Article-specific URL mapping
-            article_url_mapping = {
-                'student voice': "https://rootsofallbeings.substack.com/p/student-voice-a-guide-for-shaping",
-                'guide for shaping': "https://rootsofallbeings.substack.com/p/student-voice-a-guide-for-shaping",
-                'green school': "https://rootsofallbeings.substack.com/p/can-we-save-the-planet-or-should",
-                'save the planet': "https://rootsofallbeings.substack.com/p/can-we-save-the-planet-or-should",
-                'welcoming new members': "https://rootsofallbeings.substack.com/p/welcoming-new-members-to-prakriti",
-                'travelogue': "https://rootsofallbeings.substack.com/p/a-travelogue-on-our-recent-ole-at",
-                'ole': "https://rootsofallbeings.substack.com/p/outbound-learning-expedition-ole"
-            }
+            if is_article_query:
+                print(
+                    f"[WebCrawler] 🎯 ARTICLE QUERY DETECTED - Forcing direct crawl to Roots of All Beings pages"
+                )
+            if substack_rss_intent and not is_article_query:
+                print(
+                    f"[WebCrawler] 🎯 RSS-matched Roots/Substack intent (score={substack_rss_intent[2]:.1f})"
+                )
 
-            # Determine which URLs to prioritize based on query content
-            prioritized_urls = []
-            fallback_urls = [
-                "https://prakriti.edu.in/roots-of-all-beings/",  # Main page
-                "https://rootsofallbeings.substack.com/p/student-voice-a-guide-for-shaping",
-                "https://rootsofallbeings.substack.com/p/can-we-save-the-planet-or-should",
-                "https://rootsofallbeings.substack.com/p/welcoming-new-members-to-prakriti",
-                "https://rootsofallbeings.substack.com/p/a-travelogue-on-our-recent-ole-at",
-                "https://rootsofallbeings.substack.com/p/outbound-learning-expedition-ole"
-            ]
-
-            # Check for specific article matches
-            for keyword, url in article_url_mapping.items():
-                if keyword in query_lower:
-                    prioritized_urls.append(url)
-
-            # If no specific matches, use all URLs
-            if not prioritized_urls:
-                prioritized_urls = fallback_urls
-
-            # Remove duplicates while preserving order
-            seen = set()
-            article_urls = [x for x in prioritized_urls if not (x in seen or seen.add(x))]
-
-            print(f"[WebCrawler] 📋 Will check {len(article_urls)} article URLs")
-
-            for url in article_urls:
+            # User named a specific post title: resolve via Substack RSS, then validate page text.
+            # Do not fall back to the first hardcoded /p/ URL (wrong-article bug).
+            extracted_title = extract_article_title_from_query(query)
+            if extracted_title:
+                print(
+                    f"[WebCrawler] 📰 Resolving post by title via RSS: {extracted_title[:100]}"
+                    f"{'…' if len(extracted_title) > 100 else ''}"
+                )
                 try:
-                    print(f"[WebCrawler] 🌱 Directly crawling: {url}")
-
-                    # Get the page content using the same method as normal crawling
-                    content = self.extract_content_from_url(url, query)
-                    if content and 'error' not in content and 'main_content' in content and content['main_content'].strip():
-                        print(f"[WebCrawler] ✅ Found content ({len(content['main_content'])} chars) from {url}")
-
-                        # Extract relevant information for the query
+                    feed_entries = fetch_roots_substack_feed_entries(self.session)
+                except Exception as e:
+                    print(f"[WebCrawler] RSS feed fetch failed: {e}")
+                    return not_found_message_for_title(extracted_title)
+                if not feed_entries:
+                    return not_found_message_for_title(extracted_title)
+                candidates = ranked_feed_matches(extracted_title, feed_entries, min_score=70.0, limit=5)
+                if not candidates:
+                    return not_found_message_for_title(extracted_title)
+                for url, feed_title, score in candidates:
+                    try:
+                        print(
+                            f"[WebCrawler] 🌱 Article candidate (score={score:.1f}): {feed_title[:60]} — {url}"
+                        )
+                        content = self.extract_content_from_url(url, query)
+                        if not content or "error" in content or not content.get("main_content", "").strip():
+                            continue
+                        main = content.get("main_content", "")
+                        ptitle = content.get("title", "")
+                        if not (
+                            content_references_title(extracted_title, main, ptitle)
+                            or content_references_title(feed_title, main, ptitle)
+                        ):
+                            print(
+                                "[WebCrawler] ⚠️ Page text does not match the requested/feed title; next candidate"
+                            )
+                            continue
                         relevant_info = self.extract_relevant_info([content], query)
                         if relevant_info and relevant_info.strip():
-                            print(f"[WebCrawler] ✅ Returning content for article query from {url}")
+                            print(f"[WebCrawler] ✅ Title-matched article content from {url}")
                             return relevant_info
+                    except Exception as e:
+                        print(f"[WebCrawler] Error crawling {url}: {e}")
+                        continue
+                return not_found_message_for_title(extracted_title)
 
+            elif substack_rss_intent:
+                burl, feed_title, score = substack_rss_intent
+                user_ref = extract_implicit_roots_post_phrase(query) or feed_title
+                print(
+                    f"[WebCrawler] 📰 Substack intent URL (score={score:.1f}): {feed_title[:100]}{'…' if len(feed_title) > 100 else ''} — {burl}"
+                )
+                try:
+                    content = self.extract_content_from_url(burl, query)
+                    if not content or "error" in content or not content.get("main_content", "").strip():
+                        pass
+                    else:
+                        main = content.get("main_content", "")
+                        ptitle = content.get("title", "")
+                        if content_references_title(user_ref, main, ptitle) or content_references_title(
+                            feed_title, main, ptitle
+                        ):
+                            relevant_info = self.extract_relevant_info([content], query)
+                            if relevant_info and relevant_info.strip():
+                                print(f"[WebCrawler] ✅ Intent-matched article content from {burl}")
+                                return relevant_info
                 except Exception as e:
-                    print(f"[WebCrawler] Error crawling {url}: {e}")
-                    continue
+                    print(f"[WebCrawler] Error crawling intent-matched Substack URL: {e}")
+                if not is_article_query:
+                    return not_found_message_for_title(user_ref)
+                # Broad article keyword query: try legacy fallbacks
 
-            print(f"[WebCrawler] ⚠️ No relevant content found on any Roots of All Beings pages")
+            if is_article_query:
+                # No explicit title: keyword map + school hub + hardcoded fallbacks (legacy behavior)
+                article_url_mapping = {
+                    'student voice': "https://rootsofallbeings.substack.com/p/student-voice-a-guide-for-shaping",
+                    'guide for shaping': "https://rootsofallbeings.substack.com/p/student-voice-a-guide-for-shaping",
+                    'green school': "https://rootsofallbeings.substack.com/p/can-we-save-the-planet-or-should",
+                    'save the planet': "https://rootsofallbeings.substack.com/p/can-we-save-the-planet-or-should",
+                    'welcoming new members': "https://rootsofallbeings.substack.com/p/welcoming-new-members-to-prakriti",
+                    'travelogue': "https://rootsofallbeings.substack.com/p/a-travelogue-on-our-recent-ole-at",
+                    'ole': "https://rootsofallbeings.substack.com/p/outbound-learning-expedition-ole"
+                }
+
+                prioritized_urls = []
+                fallback_urls = [
+                    "https://prakriti.edu.in/roots-of-all-beings/",
+                    "https://rootsofallbeings.substack.com/p/student-voice-a-guide-for-shaping",
+                    "https://rootsofallbeings.substack.com/p/can-we-save-the-planet-or-should",
+                    "https://rootsofallbeings.substack.com/p/welcoming-new-members-to-prakriti",
+                    "https://rootsofallbeings.substack.com/p/a-travelogue-on-our-recent-ole-at",
+                    "https://rootsofallbeings.substack.com/p/outbound-learning-expedition-ole"
+                ]
+
+                for keyword, url in article_url_mapping.items():
+                    if keyword in query_lower:
+                        prioritized_urls.append(url)
+
+                if not prioritized_urls:
+                    prioritized_urls = fallback_urls
+
+                seen = set()
+                article_urls = [x for x in prioritized_urls if not (x in seen or seen.add(x))]
+
+                print(
+                    f"[WebCrawler] 📋 No extracted title — checking {len(article_urls)} article URLs (legacy order)"
+                )
+
+                for burl2 in article_urls:
+                    try:
+                        print(f"[WebCrawler] 🌱 Directly crawling: {burl2}")
+
+                        content = self.extract_content_from_url(burl2, query)
+                        if "roots-of-all-beings" in (burl2 or "").lower() and content and "error" not in content:
+                            mc0 = (content.get("main_content") or "")
+                            if len(mc0) < 120:
+                                print(
+                                    "[WebCrawler] 🔄 roots-of-all-beings cache very short; one-time force refresh"
+                                )
+                                content = self.extract_content_from_url(burl2, query, force_refresh=True)
+                        if content and 'error' not in content and 'main_content' in content and content['main_content'].strip():
+                            print(f"[WebCrawler] ✅ Found content ({len(content['main_content'])} chars) from {burl2}")
+
+                            relevant_info = self.extract_relevant_info([content], query)
+                            if relevant_info and relevant_info.strip():
+                                print(f"[WebCrawler] ✅ Returning content for article query from {burl2}")
+                                return relevant_info
+
+                    except Exception as e:
+                        print(f"[WebCrawler] Error crawling {burl2}: {e}")
+                        continue
+
+                print(f"[WebCrawler] ⚠️ No relevant content found on any Roots of All Beings pages")
 
         # Continue with normal logic if article override didn't work or found no content
         
@@ -4109,7 +4370,6 @@ Source: {url}"""
                             # ALSO ensure that if we're searching for a role (like "facilitator"), it must be in the title too
                             if team_result.data:
                                 filtered_results = []
-                                import re
                                 word_pattern = r'\b' + re.escape(search_keyword.lower()) + r'\b'
                                 initial_count = len(team_result.data)
                                 
@@ -4191,7 +4451,6 @@ Source: {url}"""
                                 # Check if at least one subject keyword is in title as a WHOLE WORD (REQUIRED)
                                 # Use word boundaries to prevent partial matches (e.g., "art" matching "part", "start")
                                 # Also handle plural forms (e.g., "science" matches "sciences")
-                                import re
                                 subject_in_title = False
                                 for kw in subject_keywords_in_query:
                                     word_pattern = r'\b' + re.escape(kw.lower()) + r'\b'
@@ -4267,7 +4526,6 @@ Source: {url}"""
                             # MUCH Higher score for subject keyword matches in TITLE ONLY (TITLE FIRST PRIORITY - NO DESCRIPTION MATCHING)
                             for keyword in subject_keywords_in_query:
                                 # Use word boundaries to ensure whole word match (including plural forms)
-                                import re
                                 word_pattern = r'\b' + re.escape(keyword.lower()) + r'\b'
                                 keyword_found = False
                                 if re.search(word_pattern, title_lower):
@@ -4303,7 +4561,6 @@ Source: {url}"""
                             # Higher score for role type keyword matches in TITLE ONLY (TITLE FIRST PRIORITY - NO DESCRIPTION)
                             for keyword in role_type_keywords_in_query:
                                 # Use word boundaries to ensure whole word match
-                                import re
                                 word_pattern = r'\b' + re.escape(keyword.lower()) + r'\b'
                                 if re.search(word_pattern, title_lower):
                                     score += 30  # Role type in title = high priority
@@ -4335,7 +4592,6 @@ Source: {url}"""
                                 # For role queries with both subject and role keywords, require BOTH in title
                                 if subject_keywords_in_query and role_type_keywords_in_query:
                                     # Double-check that both are actually in title (word-boundary match)
-                                    import re
                                     title_lower_check = (member.get('title', '') or '').lower()
                                     has_subject = any(re.search(r'\b' + re.escape(kw.lower()) + r'\b', title_lower_check) for kw in subject_keywords_in_query)
                                     has_role = any(re.search(r'\b' + re.escape(kw.lower()) + r'\b', title_lower_check) for kw in role_type_keywords_in_query)
@@ -4384,8 +4640,6 @@ Source: {url}"""
                 
                 # CRITICAL: For role-based queries, require subject keyword in TITLE as a WHOLE WORD (TITLE ONLY - NO DESCRIPTION)
                 # ALSO require role type keyword (like "facilitator") in title if query is about a specific role
-                import re
-                
                 if subject_keywords_in_query:
                     # Use word boundaries to prevent partial matches (e.g., "art" matching "part", "start")
                     # Also handle plural forms (e.g., "science" matches "sciences")
@@ -4457,7 +4711,6 @@ Source: {url}"""
                         all_subjects_match_in_title = False
                 
                 # MUCH Higher score for subject keyword matches in TITLE ONLY (TITLE FIRST PRIORITY - NO DESCRIPTION)
-                import re
                 for keyword in subject_keywords_in_query:
                     # Use word boundaries to ensure whole word match (including plural forms)
                     word_pattern = r'\b' + re.escape(keyword.lower()) + r'\b'
@@ -4544,7 +4797,6 @@ Source: {url}"""
                         db_title_lower = (database_best_match.get('title', '') or '').lower()
                         has_both_in_db = False
                         if subject_keywords_in_query and role_type_keywords_in_query:
-                            import re
                             has_subject = any(re.search(r'\b' + re.escape(kw.lower()) + r'\b', db_title_lower) for kw in subject_keywords_in_query)
                             has_role = any(re.search(r'\b' + re.escape(kw.lower()) + r'\b', db_title_lower) for kw in role_type_keywords_in_query)
                             has_both_in_db = has_subject and has_role

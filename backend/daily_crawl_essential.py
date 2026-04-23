@@ -13,7 +13,10 @@ from dotenv import load_dotenv
 sys.path.append(os.path.join(os.path.dirname(__file__), 'app'))
 
 from app.agents.web_crawler_agent import WebCrawlerAgent
-from app.config.essential_pages import ESSENTIAL_PRAKRITI_PAGES, PAGE_CONTENT_TYPES
+from app.config.essential_pages import (
+    ESSENTIAL_PRAKRITI_PAGES_FOR_AUTO_CRAWL,
+    PAGE_CONTENT_TYPES,
+)
 from supabase_config import get_supabase_client
 from app.services.embedding_generator import get_embedding_generator
 
@@ -24,7 +27,10 @@ def crawl_essential_pages():
     print("=" * 60)
     print("Starting Essential Pages Crawl")
     print(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Pages to crawl: {len(ESSENTIAL_PRAKRITI_PAGES)}")
+    print(
+        f"Pages to crawl: {len(ESSENTIAL_PRAKRITI_PAGES_FOR_AUTO_CRAWL)} "
+        f"(team page excluded; sync via admin only)"
+    )
     print("=" * 60)
     
     crawler = WebCrawlerAgent()
@@ -37,12 +43,11 @@ def crawl_essential_pages():
     crawled_count = 0
     error_count = 0
     
-    for url in ESSENTIAL_PRAKRITI_PAGES:
+    for url in ESSENTIAL_PRAKRITI_PAGES_FOR_AUTO_CRAWL:
         try:
             print(f"\nCrawling: {url}")
-            
-                # Extract content - SKIP link following to only crawl essential pages
-                content = crawler.extract_content_from_url(url, query="", skip_link_following=True)
+            # Extract content - SKIP link following to only crawl essential pages
+            content = crawler.extract_content_from_url(url, query="", skip_link_following=True)
             
             if 'error' in content:
                 print(f"[ERROR] Error crawling {url}: {content['error']}")
@@ -132,7 +137,7 @@ def crawl_essential_pages():
     print("=" * 60)
     print(f"[OK] Successfully crawled: {crawled_count} pages")
     print(f"[ERROR] Errors: {error_count} pages")
-    print(f"Total pages: {len(ESSENTIAL_PRAKRITI_PAGES)}")
+    print(f"Total pages: {len(ESSENTIAL_PRAKRITI_PAGES_FOR_AUTO_CRAWL)}")
     print("=" * 60)
 
 if __name__ == "__main__":

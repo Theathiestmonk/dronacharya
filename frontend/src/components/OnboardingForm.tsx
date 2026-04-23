@@ -848,7 +848,7 @@ const OnboardingForm: React.FC<OnboardingFormProps> = ({ user, onComplete, onBac
           >
             <option value="">Select Grade</option>
             {STUDENT_GRADE_OPTIONS.map((grade) => (
-              <option key={grade} value={grade}>{grade}</option>
+            <option key={grade} value={grade}>{grade}</option>
             ))}
           </select>
         </div>
