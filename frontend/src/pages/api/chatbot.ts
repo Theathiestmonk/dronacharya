@@ -76,7 +76,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const rawText = await backendRes.text();
-    let data: unknown;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let data: any;
     try {
       data = rawText ? JSON.parse(rawText) : {};
     } catch {
