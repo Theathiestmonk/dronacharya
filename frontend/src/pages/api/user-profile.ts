@@ -6,6 +6,40 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+/** Fire Classroom + Calendar DWD sync for a teacher; then mark onboarding DWD initialized (server-only). */
+async function runTeacherOnboardingDwdSync(
+  backendBase: string,
+  userId: string,
+  email: string
+): Promise<void> {
+  const base = backendBase.replace(/\/$/, '');
+  const services = ['classroom', 'calendar'] as const;
+  for (const svc of services) {
+    try {
+      const r = await fetch(`${base}/api/admin/sync-dwd/${svc}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_email: email }),
+      });
+      if (!r.ok) {
+        const txt = await r.text();
+        console.warn(`[teacher-dwd] ${svc} HTTP ${r.status}: ${txt.slice(0, 500)}`);
+      }
+    } catch (e) {
+      console.warn(`[teacher-dwd] ${svc} fetch error:`, e);
+    }
+  }
+
+  const { error: updErr } = await supabase
+    .from('user_profiles')
+    .update({ teacher_google_dwd_initialized_at: new Date().toISOString() })
+    .eq('user_id', userId);
+
+  if (updErr) {
+    console.warn('[teacher-dwd] teacher_google_dwd_initialized_at update failed:', updErr);
+  }
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -131,6 +165,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       console.log('Final profile data before Supabase upsert:', JSON.stringify(profileData, null, 2));
 
+      const { data: existingRow } = await supabase
+        .from('user_profiles')
+        .select('onboarding_completed, teacher_google_dwd_initialized_at')
+        .eq('user_id', profileData.user_id)
+        .maybeSingle();
+
+      const hasOnboardingKey = Object.prototype.hasOwnProperty.call(
+        profileData,
+        'onboarding_completed'
+      );
+      const completingOnboarding =
+        hasOnboardingKey &&
+        (profileData.onboarding_completed === true || profileData.onboarding_completed === 'true');
+      const wasOnboardingDone = Boolean(existingRow?.onboarding_completed === true);
+      const alreadyDwdInit = Boolean(existingRow?.teacher_google_dwd_initialized_at);
+
+      const shouldTriggerTeacherDwd =
+        profileData.role === 'teacher' &&
+        completingOnboarding &&
+        !wasOnboardingDone &&
+        !alreadyDwdInit;
+
       const { data, error } = await supabase
         .from('user_profiles')
         .upsert(profileData, { 
@@ -170,6 +226,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
         
         return res.status(400).json({ error: userFriendlyError });
+      }
+
+      if (shouldTriggerTeacherDwd && data?.user_id && data?.email) {
+        const backend =
+          process.env.BACKEND_URL ||
+          process.env.NEXT_PUBLIC_BACKEND_URL ||
+          'http://localhost:8000';
+        void runTeacherOnboardingDwdSync(backend, String(data.user_id), String(data.email)).catch(
+          (e) => console.warn('[teacher-dwd] background error:', e)
+        );
       }
 
       return res.status(200).json(data);

@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   is_active BOOLEAN DEFAULT true,
   onboarding_completed BOOLEAN DEFAULT false,
+  teacher_google_dwd_initialized_at TIMESTAMP WITH TIME ZONE,
   
   -- Constraints
   UNIQUE(user_id),

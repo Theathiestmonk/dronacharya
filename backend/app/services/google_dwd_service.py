@@ -1087,16 +1087,41 @@ class GoogleDWDService:
         return service
     
     def fetch_user_courses(self, user_email: str) -> List[Dict]:
-        """Fetch all courses for a user"""
+        """
+        Fetch ACTIVE Classroom courses for this user (paginated, deduped by course id).
+
+        Only ACTIVE courses are included so ARCHIVED past-year classes are skipped in DWD sync.
+        Use admin one-off tooling if archived backfill is required.
+        """
         try:
             # CRITICAL: Use get_classroom_service to ensure thread-local API type is set correctly
             # This ensures the JWT includes the correct Classroom scopes
             classroom_service = self.get_classroom_service(user_email)
-            
-            print(f"   🔍 Making API call to list courses...")
-            results = classroom_service.courses().list().execute()
-            courses = results.get('courses', [])
-            print(f"✅ DWD: Fetched {len(courses)} courses for {user_email}")
+
+            aggregated: Dict[str, Dict] = {}
+            page_token: Optional[str] = None
+
+            while True:
+                print(f"   🔍 Listing ACTIVE courses (page)...")
+                list_kwargs = {
+                    "courseStates": ["ACTIVE"],
+                    "pageSize": 100,
+                }
+                if page_token:
+                    list_kwargs["pageToken"] = page_token
+
+                results = classroom_service.courses().list(**list_kwargs).execute()
+                for course in results.get("courses") or []:
+                    cid = course.get("id")
+                    if cid:
+                        aggregated[cid] = course
+
+                page_token = results.get("nextPageToken")
+                if not page_token:
+                    break
+
+            courses = list(aggregated.values())
+            print(f"✅ DWD: Fetched {len(courses)} ACTIVE courses for {user_email}")
             return courses
         except Exception as e:
             error_str = str(e)

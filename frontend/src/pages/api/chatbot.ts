@@ -1,7 +1,11 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
+/** Must be reachable from the Next.js server (Vercel/serverless), not the browser — use public FastAPI HTTPS URL in prod */
+const BACKEND_URL =
+  process.env.BACKEND_URL ||
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  'http://localhost:8000';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -63,16 +67,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
       });
+    } catch (fetchErr) {
+      console.error(
+        `[chatbot] Fetch to backend failed (${BACKEND_URL}/chatbot/):`,
+        fetchErr
+      );
+      throw fetchErr;
+    }
+
+    const rawText = await backendRes.text();
+    let data: unknown;
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
     } catch {
-      // Fallback to alternative connection method
-      backendRes = await fetch(`http://127.0.0.1:8000/chatbot/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
+      console.error(
+        `[chatbot] Backend returned non-JSON (status ${backendRes.status}):`,
+        rawText.slice(0, 500)
+      );
+      return res.status(502).json({
+        error: 'Backend returned an invalid response.',
+        hint: 'Check FastAPI logs and BACKEND_URL / NEXT_PUBLIC_BACKEND_URL on the host.',
       });
     }
-    
-    const data = await backendRes.json();
     console.log('API route received response length:', data?.response?.length);
     console.log('API route received response:', data?.response);
     res.status(backendRes.status).json(data);

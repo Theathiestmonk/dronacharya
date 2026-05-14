@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI , Request , Response
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
@@ -73,17 +73,25 @@ async def shutdown_event():
 async def root():
     return {"message": "AI School Automation System Backend is running."}
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint that also shows scheduler status"""
+@app.api_route("/health", methods=["GET", "HEAD"])
+async def health_check(request: Request):
     scheduler = get_auto_sync_scheduler()
     scheduler_status = "running" if scheduler.is_running else "stopped"
+
     next_run = None
-    if scheduler.is_running and scheduler.scheduler.get_job('auto_sync_job'):
-        next_run = scheduler.scheduler.get_job('auto_sync_job').next_run_time.isoformat() if scheduler.scheduler.get_job('auto_sync_job').next_run_time else None
-    
-    return {
+    if scheduler.is_running:
+        job = scheduler.scheduler.get_job('auto_sync_job')
+        if job and job.next_run_time:
+            next_run = job.next_run_time.isoformat()
+
+    data = {
         "status": "healthy",
         "scheduler": scheduler_status,
         "next_sync": next_run
-    } 
+    }
+
+    # HEAD must NOT return body
+    if request.method == "HEAD":
+        return Response(status_code=200)
+
+    return data

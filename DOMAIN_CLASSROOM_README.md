@@ -74,12 +74,25 @@ node test_domain_sync.js --run-sync
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 GOOGLE_WORKSPACE_DOMAIN=learners.prakriti.org.in
 
-# Backend API
+# Backend API (FastAPI root URL — used by server-side callers)
 BACKEND_URL=http://localhost:8000
+# Fallback for some routes: NEXT_PUBLIC_BACKEND_URL must point at the same FastAPI root in deployments
+# where the Next.js API invokes /api/admin/sync-dwd/*. Teacher onboarding kicks use BACKEND_URL
+# then NEXT_PUBLIC_BACKEND_URL (see frontend/src/pages/api/user-profile.ts).
 
 # Test configuration
 TEST_ADMIN_EMAIL=admin@learners.prakriti.org.in
 ```
+
+### Teacher onboarding → DWD Classroom/Calendar
+
+When a teacher completes onboarding for the first time, the Next.js `POST|PUT /api/user-profile` route may call FastAPI `POST /api/admin/sync-dwd/classroom` and `.../calendar` with `{ user_email }` once per profile (tracked by `user_profiles.teacher_google_dwd_initialized_at`). Apply the column migration:
+
+```bash
+# Supabase SQL editor or psql — see backend/migrations/teacher_google_dwd_initialized_at.sql
+```
+
+Domain-wide Classroom course listing during DWD sync includes **ACTIVE** courses only (paginated); **ARCHIVED** courses are intentionally skipped so teachers are not overloaded with bulk historical classes. Backfill archived data with an explicit admin/script sync if needed.
 
 ### Database Migration
 Run the schema updates:

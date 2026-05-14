@@ -1,0 +1,1039 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Summer Jamboree 2026 · Prakriti School</title>
+<meta name="description" content="A joyful summer at Prakriti — two campuses, two programmes. Prakriti (Sec 22) Slow Summers & Prakriti (Sec 128) Summer Jamboree. For ages 3 – 10. June 2026." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,800;0,9..144,900;1,9..144,600&family=DM+Sans:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+
+<style>
+  :root{
+    --cream:#FBF3DD; --cream-2:#F5E8C2;
+    --ink:#1B2B3A; --ink-soft:#2C3E50;
+    --sun:#FFC93C; --mango:#FF7A2A; --watermelon:#E63946; --pink:#FF8FA3;
+    --teal:#0F8B8D; --teal-deep:#0A5C5E; --leaf:#5A8F29; --plum:#5B2E91;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;font-family:"DM Sans",system-ui,sans-serif;color:var(--ink);background:var(--cream);
+    background-image:radial-gradient(circle at 18% 12%, rgba(255,201,60,.18), transparent 35%),radial-gradient(circle at 82% 28%, rgba(15,139,141,.10), transparent 40%),radial-gradient(circle at 50% 92%, rgba(230,57,70,.08), transparent 45%);
+    line-height:1.5;overflow-x:hidden}
+  body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='4'/><feColorMatrix values='0 0 0 0 .11 0 0 0 0 .17 0 0 0 0 .23 0 0 0 .35 0'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='.18'/></svg>");opacity:.4;mix-blend-mode:multiply}
+  a{color:inherit;text-decoration:none}
+  img{max-width:100%;display:block}
+
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:22px 28px;max-width:1240px;margin:0 auto;position:relative;z-index:5}
+  .brand{display:flex;align-items:center;gap:14px;font-family:"Fraunces",serif;font-weight:600;letter-spacing:-.01em}
+  .brand-mark{width:42px;height:42px;border-radius:50%;background:var(--ink);color:var(--sun);display:grid;place-items:center;font-family:"Fraunces",serif;font-weight:800;font-size:22px;box-shadow:0 0 0 4px var(--cream),0 0 0 5px var(--ink)}
+  .brand-name{font-size:18px}
+  .brand-name small{display:block;font-family:"Space Mono",monospace;font-weight:400;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-top:2px}
+  .topnav{display:flex;gap:28px;align-items:center;font-size:14px;font-weight:500}
+  .topnav a{position:relative;padding:6px 0}
+  .topnav a:hover{color:var(--watermelon)}
+  .topnav a:hover::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--watermelon);border-radius:2px}
+  .topnav .cta{background:var(--ink);color:var(--cream);padding:10px 18px;border-radius:999px;font-weight:700;transition:transform .2s ease,background .2s ease}
+  .topnav .cta:hover{background:var(--watermelon);transform:translateY(-2px);color:var(--cream)}
+  .topnav .cta:hover::after{display:none}
+
+  .hero{padding:30px 28px 60px;max-width:1240px;margin:0 auto;position:relative;z-index:2}
+  .eyebrow{display:inline-flex;align-items:center;gap:10px;font-family:"Space Mono",monospace;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--teal-deep);background:rgba(15,139,141,.12);padding:8px 14px;border-radius:999px;border:1px dashed var(--teal)}
+  .eyebrow .dot{width:8px;height:8px;border-radius:50%;background:var(--watermelon);box-shadow:0 0 0 4px rgba(230,57,70,.18)}
+  h1.hero-title{font-family:"Fraunces",serif;font-weight:900;font-size:clamp(52px,10vw,140px);line-height:.92;letter-spacing:-.035em;margin:22px 0 18px;color:var(--ink)}
+  h1.hero-title em{font-style:italic;font-weight:600;color:var(--watermelon);font-family:"Fraunces",serif}
+  h1.hero-title .pop{color:var(--sun);-webkit-text-stroke:2px var(--ink);text-shadow:6px 6px 0 var(--teal)}
+  .hero-grid{display:grid;grid-template-columns:1.3fr .9fr;gap:60px;align-items:start;margin-top:14px}
+  .hero-lede{font-family:"Fraunces",serif;font-size:22px;line-height:1.4;font-weight:400;max-width:540px;color:var(--ink-soft)}
+  .hero-lede strong{color:var(--ink);font-weight:600}
+  .hero-cta{margin-top:30px;display:flex;gap:14px;flex-wrap:wrap}
+  .btn{display:inline-flex;align-items:center;gap:10px;padding:16px 26px;border-radius:999px;font-family:"DM Sans",sans-serif;font-weight:700;font-size:15px;letter-spacing:.01em;border:none;cursor:pointer;transition:transform .2s ease,box-shadow .2s ease,background .2s ease}
+  .btn-primary{background:var(--ink);color:var(--cream);box-shadow:4px 4px 0 var(--sun)}
+  .btn-primary:hover{transform:translate(-2px,-2px);box-shadow:6px 6px 0 var(--watermelon)}
+  .btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:4px 4px 0 var(--sun)}
+  .btn-ghost{background:transparent;color:var(--ink);border:1.5px solid var(--ink)}
+  .btn-ghost:hover{background:var(--ink);color:var(--cream)}
+
+  .collage{position:relative;aspect-ratio:1/1.05;min-height:380px}
+  .sticker{position:absolute;transform-origin:center;filter:drop-shadow(0 8px 14px rgba(27,43,58,.18))}
+  .sticker.s1{top:0;left:6%;width:62%;animation:float 6s ease-in-out infinite}
+  .sticker.s2{top:18%;right:0;width:42%;animation:float 7s ease-in-out infinite;animation-delay:-2s}
+  .sticker.s3{bottom:8%;left:18%;width:48%;animation:float 8s ease-in-out infinite;animation-delay:-1s}
+  .sticker.s4{bottom:0;right:8%;width:32%;animation:float 6.5s ease-in-out infinite;animation-delay:-3s}
+  @keyframes float{0%,100%{transform:translateY(0) rotate(var(--r,0deg))}50%{transform:translateY(-12px) rotate(calc(var(--r,0deg) + 1.5deg))}}
+  .deco{position:absolute;pointer-events:none;z-index:1}
+  .deco.sun-lg{top:80px;right:-60px;width:200px;animation:spin 40s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ——— campus banner row ——— */
+  .campus-row{
+    max-width:1240px;margin:0 auto 80px;padding:0 28px;
+    display:grid;grid-template-columns:1fr 1fr;gap:22px;
+    position:relative;z-index:2;
+  }
+  .campus-tag{
+    background:#fff;border:1.5px solid var(--ink);
+    border-radius:22px;padding:22px 26px;
+    box-shadow:6px 6px 0 var(--ink);
+    display:flex;flex-direction:column;gap:6px;
+    transition:transform .25s ease;
+  }
+  .campus-tag:hover{transform:translate(-3px,-3px);box-shadow:9px 9px 0 var(--ink)}
+  .campus-tag .ct-eyebrow{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft)}
+  .campus-tag .ct-name{font-family:"Fraunces",serif;font-weight:800;font-size:28px;line-height:1;letter-spacing:-.015em;margin:4px 0 8px}
+  .campus-tag .ct-name em{font-style:italic;font-weight:500;color:var(--watermelon)}
+  .campus-tag .ct-meta{font-family:"Space Mono",monospace;font-size:12px;color:var(--ink-soft);letter-spacing:.05em;line-height:1.6}
+  .campus-tag.sec22{border-left:6px solid var(--teal)}
+  .campus-tag.sec128{border-left:6px solid var(--mango)}
+
+  .marquee{background:var(--ink);color:var(--cream);padding:18px 0;overflow:hidden;position:relative;z-index:3;border-top:1px solid var(--ink-soft);border-bottom:1px solid var(--ink-soft)}
+  .marquee-track{display:flex;gap:60px;white-space:nowrap;animation:scroll 28s linear infinite;font-family:"Fraunces",serif;font-size:32px;font-weight:600;font-style:italic}
+  .marquee-track span{display:inline-flex;align-items:center;gap:60px}
+  .marquee-track span::after{content:"✺";color:var(--sun);font-style:normal;font-size:24px}
+  @keyframes scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+  section{position:relative;z-index:2}
+  .section-head{display:grid;grid-template-columns:auto 1fr;align-items:end;gap:32px;margin-bottom:48px}
+  .section-num{font-family:"Space Mono",monospace;font-size:13px;letter-spacing:.18em;color:var(--watermelon);text-transform:uppercase;border-top:2px solid var(--watermelon);padding-top:10px}
+  .section-title{font-family:"Fraunces",serif;font-weight:800;font-size:clamp(40px,6vw,72px);line-height:.95;letter-spacing:-.025em;margin:0}
+  .section-title em{font-weight:500;font-style:italic;color:var(--teal-deep)}
+
+  /* ——— campuses (side-by-side spine) ——— */
+  .campuses{padding:100px 28px 60px;max-width:1240px;margin:0 auto}
+  .duo{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+  .col-hdr{
+    padding:24px 26px 20px;
+    border-radius:22px 22px 0 0;
+    color:var(--cream);
+    position:relative;
+  }
+  .col-hdr.s22{background:var(--teal-deep)}
+  .col-hdr.s128{background:var(--mango)}
+  .col-hdr h3{font-family:"Fraunces",serif;font-weight:800;font-size:36px;line-height:1;letter-spacing:-.02em;margin:0 0 4px}
+  .col-hdr h3 em{font-style:italic;font-weight:500}
+  .col-hdr .sub{font-family:"Space Mono",monospace;font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;opacity:.85}
+  .col-hdr .pin{
+    position:absolute;top:24px;right:26px;
+    background:var(--cream);color:var(--ink);
+    font-family:"Space Mono",monospace;font-size:11px;font-weight:700;
+    padding:6px 12px;border-radius:999px;letter-spacing:.1em;
+  }
+
+  .group{
+    background:#fff;
+    border:1.5px solid var(--ink); border-top:none;
+    padding:26px 26px 24px;
+    position:relative;
+  }
+  .group + .group{border-radius:0}
+  .group:last-of-type{border-radius:0 0 22px 22px}
+  .group-eyebrow{
+    display:inline-flex;align-items:center;gap:8px;
+    font-family:"Space Mono",monospace;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--watermelon);
+    margin-bottom:10px;
+  }
+  .group-eyebrow::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--watermelon)}
+  .group-name{
+    font-family:"Fraunces",serif;font-weight:800;font-size:30px;line-height:1.05;letter-spacing:-.02em;margin:0 0 14px;
+  }
+  .group-name em{color:var(--ink-soft);font-style:italic;font-weight:500;font-size:18px;display:block;letter-spacing:-.01em;margin-top:2px}
+  .activity-list{list-style:none;padding:0;margin:0 0 18px;display:grid;grid-template-columns:1fr 1fr;gap:6px 14px}
+  .activity-list li{font-size:14px;line-height:1.4;display:flex;flex-direction:column;padding:6px 0}
+  .activity-list li b{font-weight:600;color:var(--ink)}
+  .activity-list li small{font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-soft);letter-spacing:.04em;margin-top:2px}
+  .price-row{
+    display:flex;gap:10px;
+    margin:14px 0 12px;
+  }
+  .price-chip{
+    flex:1;
+    background:var(--cream);
+    border:1.5px solid var(--ink);
+    border-radius:14px;
+    padding:12px 14px;
+    text-align:center;
+  }
+  .price-chip .lbl{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)}
+  .price-chip .val{font-family:"Fraunces",serif;font-size:24px;font-weight:800;line-height:1;margin-top:2px}
+  .price-chip.savings{background:var(--sun);border-color:var(--ink)}
+  .discounts{
+    display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;
+  }
+  .disc-pill{
+    font-family:"Space Mono",monospace;font-size:11px;
+    background:rgba(15,139,141,.12);color:var(--teal-deep);
+    border:1px dashed var(--teal);
+    padding:5px 10px;border-radius:999px;
+    letter-spacing:.04em;
+  }
+  .disc-pill b{color:var(--ink)}
+  .group-cta{
+    display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:13px;
+    background:var(--ink);color:var(--cream);border-radius:14px;font-weight:700;font-size:14.5px;
+    transition:background .2s ease;cursor:pointer;border:none;font-family:inherit;
+  }
+  .group-cta:hover{background:var(--watermelon)}
+  .group-cta.s22:hover{background:var(--teal-deep)}
+  .group-cta.s128:hover{background:var(--mango)}
+
+  /* shared comforts + game plan strip */
+  .strip{
+    margin-top:48px;
+    background:var(--ink);color:var(--cream);
+    border-radius:24px;
+    padding:36px 38px;
+    display:grid;grid-template-columns:1fr 1fr;gap:48px;
+  }
+  .strip h3{font-family:"Fraunces",serif;font-weight:800;font-size:28px;letter-spacing:-.02em;margin:0 0 16px}
+  .strip h3 em{color:var(--sun);font-style:italic;font-weight:500}
+  .strip ul{list-style:none;padding:0;margin:0;font-size:14.5px;line-height:1.9}
+  .strip ul li{display:flex;gap:14px;align-items:baseline}
+  .strip ul li .time{font-family:"Space Mono",monospace;font-size:12px;color:var(--sun);letter-spacing:.04em;min-width:120px}
+  .strip ul li b{font-weight:600}
+  .strip .note{margin-top:14px;font-family:"Space Mono",monospace;font-size:11.5px;color:rgba(251,243,221,.65);letter-spacing:.05em}
+  .strip-comforts li{display:flex;gap:12px;align-items:center;padding:5px 0}
+  .strip-comforts li .ic{width:30px;height:30px;border-radius:50%;background:var(--sun);color:var(--ink);display:grid;place-items:center;font-size:16px;flex-shrink:0}
+  .strip-comforts li b{display:block;font-weight:600}
+  .strip-comforts li small{font-family:"Space Mono",monospace;font-size:11px;color:rgba(251,243,221,.65);display:block;letter-spacing:.04em;margin-top:2px}
+
+  /* ——— how it works ——— */
+  .how{padding:90px 28px;max-width:1240px;margin:0 auto}
+  .how-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:32px;margin-top:32px}
+  .step{padding:28px 24px;border-radius:20px;background:rgba(255,255,255,.5);border:1px solid rgba(27,43,58,.15);backdrop-filter:blur(2px);position:relative}
+  .step-num{position:absolute;top:-22px;left:24px;width:44px;height:44px;border-radius:50%;background:var(--watermelon);color:#fff;font-family:"Fraunces",serif;font-weight:800;font-size:22px;display:grid;place-items:center;border:2px solid var(--ink);box-shadow:3px 3px 0 var(--ink)}
+  .step:nth-child(2) .step-num{background:var(--teal)}
+  .step:nth-child(3) .step-num{background:var(--mango)}
+  .step h3{font-family:"Fraunces",serif;font-weight:700;font-size:22px;margin:14px 0 8px}
+  .step p{font-size:14.5px;color:var(--ink-soft);margin:0}
+
+  .faq{padding:80px 28px;max-width:1240px;margin:0 auto}
+  .faq-list{margin-top:32px}
+  details{border-top:1.5px solid var(--ink);padding:22px 4px;cursor:pointer}
+  details:last-child{border-bottom:1.5px solid var(--ink)}
+  summary{list-style:none;display:flex;justify-content:space-between;align-items:center;gap:24px;font-family:"Fraunces",serif;font-weight:600;font-size:22px;line-height:1.3;color:var(--ink)}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"+";font-family:"Fraunces",serif;font-size:32px;font-weight:400;width:40px;height:40px;border:1.5px solid var(--ink);border-radius:50%;display:grid;place-items:center;flex-shrink:0;transition:transform .25s ease,background .2s ease,color .2s ease}
+  details[open] summary::after{transform:rotate(45deg);background:var(--ink);color:var(--cream)}
+  details p{margin:14px 0 0;font-size:15.5px;color:var(--ink-soft);max-width:760px;line-height:1.6}
+
+  .cta-banner{margin:80px 28px 0;max-width:1240px;margin-left:auto;margin-right:auto;background:var(--ink);color:var(--cream);border-radius:32px;padding:80px 60px;position:relative;overflow:hidden}
+  .cta-banner h2{font-family:"Fraunces",serif;font-weight:800;font-size:clamp(40px,6vw,76px);line-height:.95;letter-spacing:-.03em;margin:0 0 18px;max-width:760px}
+  .cta-banner h2 em{color:var(--sun);font-style:italic;font-weight:500}
+  .cta-banner p{font-size:18px;max-width:540px;color:#E8DCC0;margin:0 0 28px}
+  .cta-banner .btn-primary{background:var(--sun);color:var(--ink);box-shadow:4px 4px 0 var(--watermelon)}
+  .cta-banner .btn-primary:hover{box-shadow:6px 6px 0 var(--cream)}
+  .cta-banner .btn-ghost{border-color:var(--cream);color:var(--cream)}
+  .cta-banner .btn-ghost:hover{background:var(--cream);color:var(--ink)}
+  .cta-deco{position:absolute;right:-60px;bottom:-60px;width:280px;opacity:.9}
+
+  footer{padding:60px 28px 36px;max-width:1240px;margin:0 auto;display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:40px;border-top:1px solid rgba(27,43,58,.2);margin-top:80px}
+  footer h4{font-family:"Space Mono",monospace;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft);margin:0 0 14px}
+  footer ul{list-style:none;padding:0;margin:0;font-size:14.5px;line-height:2}
+  footer ul a:hover{color:var(--watermelon)}
+  .foot-brand p{margin:14px 0 0;color:var(--ink-soft);font-size:14px;max-width:280px}
+  .foot-bottom{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;padding-top:24px;border-top:1px dashed rgba(27,43,58,.25);font-family:"Space Mono",monospace;font-size:11.5px;color:var(--ink-soft);letter-spacing:.06em}
+  .socials{display:flex;gap:10px}
+  .socials a{width:36px;height:36px;border-radius:50%;border:1.5px solid var(--ink);display:grid;place-items:center;transition:background .2s ease,color .2s ease}
+  .socials a:hover{background:var(--ink);color:var(--cream)}
+
+  .reveal{opacity:0;transform:translateY(20px);animation:rise .8s ease forwards}
+  .reveal.d1{animation-delay:.1s}.reveal.d2{animation-delay:.25s}.reveal.d3{animation-delay:.4s}.reveal.d4{animation-delay:.55s}
+  @keyframes rise{to{opacity:1;transform:translateY(0)}}
+
+  /* ——— registration modal ——— */
+  .modal-backdrop{position:fixed;inset:0;z-index:100;background:rgba(27,43,58,.55);backdrop-filter:blur(6px);display:none;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto}
+  .modal-backdrop.show{display:flex;animation:fadeIn .3s ease}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+  .modal{background:var(--cream);border:1.5px solid var(--ink);border-radius:28px;width:100%;max-width:680px;padding:36px 40px 32px;position:relative;box-shadow:10px 10px 0 var(--ink);animation:slideUp .35s cubic-bezier(.2,.8,.2,1)}
+  @keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+  .modal-close{position:absolute;top:18px;right:18px;width:38px;height:38px;border-radius:50%;background:var(--cream);border:1.5px solid var(--ink);font-size:20px;font-family:"Fraunces",serif;display:grid;place-items:center;cursor:pointer;transition:background .2s ease,color .2s ease,transform .2s ease}
+  .modal-close:hover{background:var(--ink);color:var(--cream);transform:rotate(90deg)}
+  .modal h3{font-family:"Fraunces",serif;font-weight:800;font-size:36px;line-height:1;letter-spacing:-.02em;margin:0 0 6px}
+  .modal-sub{font-family:"Space Mono",monospace;font-size:12px;color:var(--ink-soft);letter-spacing:.08em;text-transform:uppercase;margin:0 0 24px}
+  .form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+  .form-row.full{grid-template-columns:1fr}
+  .form-field label{display:block;font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:6px;font-weight:700}
+  .form-field label .req{color:var(--watermelon)}
+  .form-field input,.form-field select,.form-field textarea{width:100%;padding:12px 14px;border:1.5px solid var(--ink);border-radius:12px;background:#fff;font-family:"DM Sans",sans-serif;font-size:15px;color:var(--ink);transition:border-color .2s ease,box-shadow .2s ease}
+  .form-field input:focus,.form-field select:focus,.form-field textarea:focus{outline:none;border-color:var(--watermelon);box-shadow:0 0 0 3px rgba(230,57,70,.18)}
+  .form-field textarea{resize:vertical;min-height:64px;font-family:"DM Sans",sans-serif}
+  .form-field small{display:block;margin-top:5px;font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-soft)}
+  .checkbox-row{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+  .check-item{display:flex;gap:10px;align-items:center;padding:10px 14px;background:#fff;border:1.5px solid var(--ink);border-radius:12px;cursor:pointer;transition:background .2s ease}
+  .check-item:hover{background:var(--cream-2)}
+  .check-item input{width:auto;margin:0;cursor:pointer;accent-color:var(--watermelon)}
+  .check-item label{display:flex;flex:1;justify-content:space-between;align-items:center;cursor:pointer;font-family:"DM Sans",sans-serif;font-size:14px;color:var(--ink);text-transform:none;letter-spacing:0;font-weight:500;margin:0}
+  .check-item .save{font-family:"Space Mono",monospace;font-size:12px;color:var(--watermelon);font-weight:700}
+  .check-item.disabled{opacity:.5;cursor:not-allowed;pointer-events:none}
+  .summary-box{background:var(--cream-2);border:1.5px dashed var(--ink);border-radius:14px;padding:16px 18px;margin:18px 0 22px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+  .summary-box .sum-left{font-family:"Space Mono",monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft)}
+  .summary-box .sum-right{font-family:"Fraunces",serif;font-weight:800;font-size:26px;color:var(--ink);text-align:right}
+  .summary-box .sum-right small{display:block;font-family:"Space Mono",monospace;font-size:11px;font-weight:400;color:var(--ink-soft);letter-spacing:.06em;text-transform:none;margin-top:2px}
+  .form-status{padding:12px 14px;border-radius:10px;font-size:14px;margin-bottom:14px;display:none}
+  .form-status.err{display:block;background:rgba(230,57,70,.12);border:1px solid var(--watermelon);color:var(--watermelon)}
+  .form-status.info{display:block;background:rgba(15,139,141,.12);border:1px solid var(--teal);color:var(--teal-deep)}
+  .success-screen{display:none;text-align:center;padding:24px 0}
+  .success-screen.show{display:block;animation:slideUp .4s ease}
+  .success-icon{width:80px;height:80px;border-radius:50%;background:var(--leaf);color:#fff;display:grid;place-items:center;margin:0 auto 22px;font-size:40px;box-shadow:6px 6px 0 var(--ink)}
+  .success-screen h3{font-size:42px;margin-bottom:8px}
+  .success-screen p{color:var(--ink-soft);font-size:16px;max-width:440px;margin:0 auto 22px}
+  .success-detail{background:#fff;border:1.5px solid var(--ink);border-radius:14px;padding:14px 18px;margin:0 auto 24px;max-width:380px;font-family:"Space Mono",monospace;font-size:13px;text-align:left}
+  .success-detail div{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed rgba(27,43,58,.2)}
+  .success-detail div:last-child{border-bottom:none}
+  .success-detail strong{color:var(--ink)}
+  #f-transport-wrap{display:none}
+  #f-transport-wrap.show{display:block}
+
+  @media (max-width:980px){
+    .hero-grid{grid-template-columns:1fr;gap:30px}
+    .collage{aspect-ratio:1.4/1;min-height:320px}
+    .campus-row{grid-template-columns:1fr}
+    .duo{grid-template-columns:1fr;gap:18px}
+    .col-hdr{border-radius:22px 22px 0 0}
+    .group:last-of-type{border-radius:0 0 22px 22px}
+    .strip{grid-template-columns:1fr;gap:30px;padding:28px}
+    .how-grid{grid-template-columns:1fr}
+    footer{grid-template-columns:1fr 1fr;gap:30px}
+    .topnav{gap:18px}
+    .topnav a:not(.cta){display:none}
+  }
+  @media (max-width:560px){
+    .activity-list{grid-template-columns:1fr}
+    .cta-banner{padding:48px 28px}
+    footer{grid-template-columns:1fr}
+    .topbar{padding:18px}
+    .hero{padding-top:14px}
+    .section-head{grid-template-columns:1fr;gap:14px}
+    .modal{padding:28px 22px 24px;border-radius:22px}
+    .form-row{grid-template-columns:1fr}
+    .modal h3{font-size:30px}
+    .price-row{flex-direction:column}
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a href="#" class="brand">
+    <span class="brand-mark">P</span>
+    <span class="brand-name">Prakriti School<small>Summer Jamboree '26</small></span>
+  </a>
+  <nav class="topnav">
+    <a href="#campuses">Programmes</a>
+    <a href="#daily">A Day</a>
+    <a href="#faq">FAQ</a>
+    <a href="#campuses" class="cta">Book a seat →</a>
+  </nav>
+</header>
+
+<main class="hero">
+  <svg class="deco sun-lg" viewBox="0 0 200 200" aria-hidden="true">
+    <g fill="none" stroke="#FFC93C" stroke-width="2.5" stroke-linecap="round" opacity=".55">
+      <circle cx="100" cy="100" r="48" fill="#FFC93C" opacity=".18"/>
+      <circle cx="100" cy="100" r="32" stroke-dasharray="2 6"/>
+      <g><line x1="100" y1="6" x2="100" y2="22"/><line x1="100" y1="178" x2="100" y2="194"/><line x1="6" y1="100" x2="22" y2="100"/><line x1="178" y1="100" x2="194" y2="100"/><line x1="33" y1="33" x2="44" y2="44"/><line x1="156" y1="156" x2="167" y2="167"/><line x1="33" y1="167" x2="44" y2="156"/><line x1="156" y1="44" x2="167" y2="33"/></g>
+    </g>
+  </svg>
+
+  <div class="reveal d1"><span class="eyebrow"><span class="dot"></span>Summer Jamboree 2026 · Two Campuses</span></div>
+
+  <h1 class="hero-title reveal d2">A summer<br>made of <em>stories,</em><br><span class="pop">splashes</span> &amp; sun.</h1>
+
+  <div class="hero-grid">
+    <div class="reveal d3">
+      <p class="hero-lede">Three glorious weeks of play, mess, water and warmth — at <strong>two Prakriti campuses</strong> in Noida. Pottery, mud baths, music, climbing, carpentry, cooking. Pick the campus closer to home.</p>
+      <div class="hero-cta">
+        <a href="#campuses" class="btn btn-primary">See programmes
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+        </a>
+        <a href="https://wa.me/+919289530104" class="btn btn-ghost">WhatsApp us</a>
+      </div>
+    </div>
+
+    <div class="collage reveal d4" aria-hidden="true">
+      <svg class="sticker s1" style="--r:-4deg" viewBox="0 0 300 320" xmlns="http://www.w3.org/2000/svg">
+        <defs><pattern id="dots" patternUnits="userSpaceOnUse" width="14" height="14"><circle cx="2" cy="2" r="1.4" fill="#1B2B3A"/></pattern></defs>
+        <path d="M150 20 C 60 20, 20 100, 20 200 L20 290 C20 305, 35 305, 50 305 L250 305 C265 305, 280 305, 280 290 L280 200 C 280 100, 240 20, 150 20 Z" fill="#FF7A2A" stroke="#1B2B3A" stroke-width="3"/>
+        <path d="M150 50 C 80 50, 50 120, 50 210 L50 270 L250 270 L250 210 C 250 120, 220 50, 150 50 Z" fill="url(#dots)" opacity=".25"/>
+        <text x="150" y="160" text-anchor="middle" font-family="Fraunces,serif" font-weight="900" font-size="72" fill="#FBF3DD" letter-spacing="-2">SUN</text>
+        <text x="150" y="220" text-anchor="middle" font-family="Fraunces,serif" font-weight="900" font-size="72" fill="#FBF3DD" letter-spacing="-2">UP!</text>
+        <circle cx="150" cy="262" r="6" fill="#FBF3DD"/>
+      </svg>
+      <svg class="sticker s2" style="--r:8deg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+        <path d="M100 20 C 40 40, 20 110, 50 170 C 110 180, 170 130, 180 50 C 140 30, 110 20, 100 20Z" fill="#5A8F29" stroke="#1B2B3A" stroke-width="3"/>
+        <path d="M55 165 C 90 130, 130 90, 175 55" stroke="#1B2B3A" stroke-width="2.5" fill="none"/>
+        <path d="M80 140 L120 100 M70 120 L110 80 M95 155 L135 115" stroke="#1B2B3A" stroke-width="1.8" fill="none"/>
+      </svg>
+      <svg class="sticker s3" style="--r:-6deg" viewBox="0 0 280 200" xmlns="http://www.w3.org/2000/svg">
+        <rect x="10" y="10" width="260" height="180" rx="18" fill="#0F8B8D" stroke="#1B2B3A" stroke-width="3"/>
+        <path d="M30 100 Q 60 70, 90 100 T 150 100 T 210 100 T 270 100" stroke="#FBF3DD" stroke-width="4" fill="none" stroke-linecap="round"/>
+        <path d="M30 130 Q 60 100, 90 130 T 150 130 T 210 130 T 270 130" stroke="#FBF3DD" stroke-width="4" fill="none" stroke-linecap="round" opacity=".7"/>
+        <path d="M30 160 Q 60 130, 90 160 T 150 160 T 210 160 T 270 160" stroke="#FBF3DD" stroke-width="4" fill="none" stroke-linecap="round" opacity=".4"/>
+        <text x="140" y="60" text-anchor="middle" font-family="Space Mono,monospace" font-weight="700" font-size="22" fill="#FBF3DD" letter-spacing="3">SPLASH</text>
+      </svg>
+      <svg class="sticker s4" style="--r:12deg" viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="80" cy="80" r="44" fill="#FFC93C" stroke="#1B2B3A" stroke-width="3"/>
+        <g stroke="#1B2B3A" stroke-width="3" stroke-linecap="round">
+          <line x1="80" y1="10" x2="80" y2="26"/><line x1="80" y1="134" x2="80" y2="150"/>
+          <line x1="10" y1="80" x2="26" y2="80"/><line x1="134" y1="80" x2="150" y2="80"/>
+          <line x1="30" y1="30" x2="42" y2="42"/><line x1="118" y1="118" x2="130" y2="130"/>
+          <line x1="30" y1="130" x2="42" y2="118"/><line x1="118" y1="42" x2="130" y2="30"/>
+        </g>
+        <circle cx="68" cy="74" r="3" fill="#1B2B3A"/><circle cx="92" cy="74" r="3" fill="#1B2B3A"/>
+        <path d="M66 90 Q 80 100, 94 90" stroke="#1B2B3A" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      </svg>
+    </div>
+  </div>
+</main>
+
+<!-- ——— two-campus banner ——— -->
+<div class="campus-row">
+  <div class="campus-tag sec22">
+    <span class="ct-eyebrow">Campus 01</span>
+    <span class="ct-name">Prakriti <em>(Sec 22)</em></span>
+    <span class="ct-meta">Slow Summers · 01 – 21 June 2026<br>9:30 am – 1:30 pm · Early Years Centre, Noida<br>For ages 3 – 7</span>
+  </div>
+  <div class="campus-tag sec128">
+    <span class="ct-eyebrow">Campus 02</span>
+    <span class="ct-name">Prakriti <em>(Sec 128)</em></span>
+    <span class="ct-meta">Summer Jamboree · 25 May – 12 June 2026<br>9:30 am – 1:00 pm · Prakriti School (K–12), Noida<br>For ages 3 – 10</span>
+  </div>
+</div>
+
+<div class="marquee" aria-hidden="true">
+  <div class="marquee-track">
+    <span>Damp Camp</span><span>Earthy Dishes</span><span>Hippo Dip</span><span>Fireless Feast</span><span>Timber Play</span><span>Slo-mo</span><span>Funk Plank</span><span>Arty-Party</span><span>The Great Wall</span><span>Woven Tales</span><span>Rhythmic Motion</span><span>Rumpus</span>
+    <span>Damp Camp</span><span>Earthy Dishes</span><span>Hippo Dip</span><span>Fireless Feast</span><span>Timber Play</span><span>Slo-mo</span><span>Funk Plank</span><span>Arty-Party</span><span>The Great Wall</span><span>Woven Tales</span><span>Rhythmic Motion</span><span>Rumpus</span>
+  </div>
+</div>
+
+<!-- ——— SIDE-BY-SIDE CAMPUSES ——— -->
+<section class="campuses" id="campuses">
+  <header class="section-head">
+    <span class="section-num">01 / Programmes</span>
+    <h2 class="section-title">Two campuses,<br><em>one big summer.</em></h2>
+  </header>
+
+  <div class="duo">
+
+    <!-- ===== SECTOR 22 column ===== -->
+    <div>
+      <div class="col-hdr s22">
+        <span class="pin">01 – 21 June</span>
+        <div class="sub">Slow Summers · Early Years Centre</div>
+        <h3>Prakriti <em>(Sec 22)</em></h3>
+      </div>
+
+      <!-- Sec 22 · Ages 3–5 -->
+      <div class="group">
+        <div class="group-eyebrow">Age 3 – 5</div>
+        <h4 class="group-name">Little Wonders<em>For our smallest summer guests</em></h4>
+        <ul class="activity-list">
+          <li><b>Rumpus</b><small>Games &amp; play</small></li>
+          <li><b>Chaotic Craft</b><small>Messy art &amp; play</small></li>
+          <li><b>Woven Tales</b><small>Story sessions</small></li>
+          <li><b>Earthy Dishes</b><small>Pottery</small></li>
+          <li><b>Damp Camp</b><small>Splash pool</small></li>
+          <li><b>Fireless Feast</b><small>Flameless cooking</small></li>
+          <li><b>Hippo Dip</b><small>Mud &amp; sand bath</small></li>
+          <li><b>Slo-mo</b><small>Yoga</small></li>
+          <li><b>Arty-Party</b><small>Art therapy</small></li>
+          <li><b>Rhythmic Motion</b><small>Music &amp; movement</small></li>
+        </ul>
+        <div class="price-row">
+          <div class="price-chip"><div class="lbl">Per week</div><div class="val">₹5,500</div></div>
+          <div class="price-chip savings"><div class="lbl">3 weeks</div><div class="val">₹16,500</div></div>
+        </div>
+        <div class="discounts">
+          <span class="disc-pill">Early Bird <b>−₹1,000</b></span>
+          <span class="disc-pill">Sibling <b>−₹1,500</b></span>
+          <span class="disc-pill">Prakriti Learner <b>−₹500</b></span>
+        </div>
+        <p style="font-family:'Space Mono',monospace;font-size:11px;color:var(--ink-soft);margin:0 0 14px;letter-spacing:.04em">★ Early-bird valid till 20 May 2026</p>
+        <button class="group-cta s22" data-prog="s22-3to5">Enrol my child
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+
+      <!-- Sec 22 · Ages 5–7 -->
+      <div class="group">
+        <div class="group-eyebrow">Age 5 – 7</div>
+        <h4 class="group-name">Big Adventurers<em>For curious early years</em></h4>
+        <ul class="activity-list">
+          <li><b>Yarn Time</b><small>Knitting</small></li>
+          <li><b>Rhythmic Motion</b><small>Music &amp; movement</small></li>
+          <li><b>Woven Tales</b><small>Story sessions</small></li>
+          <li><b>Earthy Dishes</b><small>Pottery</small></li>
+          <li><b>Damp Camp</b><small>Splash pool</small></li>
+          <li><b>Fireless Feast</b><small>Flameless cooking</small></li>
+          <li><b>Hippo Dip</b><small>Mud bath</small></li>
+          <li><b>Slo-mo</b><small>Yoga</small></li>
+          <li><b>Arty-Party</b><small>Art therapy</small></li>
+          <li><b>Timber Play</b><small>Carpentry</small></li>
+        </ul>
+        <div class="price-row">
+          <div class="price-chip"><div class="lbl">Per week</div><div class="val">₹6,000</div></div>
+          <div class="price-chip savings"><div class="lbl">3 weeks</div><div class="val">₹18,000</div></div>
+        </div>
+        <div class="discounts">
+          <span class="disc-pill">Early Bird <b>−₹1,000</b></span>
+          <span class="disc-pill">Sibling <b>−₹1,500</b></span>
+          <span class="disc-pill">Prakriti Learner <b>−₹500</b></span>
+        </div>
+        <p style="font-family:'Space Mono',monospace;font-size:11px;color:var(--ink-soft);margin:0 0 14px;letter-spacing:.04em">★ Early-bird valid till 20 May 2026</p>
+        <button class="group-cta s22" data-prog="s22-5to7">Enrol my child
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- ===== SECTOR 128 column ===== -->
+    <div>
+      <div class="col-hdr s128">
+        <span class="pin">25 May – 12 June</span>
+        <div class="sub">Summer Jamboree · K–12 Campus</div>
+        <h3>Prakriti <em>(Sec 128)</em></h3>
+      </div>
+
+      <!-- Sec 128 · Ages 3–5 -->
+      <div class="group">
+        <div class="group-eyebrow">Age 3 – 5</div>
+        <h4 class="group-name">Little Wonders<em>For our smallest summer guests</em></h4>
+        <ul class="activity-list">
+          <li><b>Earthy Dishes</b><small>Pottery &amp; art therapy</small></li>
+          <li><b>Damp Camp</b><small>Swimming</small></li>
+          <li><b>Fireless Feast</b><small>Flameless cooking</small></li>
+          <li><b>Hippo Dip</b><small>Mud &amp; sand bath</small></li>
+        </ul>
+        <div class="price-row">
+          <div class="price-chip"><div class="lbl">Per week</div><div class="val">₹6,000</div></div>
+          <div class="price-chip savings"><div class="lbl">3 weeks</div><div class="val">₹18,000</div></div>
+        </div>
+        <div class="discounts">
+          <span class="disc-pill">Early Bird <b>−₹1,000</b></span>
+          <span class="disc-pill">Sibling <b>−₹1,500</b></span>
+          <span class="disc-pill">Prakriti Learner <b>−₹500</b></span>
+        </div>
+        <p style="font-family:'Space Mono',monospace;font-size:11px;color:var(--ink-soft);margin:0 0 14px;letter-spacing:.04em">★ Early-bird valid till 15 May 2026 · Includes day care, lunch &amp; transport</p>
+        <button class="group-cta s128" data-prog="s128-3to5">Enrol my child
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+
+      <!-- Sec 128 · Ages 6–10 -->
+      <div class="group">
+        <div class="group-eyebrow">Age 6 – 10</div>
+        <h4 class="group-name">Big Explorers<em>For young makers &amp; movers</em></h4>
+        <ul class="activity-list">
+          <li><b>The Great Wall</b><small>Wall climbing</small></li>
+          <li><b>Earthy Dishes</b><small>Pottery &amp; art therapy</small></li>
+          <li><b>Timber Play</b><small>Carpentry</small></li>
+          <li><b>Fireless Feast</b><small>Flameless cooking</small></li>
+          <li><b>Funk Plank</b><small>Skateboarding</small></li>
+          <li><b>Damp Camp</b><small>Swimming</small></li>
+        </ul>
+        <div class="price-row">
+          <div class="price-chip"><div class="lbl">Per week</div><div class="val">₹6,500</div></div>
+          <div class="price-chip savings"><div class="lbl">3 weeks</div><div class="val">₹19,500</div></div>
+        </div>
+        <div class="discounts">
+          <span class="disc-pill">Early Bird <b>−₹1,000</b></span>
+          <span class="disc-pill">Sibling <b>−₹1,500</b></span>
+          <span class="disc-pill">Prakriti Learner <b>−₹500</b></span>
+        </div>
+        <p style="font-family:'Space Mono',monospace;font-size:11px;color:var(--ink-soft);margin:0 0 14px;letter-spacing:.04em">★ Early-bird valid till 15 May 2026 · Includes day care, lunch &amp; transport</p>
+        <button class="group-cta s128" data-prog="s128-6to10">Enrol my child
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- shared strip: daily plan + comforts -->
+  <div class="strip" id="daily">
+    <div>
+      <h3>Daily <em>game plan</em></h3>
+      <ul>
+        <li><span class="time">9:30 – 10:30</span><b>Level 1</b></li>
+        <li><span class="time">10:30 – 10:45</span>Pulpy Noms <small style="opacity:.6">— snack break</small></li>
+        <li><span class="time">10:45 – 11:45</span><b>Level 2</b></li>
+        <li><span class="time">11:45 – 12:30</span>Zoomies <small style="opacity:.6">— free play</small></li>
+        <li><span class="time">12:30 – 1:30</span><b>Level 3</b>, then Power Up</li>
+      </ul>
+      <p class="note">★ Prakriti (Sec 128) wraps slightly earlier at 1:00 pm · Schedule is approximate.</p>
+    </div>
+    <div>
+      <h3>Comforts <em>included</em></h3>
+      <ul class="strip-comforts">
+        <li><span class="ic">🍓</span><span><b>Pulpy Nom</b><small>Fresh fruit &amp; mid-morning snack</small></span></li>
+        <li><span class="ic">🍱</span><span><b>Power</b><small>Freshly cooked vegetarian lunch</small></span></li>
+        <li><span class="ic">🏡</span><span><b>Nestle</b><small>Day care · Prakriti (Sec 128) only</small></span></li>
+        <li><span class="ic">🚌</span><span><b>Zooom</b><small>Transport · Prakriti (Sec 128) only</small></span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ——— how it works ——— -->
+<section class="how">
+  <header class="section-head"><span class="section-num">02 / How it works</span><h2 class="section-title">Three small steps,<br><em>then we take over.</em></h2></header>
+  <div class="how-grid">
+    <div class="step"><div class="step-num">1</div><h3>Pick your campus</h3><p>Prakriti (Sec 22) if your child is 3 – 7 and you want a slow, gentle rhythm. Prakriti (Sec 128) for ages 3 – 10 with swimming, climbing &amp; transport included.</p></div>
+    <div class="step"><div class="step-num">2</div><h3>Choose your weeks</h3><p>Sign up for one week or all three. The full 3-week journey gets the best per-day value and the early-bird saves you another ₹1,000.</p></div>
+    <div class="step"><div class="step-num">3</div><h3>Show up &amp; play</h3><p>Mornings of mud, music, swimming and stories. Lunch and snacks are included. Pickups by 1:30 pm at Prakriti (Sec 22) or 1:00 pm at Prakriti (Sec 128).</p></div>
+  </div>
+</section>
+
+<!-- ——— faq ——— -->
+<section class="faq" id="faq">
+  <header class="section-head"><span class="section-num">03 / Questions</span><h2 class="section-title">A few things <em>parents ask.</em></h2></header>
+  <div class="faq-list">
+    <details><summary>Which campus should I choose?</summary><p>If your child is 3 – 7 and you'd like a calmer, smaller-group experience, choose <strong>Prakriti (Sec 22)</strong>'s Slow Summers. If your child is 3 – 10 (or you want swimming, climbing, skateboarding, transport and day-care included), choose the <strong>Prakriti (Sec 128)</strong> Summer Jamboree.</p></details>
+    <details><summary>Do my child and I have to be Prakriti families to attend?</summary><p>Not at all. Both campuses welcome children from any school across Noida, Greater Noida, and Delhi NCR. Prakriti families get a ₹500 discount on registration.</p></details>
+    <details><summary>Is transportation provided?</summary><p>Yes, at Prakriti (Sec 128) — transport is included in the programme fee. At Prakriti (Sec 22), transport is not provided (parents drop and pick up).</p></details>
+    <details><summary>What's the difference between one week and three weeks?</summary><p>Each week is a complete experience in itself — children rotate through all the activities. Three weeks gives them depth (more repetition with pottery wheels, climbing walls, swimming) plus the best per-day value.</p></details>
+    <details><summary>Can discounts be combined?</summary><p>Yes. Early Bird, Sibling, and Prakriti Learner discounts all stack — so an early-bird Prakriti sibling could save ₹3,000 total.</p></details>
+    <details><summary>What about food and allergies?</summary><p>A freshly cooked vegetarian lunch and mid-morning fruit/snack are included at both campuses. Please share dietary needs and allergies at the time of registration — we'll plan around them.</p></details>
+    <details><summary>What is your refund policy?</summary><p>Full refunds are available up to 7 days before your child's first day. After that, we can offer a transfer to a later week or a credit. Get in touch on WhatsApp and we'll figure it out together.</p></details>
+  </div>
+</section>
+
+<!-- ——— closing CTA ——— -->
+<section class="cta-banner">
+  <h2>Pack a water bottle. <em>The summer is waiting.</em></h2>
+  <p>Both campuses fill up quickly — especially the 3-week programmes. Register today to lock in the early-bird discount.</p>
+  <div class="hero-cta" style="margin-top:0">
+    <a href="#campuses" class="btn btn-primary">Choose a campus
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+    </a>
+    <a href="https://wa.me/+919289530104" class="btn btn-ghost">Prakriti (Sec 22): +91 92895 30104</a>
+    <a href="https://wa.me/+919217169572" class="btn btn-ghost">Prakriti (Sec 128): +91 92171 69572</a>
+  </div>
+  <svg class="cta-deco" viewBox="0 0 300 300" aria-hidden="true">
+    <g fill="none" stroke="#FFC93C" stroke-width="3" opacity=".7"><circle cx="150" cy="150" r="80" fill="#FFC93C" opacity=".18"/><circle cx="150" cy="150" r="55" stroke-dasharray="4 8"/><circle cx="150" cy="150" r="100" stroke-dasharray="2 12"/></g>
+    <g fill="#FFC93C"><circle cx="150" cy="150" r="32"/></g>
+  </svg>
+</section>
+
+<!-- ——— footer ——— -->
+<footer>
+  <div class="foot-brand">
+    <a href="#" class="brand"><span class="brand-mark">P</span><span class="brand-name">Prakriti School<small>Summer Jamboree '26</small></span></a>
+    <p>A values-driven school in Noida where children learn through curiosity, care, and the natural world.</p>
+  </div>
+  <div><h4>Prakriti (Sec 22)</h4><ul><li>Slow Summers</li><li>01 – 21 June 2026</li><li>9:30 am – 1:30 pm</li><li>Early Years Learning Centre</li><li>+91 92895 30104</li></ul></div>
+  <div><h4>Prakriti (Sec 128)</h4><ul><li>Summer Jamboree</li><li>25 May – 12 June 2026</li><li>9:30 am – 1:00 pm</li><li>Prakriti School (K–12)</li><li>+91 92171 69572</li></ul></div>
+  <div>
+    <h4>School</h4>
+    <ul>
+      <li><a href="https://prakriti.edu.in">prakriti.edu.in</a></li>
+      <li><a href="https://events.prakriti.edu.in">Year Flow 2026 – 27</a></li>
+      <li>jamboree@prakriti.edu.in</li>
+    </ul>
+    <div class="socials" style="margin-top:14px">
+      <a href="#" aria-label="Instagram"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor"/></svg></a>
+      <a href="#" aria-label="Facebook"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 9h3V5h-3a4 4 0 0 0-4 4v2H7v4h3v6h4v-6h3l1-4h-4V9z"/></svg></a>
+      <a href="#" aria-label="YouTube"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="6" width="20" height="12" rx="3"/><path d="M10 9.5v5l5-2.5z" fill="currentColor"/></svg></a>
+    </div>
+  </div>
+  <div class="foot-bottom"><span>© 2026 Prakriti School · Summer Jamboree</span><span>Made with sun, splash &amp; soul</span></div>
+</footer>
+
+<!-- ——— REGISTRATION MODAL ——— -->
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <button class="modal-close" id="modal-close" aria-label="Close">×</button>
+
+    <div id="form-view">
+      <h3 id="modal-title">Enrol your child</h3>
+      <p class="modal-sub" id="modal-sub">Summer Jamboree 2026</p>
+      <div class="form-status" id="form-status"></div>
+
+      <form id="reg-form" novalidate>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Programme <span class="req">*</span></label>
+            <select id="f-prog" required>
+              <option value="">Choose a programme…</option>
+              <optgroup label="Prakriti (Sec 22) · 01 – 21 Jun">
+                <option value="s22-3to5">Little Wonders (Ages 3–5)</option>
+                <option value="s22-5to7">Big Adventurers (Ages 5–7)</option>
+              </optgroup>
+              <optgroup label="Prakriti (Sec 128) · 25 May – 12 Jun">
+                <option value="s128-3to5">Little Wonders (Ages 3–5)</option>
+                <option value="s128-6to10">Big Explorers (Ages 6–10)</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Duration <span class="req">*</span></label>
+            <select id="f-weeks" required>
+              <option value="">Choose duration…</option>
+              <option value="1">1 week</option>
+              <option value="2">2 weeks</option>
+              <option value="3">3 weeks (full programme)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-field"><label>Child's name <span class="req">*</span></label><input type="text" id="f-childName" required autocomplete="off"/></div>
+          <div class="form-field"><label>Child's age <span class="req">*</span></label><input type="number" id="f-childAge" min="3" max="11" required/></div>
+        </div>
+
+        <div class="form-row full">
+          <div class="form-field"><label>Child's current school <span class="req">*</span></label><input type="text" id="f-childSchool" required autocomplete="off"/></div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-field"><label>Parent name <span class="req">*</span></label><input type="text" id="f-parentName" required autocomplete="name"/></div>
+          <div class="form-field"><label>Parent phone <span class="req">*</span></label><input type="tel" id="f-parentPhone" required pattern="[0-9+ ]{10,15}" autocomplete="tel"/></div>
+        </div>
+
+        <div class="form-row full">
+          <div class="form-field"><label>Parent email <span class="req">*</span></label><input type="email" id="f-parentEmail" required autocomplete="email"/><small>We'll send your booking confirmation here.</small></div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-field"><label>Emergency contact name <span class="req">*</span></label><input type="text" id="f-emergencyName" required/></div>
+          <div class="form-field"><label>Emergency contact phone <span class="req">*</span></label><input type="tel" id="f-emergencyPhone" required pattern="[0-9+ ]{10,15}"/></div>
+        </div>
+
+        <div class="form-row full">
+          <div class="form-field"><label>Allergies, dietary or medical notes</label><textarea id="f-medical" placeholder="E.g. peanut allergy, asthma, dietary preferences. Leave blank if none."></textarea></div>
+        </div>
+
+        <label style="display:block;font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);margin:6px 0 8px;font-weight:700">Apply discounts (combine all that apply)</label>
+        <div class="checkbox-row">
+          <div class="check-item" id="disc-early-wrap">
+            <input type="checkbox" id="f-disc-early"/>
+            <label for="f-disc-early"><span>Early Bird <small style="font-family:'Space Mono',monospace;font-size:11px;color:var(--ink-soft)" id="disc-early-note">(valid till the cutoff date)</small></span><span class="save">−₹1,000</span></label>
+          </div>
+          <div class="check-item">
+            <input type="checkbox" id="f-disc-sibling"/>
+            <label for="f-disc-sibling"><span>Sibling discount <small style="font-family:'Space Mono',monospace;font-size:11px;color:var(--ink-soft)">(2+ children enrolled)</small></span><span class="save">−₹1,500</span></label>
+          </div>
+          <div class="check-item">
+            <input type="checkbox" id="f-disc-learner"/>
+            <label for="f-disc-learner"><span>Prakriti Learner <small style="font-family:'Space Mono',monospace;font-size:11px;color:var(--ink-soft)">(current Prakriti family)</small></span><span class="save">−₹500</span></label>
+          </div>
+        </div>
+
+        <div class="form-row" id="f-transport-wrap">
+          <div class="form-field">
+            <label>Transport (Prakriti (Sec 22) only)</label>
+            <select id="f-transport">
+              <option value="no">No, I'll drop and pick up</option>
+              <option value="yes">Interested if available</option>
+            </select>
+            <small>Transport is included at Prakriti (Sec 128).</small>
+          </div>
+          <div class="form-field">
+            <label>How did you hear about us?</label>
+            <select id="f-source"><option value="">Choose one…</option><option value="friend">Friend or family</option><option value="instagram">Instagram</option><option value="school">My child's school</option><option value="google">Google search</option><option value="other">Other</option></select>
+          </div>
+        </div>
+
+        <div class="form-row full" id="f-source-wrap" style="display:none">
+          <div class="form-field">
+            <label>How did you hear about us?</label>
+            <select id="f-source-alt"><option value="">Choose one…</option><option value="friend">Friend or family</option><option value="instagram">Instagram</option><option value="school">My child's school</option><option value="google">Google search</option><option value="other">Other</option></select>
+          </div>
+        </div>
+
+        <div class="summary-box">
+          <div class="sum-left">Total payable<br><small id="sum-meta">Choose programme & duration</small></div>
+          <div class="sum-right" id="sum-amount">₹ —<small id="sum-discount"></small></div>
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="pay-btn" style="width:100%;justify-content:center">
+          <span id="pay-label">Pay &amp; confirm seat</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+        </button>
+        <small style="display:block;text-align:center;margin-top:14px;font-family:'Space Mono',monospace;color:var(--ink-soft);font-size:11px;letter-spacing:.06em">Secure payment via Razorpay · Refunds available 7 days before start</small>
+      </form>
+    </div>
+
+    <div class="success-screen" id="success-view">
+      <div class="success-icon">✓</div>
+      <h3>You're in!</h3>
+      <p>We've sent a confirmation to <strong id="succ-email">your email</strong>. See you at Prakriti this summer.</p>
+      <div class="success-detail">
+        <div><span>Child</span><strong id="succ-child"></strong></div>
+        <div><span>Programme</span><strong id="succ-prog"></strong></div>
+        <div><span>Booking ID</span><strong id="succ-id"></strong></div>
+        <div><span>Amount paid</span><strong id="succ-amt"></strong></div>
+      </div>
+      <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── CONFIG ───────────────────────────────────────────────────────────────
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/PASTE_DEPLOYMENT_ID/exec';
+const RAZORPAY_KEY_ID = 'rzp_test_PASTE_YOUR_KEY_ID';
+
+// Each programme has: name, campus, perWeek price, 3-week price, early-bird cutoff
+const PRICES = {
+  's22-3to5':   { name: 'Little Wonders (3–5) · Prakriti (Sec 22)',  campus: 'Sec 22',  1: 5500, 2: 11000, 3: 16500, cutoff: '2026-05-20T23:59:59+05:30' },
+  's22-5to7':   { name: 'Big Adventurers (5–7) · Prakriti (Sec 22)', campus: 'Sec 22',  1: 6000, 2: 12000, 3: 18000, cutoff: '2026-05-20T23:59:59+05:30' },
+  's128-3to5':  { name: 'Little Wonders (3–5) · Prakriti (Sec 128)', campus: 'Sec 128', 1: 6000, 2: 12000, 3: 18000, cutoff: '2026-05-15T23:59:59+05:30' },
+  's128-6to10': { name: 'Big Explorers (6–10) · Prakriti (Sec 128)', campus: 'Sec 128', 1: 6500, 2: 13000, 3: 19500, cutoff: '2026-05-15T23:59:59+05:30' }
+};
+
+// Discount values are flat amounts, all stackable
+const DISCOUNTS = { early: 1000, sibling: 1500, learner: 500 };
+
+const $ = (id) => document.getElementById(id);
+const backdrop = $('modal-backdrop');
+const formView = $('form-view');
+const successView = $('success-view');
+const statusEl = $('form-status');
+
+function fmtDate(iso) {
+  return new Date(iso).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
+}
+
+function openModal(prog) {
+  formView.style.display = 'block';
+  successView.classList.remove('show');
+  statusEl.className = 'form-status'; statusEl.textContent = '';
+  if (prog && PRICES[prog]) {
+    $('f-prog').value = prog;
+    onProgChange();
+  }
+  backdrop.classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+function closeModal() {
+  backdrop.classList.remove('show');
+  document.body.style.overflow = '';
+  $('reg-form').reset();
+  onProgChange();
+  updateSummary();
+}
+document.querySelectorAll('[data-prog]').forEach(el => {
+  el.addEventListener('click', (e) => { e.preventDefault(); openModal(el.dataset.prog); });
+});
+$('modal-close').addEventListener('click', closeModal);
+backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModal(); });
+
+// Adjust form when programme changes (campus-specific UI bits)
+function onProgChange() {
+  const prog = $('f-prog').value;
+  const p = PRICES[prog];
+
+  // Transport field only relevant for Sec 22 (Sec 128 includes it)
+  if (p && p.campus === 'Sec 22') {
+    $('f-transport-wrap').classList.add('show');
+    $('f-source-wrap').style.display = 'none';
+  } else {
+    $('f-transport-wrap').classList.remove('show');
+    // when transport row is hidden, show source on its own line
+    $('f-source-wrap').style.display = p ? 'grid' : 'none';
+  }
+
+  // Early-bird date note + auto-disable if past cutoff
+  const earlyNote = $('disc-early-note');
+  const earlyWrap = $('disc-early-wrap');
+  const earlyChk = $('f-disc-early');
+  if (p) {
+    const cutoff = new Date(p.cutoff);
+    const expired = new Date() > cutoff;
+    earlyNote.textContent = '(valid till ' + fmtDate(p.cutoff) + ')';
+    if (expired) {
+      earlyChk.checked = false;
+      earlyChk.disabled = true;
+      earlyWrap.classList.add('disabled');
+      earlyNote.textContent += ' — expired';
+    } else {
+      earlyChk.disabled = false;
+      earlyWrap.classList.remove('disabled');
+    }
+  } else {
+    earlyNote.textContent = '(valid till the cutoff date)';
+  }
+  updateSummary();
+}
+
+function getSelectedDiscounts() {
+  const used = {};
+  let amt = 0;
+  if ($('f-disc-early').checked && !$('f-disc-early').disabled)  { used.early = DISCOUNTS.early;     amt += DISCOUNTS.early; }
+  if ($('f-disc-sibling').checked) { used.sibling = DISCOUNTS.sibling; amt += DISCOUNTS.sibling; }
+  if ($('f-disc-learner').checked) { used.learner = DISCOUNTS.learner; amt += DISCOUNTS.learner; }
+  return { used, amt };
+}
+
+function calcAmount() {
+  const prog = $('f-prog').value;
+  const weeks = parseInt($('f-weeks').value, 10);
+  if (!prog || !weeks || !PRICES[prog]) return { base:0, total:0, discount:0, used:{}, name:'', weeks:0 };
+  const base = PRICES[prog][weeks];
+  const d = getSelectedDiscounts();
+  // discount cannot exceed base
+  const discount = Math.min(d.amt, base);
+  return { base, total: base - discount, discount, used:d.used, name: PRICES[prog].name, weeks };
+}
+
+function updateSummary() {
+  const c = calcAmount();
+  if (!c.total) {
+    $('sum-amount').innerHTML = '₹ —';
+    $('sum-meta').textContent = 'Choose programme & duration';
+    $('sum-discount').textContent = '';
+    return;
+  }
+  $('sum-amount').innerHTML = '₹' + c.total.toLocaleString('en-IN');
+  $('sum-meta').textContent = c.name + ' · ' + c.weeks + ' week' + (c.weeks > 1 ? 's' : '');
+  $('sum-discount').textContent = c.discount ? ' (saved ₹' + c.discount.toLocaleString('en-IN') + ')' : '';
+}
+
+$('f-prog').addEventListener('change', onProgChange);
+$('f-weeks').addEventListener('change', updateSummary);
+$('f-disc-early').addEventListener('change', updateSummary);
+$('f-disc-sibling').addEventListener('change', updateSummary);
+$('f-disc-learner').addEventListener('change', updateSummary);
+
+function validate() {
+  const required = ['f-prog','f-weeks','f-childName','f-childAge','f-childSchool','f-parentName','f-parentPhone','f-parentEmail','f-emergencyName','f-emergencyPhone'];
+  for (const id of required) {
+    const el = $(id);
+    if (!el.value.trim()) { el.focus(); return 'Please fill in all required fields.'; }
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test($('f-parentEmail').value)) { $('f-parentEmail').focus(); return 'Please enter a valid email address.'; }
+  if ($('f-parentPhone').value.replace(/\s/g,'').length < 10) { $('f-parentPhone').focus(); return 'Please enter a valid phone number.'; }
+  const age = parseInt($('f-childAge').value, 10);
+  if (age < 3 || age > 11) { $('f-childAge').focus(); return 'Age should be between 3 and 11.'; }
+  return null;
+}
+function showError(msg) { statusEl.className = 'form-status err'; statusEl.textContent = msg; statusEl.scrollIntoView({behavior:'smooth',block:'center'}); }
+function showInfo(msg)  { statusEl.className = 'form-status info'; statusEl.textContent = msg; }
+
+function collectFormData() {
+  const p = PRICES[$('f-prog').value];
+  const source = $('f-source-wrap').style.display === 'grid'
+    ? $('f-source-alt').value
+    : $('f-source').value;
+  return {
+    programme: $('f-prog').value,
+    programmeName: p.name,
+    campus: p.campus,
+    weeks: parseInt($('f-weeks').value, 10),
+    childName: $('f-childName').value.trim(),
+    childAge: parseInt($('f-childAge').value, 10),
+    childSchool: $('f-childSchool').value.trim(),
+    parentName: $('f-parentName').value.trim(),
+    parentPhone: $('f-parentPhone').value.trim(),
+    parentEmail: $('f-parentEmail').value.trim(),
+    emergencyName: $('f-emergencyName').value.trim(),
+    emergencyPhone: $('f-emergencyPhone').value.trim(),
+    medical: $('f-medical').value.trim(),
+    transport: p.campus === 'Sec 22' ? $('f-transport').value : 'included',
+    source: source,
+    discounts: {
+      early:   $('f-disc-early').checked   && !$('f-disc-early').disabled,
+      sibling: $('f-disc-sibling').checked,
+      learner: $('f-disc-learner').checked
+    }
+  };
+}
+
+$('reg-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const err = validate();
+  if (err) return showError(err);
+
+  const payBtn = $('pay-btn'), payLabel = $('pay-label');
+  payBtn.disabled = true;
+  payLabel.textContent = 'Creating booking…';
+  showInfo('Setting up your booking — please wait…');
+
+  const data = collectFormData();
+  const calc = calcAmount();
+  data.amount = calc.total;
+  data.discount = calc.discount;
+
+  try {
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'createOrder', payload: data })
+    });
+    const result = await res.json();
+    if (!result.ok) throw new Error(result.error || 'Could not create booking.');
+
+    statusEl.className = 'form-status'; statusEl.textContent = '';
+    payLabel.textContent = 'Opening payment…';
+
+    const rzp = new Razorpay({
+      key: RAZORPAY_KEY_ID,
+      amount: result.order.amount,
+      currency: 'INR',
+      name: 'Prakriti Summer Jamboree 2026',
+      description: data.programmeName + ' · ' + data.weeks + ' week' + (data.weeks > 1 ? 's' : ''),
+      order_id: result.order.id,
+      prefill: { name: data.parentName, email: data.parentEmail, contact: data.parentPhone },
+      notes: { bookingId: result.bookingId, childName: data.childName, campus: data.campus },
+      theme: { color: '#E63946' },
+      handler: async function (response) {
+        payLabel.textContent = 'Verifying payment…';
+        showInfo('Verifying payment, almost done…');
+        try {
+          const v = await fetch(APPS_SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              action: 'verifyPayment',
+              payload: {
+                bookingId: result.bookingId,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature
+              }
+            })
+          });
+          const verify = await v.json();
+          if (!verify.ok) throw new Error(verify.error || 'Verification failed');
+
+          $('succ-email').textContent = data.parentEmail;
+          $('succ-child').textContent = data.childName;
+          $('succ-prog').textContent = data.programmeName + ' · ' + data.weeks + ' wk';
+          $('succ-id').textContent = result.bookingId;
+          $('succ-amt').textContent = '₹' + data.amount.toLocaleString('en-IN');
+          formView.style.display = 'none';
+          successView.classList.add('show');
+        } catch (verErr) {
+          showError('Payment received but verification failed. Please contact us with payment ID: ' + response.razorpay_payment_id);
+          payBtn.disabled = false; payLabel.textContent = 'Pay & confirm seat';
+        }
+      },
+      modal: {
+        ondismiss: function() {
+          payBtn.disabled = false; payLabel.textContent = 'Pay & confirm seat';
+          statusEl.className = 'form-status info';
+          statusEl.textContent = 'Payment cancelled. You can try again when you\'re ready.';
+        }
+      }
+    });
+    rzp.on('payment.failed', function (response) {
+      showError('Payment failed: ' + (response.error?.description || 'Please try again.'));
+      payBtn.disabled = false; payLabel.textContent = 'Pay & confirm seat';
+    });
+    rzp.open();
+
+  } catch (e) {
+    showError(e.message || 'Something went wrong. Please try again or WhatsApp us.');
+    payBtn.disabled = false; payLabel.textContent = 'Pay & confirm seat';
+  }
+});
+</script>
+</body>
+</html>
