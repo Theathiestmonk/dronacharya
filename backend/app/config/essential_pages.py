@@ -30,10 +30,13 @@ ESSENTIAL_PRAKRITI_PAGES = [
     # 7. Academic Year Flow calendar (replaces legacy prakriti.edu.in/calendar archive)
     "https://events.prakriti.edu.in/",
     
-    # 8. News/Blog - For "latest news" queries (main page only)
+    # 8. Summer Jamboree dedicated page
+    "https://alt.prakriti.edu.in",
+    
+    # 9. News/Blog - For "latest news" queries (main page only)
     "https://prakriti.edu.in/blog-and-news/",
     
-    # 9. Parents Testimonials - For "what say about parents" queries
+    # 10. Parents Testimonials - For "what say about parents" queries
     "https://prakriti.edu.in/what-our-parents-say-about-us/",
 ]
 
@@ -50,6 +53,7 @@ PAGE_CONTENT_TYPES = {
     "https://prakriti.edu.in/school-fees/": "admission",
     "https://prakriti.edu.in/contact/": "contact",
     "https://events.prakriti.edu.in/": "calendar",
+    "https://alt.prakriti.edu.in": "summer_jamboree",
     "https://prakriti.edu.in/blog-and-news/": "news",
     "https://prakriti.edu.in/what-our-parents-say-about-us/": "testimonial",
 }

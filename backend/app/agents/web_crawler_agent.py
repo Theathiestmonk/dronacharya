@@ -88,6 +88,14 @@ class WebCrawlerAgent:
             # Other
             "https://prakriti.edu.in/cpp/",
 
+            # Academic Year Flow (school events / holidays / PTMs) - support both edu.in and org.in
+            "https://events.prakriti.edu.in/",
+            "https://event.prakriti.org.in/",
+            "https://events.prakriti.org.in/",
+
+            # Summer Jamboree dedicated page (alt.prakriti.edu.in)
+            "https://alt.prakriti.edu.in",
+
             # Substack Articles (Roots of All Beings)
             "https://rootsofallbeings.substack.com/p/can-we-save-the-planet-or-should",
             "https://rootsofallbeings.substack.com/p/welcoming-new-members-to-prakriti",
@@ -419,6 +427,25 @@ class WebCrawlerAgent:
             )
             return False
         
+        # Filter out common words and check for known names
+        common_words = ['little', 'bit', 'about', 'tell', 'me', 'who', 'is', 'information', 'details', 'cooking', 'recipes', 
+                       'admission', 'admissions', 'fees', 'fee', 'structure', 'process', 'procedure', 'school', 'program', 'programs', 
+                       'course', 'courses', 'prakriti', 'prakrit', 'roots', 'philosophy', 'article', 'articles', 'blog', 'news', 
+                       'calendar', 'event', 'events', 'curriculum', 'learning', 'learn', 'teaching', 'approach', 'want', 
+                       'newton', 'einstein', 'darwin', 'law', 'laws', 'theory', 'theorem', 'formula', 'concept', 'concepts', 
+                       'example', 'examples', 'explain', 'understand', 'help', 'solve', 'study', 'physics', 'chemistry', 
+                       'biology', 'math', 'mathematics', 'algebra', 'calculus', 'french', 'english', 'facilitator', 'teacher', 
+                       'coordinator', 'founder', 'founde', 'foundr', 'co-founder', 'cofounder', 'founding', 'director', 'principal', 
+                       'chairperson', 'chairman', 'chairwoman', 'mentor', 'faculty', 'co', 'founde', 'the', 'vanilla', 'contact',
+                       'latest', 'recent', 'substack', 'jamboree', 'summer', 'fest', 'festival']
+        
+        # Known person name patterns (first and last names)
+        known_first_names = ['priyanka', 'shuchi', 'ritu', 'gunjan', 'gayatri', 'vanila', 'vidya', 
+                           'vinita', 'bharti', 'shraddha', 'shilpa', 'mridul', 'rahul']
+        known_last_names = ['oberoi', 'mishra', 'martin', 'bhatia', 'tahiliani', 'ghai', 'vishwanathan',
+                          'krishna', 'batra', 'rana', 'goel', 'tayal']
+        person_name_patterns = known_first_names + known_last_names
+
         # CRITICAL: Check for "tell me about" pattern FIRST - this is ALWAYS a person query if it has a name
         if 'tell me about' in query_lower:
             # Extract potential name after "tell me about"
@@ -430,17 +457,19 @@ class WebCrawlerAgent:
             # Check if it looks like a name (1+ words, not all common words)
             words = potential_name.split()
             if len(words) >= 1:  # Changed from 2 to 1 to handle single names
-                # Check if it matches known team member names
-                known_names = ['priyanka', 'oberoi', 'shuchi', 'mishra', 'ritu', 'martin', 'gunjan', 'bhatia',
-                             'gayatri', 'tahiliani', 'vanila', 'ghai', 'vidya', 'vishwanathan', 'vinita', 'krishna',
-                             'bharti', 'batra', 'shraddha', 'rana', 'goel', 'shilpa', 'tayal', 'mridul', 'rahul']
-                if any(word in known_names for word in words):
-                    print(f"[WebCrawler] 'Tell me about' query detected with known name: {potential_name}")
-                    return True
-                # Even if not in known names, if it's 1-3 words, treat as person query
-                if 1 <= len(words) <= 3:
-                    print(f"[WebCrawler] 'Tell me about' query detected with potential name: {potential_name}")
-                    return True
+                # If any word is a common word, it's likely not a person name (e.g., "Summer Jamboree")
+                if any(word in common_words for word in words):
+                    print(f"[WebCrawler] 'Tell me about' query contains common/event words: {potential_name} - skipping person detection")
+                    # Fall through to other checks, but this block won't return True
+                else:
+                    # Check if it matches known team member names
+                    if any(word in known_first_names or word in known_last_names for word in words):
+                        print(f"[WebCrawler] 'Tell me about' query detected with known name: {potential_name}")
+                        return True
+                    # Even if not in known names, if it's 1-3 words, treat as person query
+                    if 1 <= len(words) <= 3:
+                        print(f"[WebCrawler] 'Tell me about' query detected with potential name: {potential_name}")
+                        return True
         
         # Check for "who is" pattern with potential name
         if 'who is' in query_lower or 'who is the' in query_lower:
@@ -452,45 +481,25 @@ class WebCrawlerAgent:
                 return False
             words = potential_name.split()
             if len(words) >= 1:  # Changed from 2 to 1
-                # Check if it matches known team member names
-                known_names = ['priyanka', 'oberoi', 'shuchi', 'mishra', 'ritu', 'martin', 'gunjan', 'bhatia',
-                             'gayatri', 'tahiliani', 'vanila', 'ghai', 'vidya', 'vishwanathan', 'vinita', 'krishna',
-                             'bharti', 'batra', 'shraddha', 'rana', 'goel', 'shilpa', 'tayal', 'mridul', 'rahul']
-                if any(word in known_names for word in words):
-                    print(f"[WebCrawler] 'Who is' query detected with known name: {potential_name}")
-                    return True
-                # If it's 1-3 words and not a role keyword, treat as person query
-                role_keywords = ['facilitator', 'teacher', 'principal', 'director', 'founder', 'coordinator',
-                              'mentor', 'chief', 'chairperson', 'chairman', 'chairwoman', 'head', 'leader']
-                if 1 <= len(words) <= 3 and not any(role in potential_name for role in role_keywords):
-                    print(f"[WebCrawler] 'Who is' query detected with potential name: {potential_name}")
-                    return True
+                # If any word is a common word, it's likely not a person name
+                if any(word in common_words for word in words):
+                    print(f"[WebCrawler] 'Who is' query contains common/event words: {potential_name} - skipping person detection")
+                else:
+                    # Check if it matches known team member names
+                    if any(word in known_first_names or word in known_last_names for word in words):
+                        print(f"[WebCrawler] 'Who is' query detected with known name: {potential_name}")
+                        return True
+                    # If it's 1-3 words and not a role keyword, treat as person query
+                    role_keywords = ['facilitator', 'teacher', 'principal', 'director', 'founder', 'coordinator',
+                                  'mentor', 'chief', 'chairperson', 'chairman', 'chairwoman', 'head', 'leader']
+                    if 1 <= len(words) <= 3 and not any(role in potential_name for role in role_keywords):
+                        print(f"[WebCrawler] 'Who is' query detected with potential name: {potential_name}")
+                        return True
         
         # Check if the query contains a potential person name (1+ words)
         # Look for 1-3 word names (First, First Last, or First Middle Last)
         name_pattern = r'\b[a-zA-Z]+(?:\s+[a-zA-Z]+){0,2}\b'
         potential_names = re.findall(name_pattern, query_lower)
-        
-        # Filter out common words and check for known names
-        # CRITICAL: Exclude "vanilla" (flavor) - only "vanila" (person name) should match
-        # CRITICAL: Exclude admission/fees/contact/article related terms
-        common_words = ['little', 'bit', 'about', 'tell', 'me', 'who', 'is', 'information', 'details', 'cooking', 'recipes', 
-                       'admission', 'admissions', 'fees', 'fee', 'structure', 'process', 'procedure', 'school', 'program', 'programs', 
-                       'course', 'courses', 'prakriti', 'prakrit', 'roots', 'philosophy', 'article', 'articles', 'blog', 'news', 
-                       'calendar', 'event', 'events', 'curriculum', 'learning', 'learn', 'teaching', 'approach', 'want', 
-                       'newton', 'einstein', 'darwin', 'law', 'laws', 'theory', 'theorem', 'formula', 'concept', 'concepts', 
-                       'example', 'examples', 'explain', 'understand', 'help', 'solve', 'study', 'physics', 'chemistry', 
-                       'biology', 'math', 'mathematics', 'algebra', 'calculus', 'french', 'english', 'facilitator', 'teacher', 
-                       'coordinator', 'founder', 'founde', 'foundr', 'co-founder', 'cofounder', 'founding', 'director', 'principal', 
-                       'chairperson', 'chairman', 'chairwoman', 'mentor', 'faculty', 'co', 'founde', 'the', 'vanilla', 'contact',
-                       'latest', 'recent', 'substack']
-        
-        # Known person name patterns (first and last names)
-        known_first_names = ['priyanka', 'shuchi', 'ritu', 'gunjan', 'gayatri', 'vanila', 'vidya', 
-                           'vinita', 'bharti', 'shraddha', 'shilpa', 'mridul', 'rahul']
-        known_last_names = ['oberoi', 'mishra', 'martin', 'bhatia', 'tahiliani', 'ghai', 'vishwanathan',
-                          'krishna', 'batra', 'rana', 'goel', 'tayal']
-        person_name_patterns = known_first_names + known_last_names
         
         for name in potential_names:
             name_lower = name.lower().strip()
@@ -554,7 +563,8 @@ class WebCrawlerAgent:
                        'founder', 'founde', 'foundr', 'co-founder', 'cofounder', 'founding', 'director', 'principal', 
                        'chairperson', 'chairman', 'chairwoman', 'coordinator', 'mentor', 'chief', 'teacher', 'faculty',
                        'head', 'leader', 'manager', 'administrator', 'admin', 'admission', 'admissions', 'addmission', 'addmissions',
-                       'fees', 'fee', 'structure', 'process', 'procedure', 'contact', 'article', 'articles', 'blog', 'news']
+                       'fees', 'fee', 'structure', 'process', 'procedure', 'contact', 'article', 'articles', 'blog', 'news',
+                       'jamboree', 'summer', 'fest', 'festival', 'event', 'events']
         words = cleaned_query.split()
         cleaned_words = [word for word in words if word.lower() not in common_words]
         cleaned_query = ' '.join(cleaned_words)
@@ -955,7 +965,8 @@ class WebCrawlerAgent:
             'assessment', 'assessments', 'this week', 'next week', 'last week',
             'today', 'tomorrow', 'yesterday', 'upcoming', 'coming up',
             'when is', 'what day', 'which day', 'date', 'dates',
-            'this month', 'next month', 'last month', 'current month'
+            'this month', 'next month', 'last month', 'current month',
+            'jamboree', 'summer', 'fest', 'festival'
         ]
         
         query_lower = query.lower()
@@ -1016,7 +1027,7 @@ class WebCrawlerAgent:
         if not url:
             return False
         u = url.lower()
-        return 'calendar' in u or 'events.prakriti.edu.in' in u
+        return 'calendar' in u or 'events.prakriti.edu.in' in u or 'alt.prakriti.edu.in' in u
     
     def extract_content_from_url(
         self,
@@ -1164,6 +1175,15 @@ class WebCrawlerAgent:
                 cal = soup.select_one('.cal')
                 if cal:
                     main_content = self.clean_text(cal.get_text())
+            
+            # alt.prakriti.edu.in (Summer Jamboree) — extract full body content for programme info
+            if 'alt.prakriti.edu.in' in url.lower():
+                # Remove nav/footer noise but keep all programme content
+                body = soup.find('body')
+                if body:
+                    for noise in body(["script", "style", "nav"]):
+                        noise.decompose()
+                    main_content = self.clean_text(body.get_text())
             
             content['main_content'] = main_content
             
@@ -1668,6 +1688,9 @@ class WebCrawlerAgent:
         """Extract calendar events using Selenium for dynamic content"""
         if 'events.prakriti.edu.in' in (url or ''):
             return self.extract_prakriti_year_flow_calendar(url, query)
+        # alt.prakriti.edu.in is a static Summer Jamboree page, not a calendar — skip Selenium
+        if 'alt.prakriti.edu.in' in (url or ''):
+            return ""
         try:
             from selenium import webdriver
             from selenium.webdriver.chrome.options import Options
@@ -3182,6 +3205,9 @@ class WebCrawlerAgent:
                     print(f"[WebCrawler] Special case: Prakriti article query - filtering by content_type: article")
                 elif self.is_team_related(query):
                     content_type = 'team'
+                elif any(kw in query_lower for kw in ('jamboree', 'summer camp', 'summer programme', 'summer program')):
+                    content_type = 'summer_jamboree'
+                    print(f"[WebCrawler] Special case: Summer Jamboree query - filtering by content_type: summer_jamboree")
                 elif self.is_calendar_related(query):
                     content_type = 'calendar'
                 elif self.is_news_related(query) and not is_substack_query:
@@ -3702,6 +3728,30 @@ class WebCrawlerAgent:
                             return relevant_info
                 except Exception as e:
                     print(f"[WebCrawler] Error crawling {url} for event-meaning: {e}")
+
+        # Summer Jamboree — alt.prakriti.edu.in is the dedicated page with full programme details
+        if 'jamboree' in query_lower or 'summer camp' in query_lower or 'summer programme' in query_lower or 'summer program' in query_lower:
+            print("[WebCrawler] 🎯 Summer Jamboree query — crawling alt.prakriti.edu.in as primary source")
+            jamboree_urls = [
+                "https://alt.prakriti.edu.in",
+                "https://prakriti.edu.in/blog-and-news/",
+                "https://prakriti.edu.in/",
+            ]
+            for url in jamboree_urls:
+                try:
+                    content = self.extract_content_from_url(
+                        url, query, skip_link_following=True
+                    )
+                    if content and "error" not in content and content.get("main_content", "").strip():
+                        relevant_info = self.extract_relevant_info([content], query)
+                        if relevant_info and relevant_info.strip():
+                            print(f"[WebCrawler] ✅ Summer Jamboree context from {url}")
+                            return relevant_info
+                except Exception as e:
+                    print(f"[WebCrawler] Error crawling {url} for Summer Jamboree: {e}")
+            print(
+                "[WebCrawler] ⚠️ No Summer Jamboree excerpt from priority URLs; continuing with normal discovery"
+            )
 
         # Bookaroo / "Schoolaroo" typo — Substack (RSS-matched posts) before prakriti blog-and-news;
         # event copy usually lives on Roots of All Beings, not the school "Blog & news" page.

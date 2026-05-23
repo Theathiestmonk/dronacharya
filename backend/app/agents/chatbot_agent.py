@@ -53,7 +53,7 @@ except ImportError:
     print("Warning: rapidfuzz not available, fuzzy matching disabled")
 
 # Path to local knowledge base JSON
-KB_PATH = os.path.join(os.path.dirname(__file__), '../../core/knowledge_base.json')
+KB_PATH = os.path.join(os.path.dirname(__file__), '../core/knowledge_base.json')
 
 def retrieve_from_json(query: str, threshold: int = 50) -> str | None:
     """Fuzzy match the user query to questions in the local JSON KB."""
@@ -1092,6 +1092,9 @@ Once you provide the subject and topic, I'll be able to give you detailed, step-
         query_lower
     ) or is_public_calendar_event_lookup_query(query_lower)
     
+    if "jamboree" in query_lower or "summer camp" in query_lower or "summer programme" in query_lower:
+        is_public_cal = True
+    
     # Expanded keywords to catch queries like "help with homework", "I need help with my homework", etc.
     is_coursework_query_early = any(kw in query_lower for kw in [
         'assignment', 'homework', 'coursework', 'task', 'due', 'submit',
@@ -1158,11 +1161,27 @@ Once you provide the subject and topic, I'll be able to give you detailed, step-
 
 After you’re signed in, ask again for the faculty list and I can help."""
 
+    # Exclude general school-info queries from the guest sign-in gate
+    # These are public-information topics that any visitor should be able to ask about
+    _general_school_info_keywords = [
+        'igcse', 'cambridge', 'curriculum', 'board', 'affiliation', 'cisce',
+        'admission', 'admissions', 'enroll', 'enrolment', 'enrollment',
+        'fee', 'fees', 'tuition',
+        'philosophy', 'learning for happiness',
+        'study tips', 'study techniques', 'how to study',
+        'a level', 'a levels', 'as level',
+        'about prakriti', 'about the school', 'about school',
+        'campus', 'location', 'address', 'contact',
+        'age group', 'grade range', 'classes offered',
+    ]
+    _is_general_school_info = any(kw in query_lower for kw in _general_school_info_keywords)
+
     if (
         not user_profile
         and (is_classroom_related_query_early or is_home_related_query_early)
         and not is_public_cal
         and not _guest_calendar_overview_ok
+        and not _is_general_school_info
     ):
         print(f"[Chatbot] 🚫 Guest user asking about classroom/home - returning early (user needs to login first)")
         return """Please **sign in** to use features tied to your profile (assignments, coursework, and your grade).
@@ -1318,22 +1337,64 @@ For **general** homework help (not tied to your live Classroom list), ask a **sp
     is_igcse_query = any(kw in query_lower for kw in igcse_keywords) or any(re_module.search(pattern, query_lower) for pattern in igcse_query_patterns)
     
     if is_igcse_query:
-        print(f"[Chatbot] 📚 IGCSE curriculum query detected - using built-in response (no API call)")
-        return """The IGCSE (International General Certificate of Secondary Education) curriculum offered at Prakriti School is a globally recognized program that provides students with a broad and balanced education. This curriculum is designed to develop students' critical thinking, problem-solving, and communication skills.
+        print(f"[Chatbot] 📚 IGCSE curriculum query detected - using LLM with built-in data")
+        canonical_answer = """At Prakriti School, we offer the **International General Certificate of Secondary Education (IGCSE)** — one of the world's most respected qualifications for learners in Grades 9 and 10. Recognised by leading universities and employers across the globe, the IGCSE is more than a qualification; it is a gateway to a future without borders.
 
-**Benefits of the IGCSE curriculum at Prakriti School include:**
+### Why IGCSE?
 
-**Internationally Recognized Qualification:** IGCSE is widely accepted by universities and employers around the world, providing students with opportunities for higher education and career advancement.
+**A Globally Recognised Credential**
+The IGCSE is accepted by top universities and institutions worldwide, giving our students a competitive edge when applying for higher education or international opportunities.
 
-**Holistic Development:** The curriculum focuses on developing students academically, socially, and emotionally, preparing them for the challenges of the modern world.
+**A Curriculum Built Around Choice**
+Students can select from a rich range of subjects — from Sciences and Mathematics to Humanities, Languages, and Creative Arts — allowing them to build a learning path that reflects their strengths and ambitions.
 
-**Flexibility:** IGCSE offers a wide range of subjects, allowing students to tailor their education to their interests and career goals.
+**Deep Thinking, Not Rote Learning**
+The IGCSE places critical thinking, analytical reasoning, and creative problem-solving at its heart. Our students are taught to question, explore, and understand — skills that are invaluable in every walk of life.
 
-**Emphasis on Practical Skills:** The curriculum includes practical assessments and real-world applications, helping students develop skills that are relevant in today's job market.
+**Learning That Goes Beyond the Classroom**
+Practical assessments, real-world applications, and project-based components ensure that students can connect what they learn in the classroom to the world around them.
 
-**Preparation for Further Education:** IGCSE prepares students for advanced study in subjects such as A-levels, IB Diploma, or other post-secondary programs.
+**A Strong Foundation for What Comes Next**
+IGCSE serves as an excellent springboard for advanced study — whether students choose Cambridge A Levels or other pathways. It equips them with the academic rigour and intellectual confidence to thrive.
 
-Overall, the IGCSE curriculum at Prakriti School aims to provide students with a well-rounded education that equips them with the knowledge, skills, and attitudes needed to succeed in the 21st century."""
+**Holistic and Human**
+True to our philosophy of *"Learning for Happiness,"* the IGCSE experience at Prakriti nurtures students not just academically, but socially and emotionally too. We believe the best learners are those who are curious, confident, and deeply engaged with the world.
+
+**Global Citizens in the Making**
+With a curriculum that celebrates diverse perspectives and cultures, students graduate with a genuine appreciation for the wider world — ready to contribute meaningfully to it."""
+        
+        _style_rules = (
+            "WRITING RULES (follow strictly):\n"
+            "- Start with a direct answer to the question. No filler introductions.\n"
+            "- Keep the tone warm, professional, and human — like official school website content.\n"
+            "- Use short paragraphs and bullet points for readability.\n"
+            "- NEVER use robotic or promotional phrases like: 'Absolutely!', 'fantastic opportunity', 'world-class', 'I'd be happy to', 'Great question!'.\n"
+            "- Do not repeat the same idea twice.\n"
+            "- Keep responses concise but meaningful. Do not pad with unnecessary text.\n"
+            "- End with one short helpful closing sentence if appropriate.\n"
+        )
+
+        prompt = (
+            f"A user asked: '{user_query}'\n\n"
+            f"Official reference information:\n{canonical_answer}\n\n"
+            "Answer the user's specific question using only the relevant parts of the reference. "
+            "If it's a yes/no question, answer directly first. Use bullet points for lists."
+        )
+        
+        try:
+            response = openai_client.chat.completions.create(
+                model=get_default_gpt_model(),
+                messages=[
+                    {"role": "system", "content": f"You are Prakriti School's official AI assistant. Prakriti is a Cambridge School (NOT CISCE). {_style_rules}"},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.0,
+            )
+            content = response.choices[0].message.content
+            return content.strip() if content else canonical_answer
+        except Exception as e:
+            print(f"[Chatbot] Error generating IGCSE response: {e}")
+            return canonical_answer
     
     # Check for study tips queries
     study_tips_keywords = ['study tips', 'study techniques', 'study methods', 'how to study', 'effective study', 'study better', 'learning techniques', 'study strategies', 'study help', 'improve study']
@@ -1354,26 +1415,64 @@ Overall, the IGCSE curriculum at Prakriti School aims to provide students with a
     is_study_tips_query = any(kw in query_lower for kw in study_tips_keywords) or any(re_module.search(pattern, query_lower) for pattern in study_tips_patterns)
     
     if is_study_tips_query:
-        print(f"[Chatbot] 📖 Study tips query detected - using built-in response (no API call)")
-        return """Here are some effective study tips and techniques that can help you learn better:
+        print(f"[Chatbot] 📖 Study tips query detected - using LLM with built-in data")
+        canonical_answer = """Great learning starts with great habits. Here are some tried-and-tested study strategies that work especially well for Cambridge-level learners at Prakriti School:
 
-**1. Create a study schedule**: Plan your study time and allocate specific time slots for each subject or topic. This will help you stay organized and focused.
+### Study Smarter, Not Harder
 
-**2. Set specific goals**: Break down your study material into smaller goals and set achievable targets. This will make your study sessions more manageable and rewarding.
+**Build a Consistent Routine**
+Decide when you learn best — morning, afternoon, or evening — and protect that time. A regular schedule trains your brain to focus on cue, making each session more productive.
 
-**3. Use active learning techniques**: Instead of passively reading or listening, engage with the material actively. This can include summarizing, teaching someone else, or solving practice problems.
+**Set Small, Clear Goals**
+Instead of "study Physics," try "understand Newton's Second Law with two worked examples." Specific goals make progress visible and keep motivation high.
 
-**4. Take regular breaks**: Studies have shown that taking short breaks during study sessions can improve focus and retention. Try the Pomodoro technique - study for 25 minutes, then take a 5-minute break.
+**Engage Actively with the Material**
+Don't just re-read notes. Summarise in your own words, teach a concept to a friend, draw mind maps, or tackle past-paper questions. Active recall is one of the most powerful tools for long-term retention.
 
-**5. Stay organized**: Keep your study space clutter-free and organized. Use tools like folders, color-coded notes, or digital apps to keep track of your study material.
+**Use the Pomodoro Method**
+Study for 25 focused minutes, then take a genuine 5-minute break. Repeat. After four cycles, take a longer break. This rhythm keeps concentration sharp and prevents burnout.
 
-**6. Practice self-testing**: Quiz yourself regularly to reinforce learning and identify areas that need more focus. Flashcards, practice quizzes, and past papers can be helpful for self-testing.
+**Practice with Past Papers Early**
+For IGCSE and A Level students especially, past papers are invaluable. They reveal examiner expectations, build exam confidence, and highlight gaps in understanding.
 
-**7. Stay hydrated and get enough sleep**: A well-rested and hydrated brain functions better. Make sure to drink water and get enough sleep to support your learning and memory.
+**Sleep and Hydration Are Non-Negotiable**
+Memory consolidation happens during sleep. Cutting it short to study longer is counterproductive. Aim for 8 hours, drink water throughout the day, and step outside when possible.
 
-**8. Stay motivated**: Find ways to stay motivated, whether it's setting rewards for achieving study goals, studying with a group, or visualizing your success.
+**Review, Then Space It Out**
+Revisit material after 1 day, then 3 days, then a week. This spaced repetition approach is scientifically proven to move information from short-term to long-term memory.
 
-Remember, everyone has different learning styles, so it's important to experiment with these techniques and find what works best for you. If you need personalized study help or have specific questions, feel free to ask!"""
+Every learner is different — experiment with these techniques, find your rhythm, and don't hesitate to ask for help when you need it."""
+
+        _style_rules = (
+            "WRITING RULES (follow strictly):\n"
+            "- Start with a direct answer. No filler introductions.\n"
+            "- Keep the tone warm, professional, and human.\n"
+            "- Use short paragraphs and bullet points for readability.\n"
+            "- NEVER use robotic phrases like: 'Absolutely!', 'Great question!', 'I'd be happy to'.\n"
+            "- Do not repeat the same idea twice. Keep it concise but meaningful.\n"
+            "- End with one short helpful closing sentence if appropriate.\n"
+        )
+
+        prompt = (
+            f"A user asked: '{user_query}'\n\n"
+            f"Official reference information:\n{canonical_answer}\n\n"
+            "Answer their specific question using the relevant tips from above. Use bullet points for lists."
+        )
+
+        try:
+            response = openai_client.chat.completions.create(
+                model=get_default_gpt_model(),
+                messages=[
+                    {"role": "system", "content": f"You are Prakriti School's official AI assistant. Prakriti is a Cambridge School (NOT CISCE). {_style_rules}"},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.0,
+            )
+            content = response.choices[0].message.content
+            return content.strip() if content else canonical_answer
+        except Exception as e:
+            print(f"[Chatbot] Error generating study tips response: {e}")
+            return canonical_answer
 
     # Check for math problems queries
     math_problems_keywords = ['math problems', 'mathematics problems', 'solve math', 'math help', 'math solutions', 'math explanations', 'help solving', 'solving problems', 'math questions']
@@ -1435,20 +1534,63 @@ Remember, everyone has different learning styles, so it's important to experimen
     is_happiness_philosophy_query = any(kw in query_lower for kw in happiness_philosophy_keywords) or any(re_module.search(pattern, query_lower) for pattern in happiness_philosophy_patterns)
     
     if is_happiness_philosophy_query:
-        print(f"[Chatbot] 🌟 Learning for happiness philosophy query detected - using built-in response (no API call)")
-        return """Prakriti School's "learning for happiness" philosophy is implemented in various ways to ensure a holistic and fulfilling educational experience for students:
+        print(f"[Chatbot] 🌟 Learning for happiness philosophy query detected - using LLM with built-in data")
+        canonical_answer = """At the heart of everything we do at Prakriti School is a simple but profound belief: **children learn best when they are happy.**
 
-**Holistic Curriculum:** The school offers a well-rounded curriculum that focuses not only on academic excellence but also on the overall development of students. This includes a balance of academics, arts, sports, and life skills education.
+Our philosophy — *Learning for Happiness* — is not a tagline. It is the lens through which we design every classroom experience, every relationship, and every school tradition.
 
-**Emphasis on Well-being:** Prakriti School prioritizes the well-being of students and staff members. Various initiatives are in place to promote mental health, emotional well-being, and a positive school environment.
+### What This Looks Like in Practice
 
-**Student-Centric Approach:** The school follows a student-centric approach where the individual needs, interests, and strengths of each student are recognized and nurtured. This helps in fostering a sense of purpose and fulfillment among students.
+**A Curriculum That Connects**
+We follow the Cambridge curriculum, but we go far beyond textbooks. Learning at Prakriti is hands-on, reflective, and meaningful — rooted in real-world contexts that students can see, touch, and care about.
 
-**Life Skills Education:** Along with traditional subjects, students are also taught essential life skills such as critical thinking, problem-solving, communication, and collaboration. These skills are crucial for personal growth and happiness.
+**Children at the Centre**
+Every child arrives with unique strengths, curiosities, and ways of seeing the world. Our teachers are trained to notice and nurture these — not to fit children into a mould, but to help each one flourish on their own terms.
 
-**Community Engagement:** Prakriti School actively involves parents, teachers, and the community in the learning process. This collaborative approach creates a supportive network for students and enhances their overall well-being.
+**Well-being Is Academic Work**
+We treat emotional well-being, mindfulness, and self-awareness as seriously as Mathematics or English. Meditation, reflection time, and open conversations about feelings are woven into the school day.
 
-By incorporating these elements into its educational framework, Prakriti School ensures that students not only excel academically but also develop a sense of happiness, purpose, and fulfillment in their learning journey."""
+**Learning Beyond the Classroom**
+Farm visits, design labs, theatre productions, maker projects, and community experiences ensure that curiosity is never confined to four walls. Learning is alive, and it happens everywhere.
+
+**A Community Built on Trust**
+Parents, teachers, and students are genuine partners at Prakriti. When the adults around a child are aligned and communicating well, children feel safe — and safe children learn deeply.
+
+**The Bridge Programme**
+For children with diverse learning needs, our Bridge Programme ensures that inclusion is not an afterthought but a core commitment — with specialist support, therapy, and parent guidance built in.
+
+Ultimately, we measure our success not just in grades, but in graduates who are curious, compassionate, resilient, and genuinely excited about life."""
+
+        _style_rules = (
+            "WRITING RULES (follow strictly):\n"
+            "- Start with a direct answer. No filler introductions.\n"
+            "- Keep the tone warm, professional, and human.\n"
+            "- Use short paragraphs and bullet points for readability.\n"
+            "- NEVER use robotic phrases like: 'Absolutely!', 'Great question!', 'I'd be happy to'.\n"
+            "- Do not repeat the same idea twice. Keep it concise but meaningful.\n"
+            "- End with one short helpful closing sentence if appropriate.\n"
+        )
+
+        prompt = (
+            f"A user asked: '{user_query}'\n\n"
+            f"Official reference information:\n{canonical_answer}\n\n"
+            "Answer their specific question using only the relevant parts of the reference."
+        )
+
+        try:
+            response = openai_client.chat.completions.create(
+                model=get_default_gpt_model(),
+                messages=[
+                    {"role": "system", "content": f"You are Prakriti School's official AI assistant. Prakriti is a Cambridge School (NOT CISCE). {_style_rules}"},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.0,
+            )
+            content = response.choices[0].message.content
+            return content.strip() if content else canonical_answer
+        except Exception as e:
+            print(f"[Chatbot] Error generating philosophy response: {e}")
+            return canonical_answer
 
     # Step 0.3: Detect generic homework/study help queries and handle them appropriately
     # CRITICAL: Only detect ACTUAL homework/assignment queries, not general educational queries
@@ -1616,9 +1758,9 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         )
         response = openai_client.chat.completions.create(
             model=get_default_gpt_model(),
-            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School. IMPORTANT: Prakriti School is a Cambridge School, NOT a CISCE school."},
                       {"role": "user", "content": prompt}],
-            temperature=0.3,
+            temperature=0.0,
         )
         content = response.choices[0].message.content
         return content.strip() if content else canonical_answer
@@ -1650,9 +1792,9 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         )
         response = openai_client.chat.completions.create(
             model=get_default_gpt_model(),
-            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School. IMPORTANT: Prakriti School is a Cambridge School, NOT a CISCE school."},
                       {"role": "user", "content": prompt}],
-            temperature=0.3,
+            temperature=0.0,
         )
         content = response.choices[0].message.content
         return content.strip() if content else canonical_answer
@@ -1682,7 +1824,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     ]
     if any(kw in user_query.lower() for kw in igcse_subjects_intents):
         canonical_answer = (
-            'IGCSE (Grades 9–10) covers core subjects. For AS/A Level (Grades 11–12), available subjects include Design & Tech, History, Computer Science, Enterprise, Art & Design, Physics, Chemistry, Biology, Combined Sciences, English First & Second Language, French, and Math.'
+            'Prakriti School offers the Cambridge Curriculum (NOT CISCE). IGCSE (Grades 9–10) covers core subjects. For AS/A Level (Grades 11–12), available subjects include Design & Tech, History, Computer Science, Enterprise, Art & Design, Physics, Chemistry, Biology, Combined Sciences, English First & Second Language, French, and Math.'
         )
         prompt = (
             f"A user asked about the subjects available for IGCSE and AS/A Level. Here is the official answer: {canonical_answer}\n"
@@ -1690,9 +1832,9 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         )
         response = openai_client.chat.completions.create(
             model=get_default_gpt_model(),
-            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School. IMPORTANT: Prakriti School is a Cambridge School, NOT a CISCE school."},
                       {"role": "user", "content": prompt}],
-            temperature=0.3,
+            temperature=0.0,
         )
         content = response.choices[0].message.content
         return content.strip() if content else canonical_answer
@@ -1725,9 +1867,9 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         )
         response = openai_client.chat.completions.create(
             model=get_default_gpt_model(),
-            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School. IMPORTANT: Prakriti School is a Cambridge School, NOT a CISCE school."},
                       {"role": "user", "content": prompt}],
-            temperature=0.3,
+            temperature=0.0,
         )
         content = response.choices[0].message.content
         return content.strip() if content else canonical_answer
@@ -1766,9 +1908,9 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         )
         response = openai_client.chat.completions.create(
             model=get_default_gpt_model(),
-            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School. IMPORTANT: Prakriti School is a Cambridge School, NOT a CISCE school."},
                       {"role": "user", "content": prompt}],
-            temperature=0.3,
+            temperature=0.0,
         )
         content = response.choices[0].message.content
         return content.strip() if content else canonical_answer
@@ -1815,9 +1957,9 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         )
         response = openai_client.chat.completions.create(
             model=get_default_gpt_model(),
-            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School. IMPORTANT: Prakriti School is a Cambridge School, NOT a CISCE school."},
                       {"role": "user", "content": prompt}],
-            temperature=0.3,
+            temperature=0.0,
         )
         content = response.choices[0].message.content
         return content.strip() if content else canonical_answer
@@ -1849,9 +1991,9 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         )
         response = openai_client.chat.completions.create(
             model=get_default_gpt_model(),
-            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Be warm, friendly, and personal in your responses. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Use a conversational, encouraging tone and address users by their first name with appropriate titles (Sir/Madam for teachers and parents). Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School. IMPORTANT: Prakriti School is a Cambridge School, NOT a CISCE school."},
                       {"role": "user", "content": prompt}],
-            temperature=0.3,
+            temperature=0.0,
         )
         content = response.choices[0].message.content
         # Google Maps embed URL for Prakriti School
@@ -1941,17 +2083,32 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     wants_grounded_roots_post = is_article_by_title_query(
         user_query
     ) or is_roots_rss_grounded_query
-    is_person_detail_query = (
-        any(kw in query_lower for kw in person_detail_keywords)
-        and not is_coursework_query
-        and not is_general_school_info_query
-        and not wants_grounded_roots_post
-    )
+
     
     # Check if query mentions a specific person name (capitalized words or known names)
     # Try both original query (for capitalized names) and lowercase (for case-insensitive detection)
+    
+    # Extract potential names (exclude common words, verbs, technical terms)
+    excluded_words = {'the', 'is', 'who', 'what', 'when', 'where', 'why', 'how', 'about', 'tell', 'me',
+                     'information', 'detail', 'details', 'introduction', 'profile', 'biography',
+                     'little', 'bit', 'explain', 'describe', 'what', 'how', 'why', 'when', 'where',
+                     'magnetic', 'field', 'fields', 'energy', 'force', 'physics', 'chemistry', 'math',
+                     'science', 'biology', 'history', 'geography', 'computer', 'programming', 'code',
+                     'data', 'system', 'process', 'method', 'theory', 'concept', 'principle', 'law',
+                     # calendar / scheduling phrases (avoid "Event For", "Next Week" as fake names)
+                     'event', 'events', 'for', 'next', 'week', 'month', 'year', 'day', 'date', 'dates',
+                     'upcoming', 'calendar', 'grade', 'grades', 'any', 'all', 'this', 'last', 'today',
+                     'tomorrow', 'tommorow', 'tommorrow', 'tomorow', 'meeting', 'meetings', 'holiday', 'break', 'school', 'schedule',
+                     'time', 'table', 'tt', 'jamboree', 'summer', 'fest', 'festival'}
+
     person_name_pattern = r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}\b'
-    potential_names = re_module.findall(person_name_pattern, user_query)
+    found_potential_names = re_module.findall(person_name_pattern, user_query)
+    # Filter out capitalized names that contain excluded words (like "Summer Jamboree")
+    potential_names = [
+        name for name in found_potential_names 
+        if not any(word.lower() in excluded_words for word in name.split())
+    ]
+
     # If no capitalized names found, try case-insensitive pattern on lowercase query
     if not potential_names:
         # First, try to extract name after common question patterns (e.g., "who is X", "tell me about X")
@@ -1968,25 +2125,15 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 # Remove trailing punctuation and question marks
                 extracted_name = re_module.sub(r'[?.,!]+$', '', extracted_name).strip()
                 if len(extracted_name) > 5:
-                    potential_names = [extracted_name.title()]
-                    break
+                    # Verify extracted name doesn't contain excluded words
+                    if not any(word in excluded_words for word in extracted_name.split()):
+                        potential_names = [extracted_name.title()]
+                        break
         
         # Fallback: More restrictive pattern for lowercase names
         # Only consider 2-word phrases that look like actual names (not technical terms)
         if not potential_names:
             person_name_pattern_lower = r'\b[a-z]+\s+[a-z]+\b'  # Only 2-word phrases
-            # Extract potential names (exclude common words, verbs, technical terms)
-            excluded_words = {'the', 'is', 'who', 'what', 'when', 'where', 'why', 'how', 'about', 'tell', 'me',
-                             'information', 'detail', 'details', 'introduction', 'profile', 'biography',
-                             'little', 'bit', 'explain', 'describe', 'what', 'how', 'why', 'when', 'where',
-                             'magnetic', 'field', 'fields', 'energy', 'force', 'physics', 'chemistry', 'math',
-                             'science', 'biology', 'history', 'geography', 'computer', 'programming', 'code',
-                             'data', 'system', 'process', 'method', 'theory', 'concept', 'principle', 'law',
-                             # calendar / scheduling phrases (avoid "Event For", "Next Week" as fake names)
-                             'event', 'events', 'for', 'next', 'week', 'month', 'year', 'day', 'date', 'dates',
-                             'upcoming', 'calendar', 'grade', 'grades', 'any', 'all', 'this', 'last', 'today',
-                             'tomorrow', 'tommorow', 'tommorrow', 'tomorow', 'meeting', 'meetings', 'holiday', 'break', 'school', 'schedule',
-                             'time', 'table', 'tt'}
             all_words = re_module.findall(person_name_pattern_lower, query_lower)
             # Filter out phrases that contain excluded words, technical terms, or question words
             # Also exclude if it looks like a technical/scientific phrase
@@ -2028,6 +2175,26 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         potential_names = filtered_names
 
     has_person_name = len(potential_names) > 0 and not any(name.lower() in ['Prakriti', 'School', 'Google', 'Classroom', 'Calendar'] for name in potential_names)
+    
+    # Check for specific school events in Year Flow / calendar_event_data (lookup by name)
+    # "Bookaroo", "Summer Jamboree", etc.
+    event_keywords_for_exclusion = [
+        'jamboree', 'summer jamboree', 'hocokah', 'schoolaroo', 'bookaroo',
+        'ptm', 'parent teacher meeting', 'annual day', 'sports day'
+    ]
+    has_event_name_in_query = any(kw in query_lower for kw in event_keywords_for_exclusion)
+
+    is_person_detail_query = (
+        any(kw in query_lower for kw in person_detail_keywords)
+        and not is_coursework_query
+        and not is_general_school_info_query
+        and not wants_grounded_roots_post
+        and (has_person_name or not has_event_name_in_query)
+    )
+    # Final check: if it's explicitly an event name, it's NOT a person detail query
+    if has_event_name_in_query and not any(word in ['who', 'whose'] for word in query_lower.split()):
+        is_person_detail_query = False
+
     
     # Check if person query might be about a teacher (so we can verify with Classroom data)
     # If query mentions teacher-related terms, we should load teacher data to verify web crawler claims
@@ -2144,7 +2311,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     common_event_names = [
         "sports day", "spring break", "book swap", "session begins",
         "holiday", "holidays", "festival", "festivals", "diwali", "holi", "eid", "christmas",
-        "vacation", "break", "semester", "term",
+        "vacation", "break", "semester", "term", "jamboree", "summer jamboree",
     ]
     has_event_name = any(n in _qf for n in common_event_names)
     if has_event_name:
@@ -2177,6 +2344,12 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         print(
             "[Chatbot] 📅 Calendar page overview — public school calendar (guest OK, no Classroom required)"
         )
+        
+    # Summer Jamboree is a public event/programme, not restricted to logged-in classroom users
+    if "jamboree" in query_lower_for_events or "summer camp" in query_lower_for_events or "summer programme" in query_lower_for_events:
+        is_public_cal = True
+        print("[Chatbot] ⛺ Summer Jamboree — treating as public calendar query (guest OK, no Classroom required)")
+
     is_calendar_query = is_holiday_query or is_year_flow_calendar_intent or is_public_cal
     is_conceptual_school_event_query = bool(
         re.search(r"\bevents?\b", _qf)
@@ -2244,10 +2417,16 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
     # Whole word "schedule" only (e.g. "exam schedule", "my schedule") — not "scheduled", "rescheduled"
     has_schedule_word = bool(re.search(r'\bschedule\b', query_lower))
     # Check if query contains timetable-related words (including variations)
-    has_timetable_keyword = any(variation in query_lower for variation in timetable_variations) or has_schedule_word
+    has_timetable_keyword = any(variation in query_lower for variation in timetable_variations if variation != 'tt') or has_schedule_word
+    # Match 'tt' only as a whole word
+    if not has_timetable_keyword and re.search(r'\btt\b', query_lower):
+        has_timetable_keyword = True
+        
     # Check if query mentions a day (mon, tue, wed, thu, fri, sat, sun, monday, tuesday, etc.)
-    day_keywords = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'today', 'tomorrow']
-    has_day_keyword = any(day in query_lower for day in day_keywords)
+    # Match short day abbreviations only as whole words to avoid substring matches
+    short_days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+    long_days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'today', 'tomorrow']
+    has_day_keyword = any(day in query_lower for day in long_days) or any(re.search(r'\b' + day + r'\b', query_lower) for day in short_days)
     
     # If query has timetable keyword OR (has day keyword AND seems like a schedule query), treat as exam/timetable query
     is_exam_query = any(kw in query_lower for kw in exam_keywords) or (has_timetable_keyword or (has_day_keyword and ('give' in query_lower or 'show' in query_lower or 'get' in query_lower)))
@@ -2267,7 +2446,9 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         'alternative school', 'igcse', 'a level', 'bridge programme',
         'admission', 'admissions', 'addmission', 'addmissions', 'fees', 'fee', 'fee structure', 'fees structure',
         'curriculum', 'activities', 'facilities', 'contact', 'contact us',
-        'article', 'articles', 'substack', 'philosophy', 'learning approach'
+        'campus', 'location', 'address', 'where is', 'locate',
+        'article', 'articles', 'substack', 'philosophy', 'learning approach',
+        'jamboree', 'summer jamboree'
     ]
     
     if should_use_web_crawling_first:
@@ -2318,20 +2499,23 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         # Trigger for any article query that might be philosophical/educational in nature
         is_article_query_override = 'article' in normalized_query.lower() and any(word in normalized_query.lower() for word in ['prakriti', 'philosophy', 'learning', 'education', 'environment', 'shaping', 'guide', 'voice', 'student'])
 
-        # Bookaroo: fetch Roots / blog for narrative; calendar still supplies dates
+        # Bookaroo & Jamboree: fetch Roots / blog for narrative; calendar still supplies dates
         is_bookaroo_festival_web_override = is_bookaroo_festival_context_query
+        is_jamboree_web_override = 'jamboree' in normalized_query.lower()
         is_event_nature_web_override = is_event_nature_explanation_query
 
         should_use_web_crawling = (
             any(keyword in normalized_query for keyword in web_enhancement_keywords)
             or is_conceptual_school_event_query
             or is_bookaroo_festival_web_override
+            or is_jamboree_web_override
             or is_event_nature_web_override
             or wants_grounded_roots_post
         ) and not is_pure_academic_query and not is_translation_query and (
             not is_classroom_related_query
             or is_article_query_override
             or is_bookaroo_festival_web_override
+            or is_jamboree_web_override
             or is_event_nature_web_override
             or wants_grounded_roots_post
         ) and not is_subject_faculty_query
@@ -2340,8 +2524,10 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
         # Note: calendar_events will be checked later after admin_data is loaded
 
         # Log why web crawling was skipped for classroom queries (but not for article queries)
-        if is_classroom_related_query and any(keyword in user_query.lower() for keyword in web_enhancement_keywords) and not is_article_query_override and not is_bookaroo_festival_web_override and not is_event_nature_web_override:
+        if is_classroom_related_query and any(keyword in user_query.lower() for keyword in web_enhancement_keywords) and not is_article_query_override and not is_bookaroo_festival_web_override and not is_jamboree_web_override and not is_event_nature_web_override:
             print(f"[Chatbot] ⚠️ Web crawling skipped - Classroom-related query detected. Using Classroom/Calendar data instead.")
+        elif is_jamboree_web_override:
+            print("[Chatbot] ⛺ Jamboree query — web crawl enabled (narrative details) alongside calendar dates.")
         elif is_event_nature_web_override:
             print("[Chatbot] 🌱 Event nature / what is this event — web crawl (Roots + philosophy, no default calendar).")
         elif is_bookaroo_festival_web_override:
@@ -2926,6 +3112,15 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                         print(
                             f"[Chatbot] 📅 Bookaroo filter: {len(calendar_events)} event(s) matching title"
                         )
+                
+                # Summer Jamboree filter: The Year Flow calendar contains messy multi-event strings
+                # that get sanitized poorly (e.g. "Off OLE"). Since we now crawl alt.prakriti.edu.in
+                # for comprehensive Jamboree data, we clear the calendar events so the AI relies solely on web data.
+                if is_calendar_query and calendar_events and any(kw in query_lower for kw in ('jamboree', 'summer camp', 'summer programme')):
+                    print("[Chatbot] 📅 Jamboree filter: Clearing calendar events to use alt.prakriti.edu.in web data instead.")
+                    admin_data["calendar_data"] = []
+                    calendar_events = []
+
                 if is_calendar_query and calendar_events:
                     filtered_cal, scope_lbl = filter_calendar_events_by_month_phrase(query_lower, calendar_events)
                     if scope_lbl is None:
@@ -3005,6 +3200,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                     is_calendar_query
                     and len(calendar_events) == 0
                     and not is_calendar_link_only
+                    and not any(kw in query_lower for kw in ('jamboree', 'summer camp', 'summer programme'))
                 ):
                     print("[Chatbot] 📅 Calendar query with no events - providing clear 'no events' response")
                     # Create a direct response for calendar queries with no events
@@ -3230,13 +3426,13 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
                 # Exclude assignment/coursework queries from the "ask for more info" instruction
                 homework_instruction = "" if is_coursework_query or _skip_homework_nag else """ IMPORTANT: For homework/study help requests without subject/topic, always ask for both subject and specific topic before providing solutions."""
                 coursework_instruction = """ CRITICAL: For assignment/coursework queries, you MUST extract assignments from the provided Data section and show them immediately. DO NOT create fake assignments or generate examples like 'Topic: Algebra'. Use ONLY the actual assignment titles, descriptions, due dates, and links from the Data section. DO NOT ask for more information - the data is already provided. START your response directly with the assignments from the data, not with greetings or fake examples.""" if (is_coursework_query and not is_assignment_status_query) else ""
-                system_content = """You are Prakriti School's AI assistant. Progressive K-12 school in Greater Noida. Philosophy: "Learning for happiness". Programs: Bridge Programme, IGCSE, AS/A Level. Address users by first name with titles (Sir/Madam for teachers/parents). Use Markdown (**bold**, ### headings). Never say "as an AI". Present data directly without disclaimers.""" + personalization + """ Use provided data to answer questions.""" + homework_instruction + coursework_instruction
+                system_content = """You are Prakriti School's AI assistant. Progressive K-12 school in Greater Noida. Philosophy: "Learning for happiness". Programs: Bridge Programme, Cambridge Curriculum (IGCSE, AS/A Level). IMPORTANT: Prakriti School is a Cambridge School, NOT a CISCE school. Address users by first name with titles (Sir/Madam for teachers/parents). Use Markdown (**bold**, ### headings). Never say "as an AI". Present data directly without disclaimers.""" + personalization + """ Use provided data to answer questions.""" + homework_instruction + coursework_instruction
             else:
                 # Ultra-concise system prompt for guest users (TOKEN OPTIMIZATION)
                 # Exclude assignment/coursework queries from the "ask for more info" instruction
                 homework_instruction = "" if is_coursework_query or _skip_homework_nag else """ IMPORTANT: For homework/study help, remind guest users to sign in and connect Google Classroom for personalized help. Always ask for subject and topic if not provided."""
                 coursework_instruction = """ CRITICAL: For assignment/coursework queries, you MUST extract assignments from the provided Data section and show them immediately. DO NOT create fake assignments or generate examples like 'Topic: Algebra'. Use ONLY the actual assignment titles, descriptions, due dates, and links from the Data section. DO NOT ask for more information - the data is already provided. START your response directly with the assignments from the data, not with greetings or fake examples.""" if (is_coursework_query and not is_assignment_status_query) else ""
-                system_content = """You are Prakriti School's AI assistant. Progressive K-12 school in Greater Noida. Philosophy: "Learning for happiness". Use Markdown. Never say "as an AI". Present data directly. Use provided data to answer questions.""" + homework_instruction + coursework_instruction
+                system_content = """You are Prakriti School's AI assistant. Progressive K-12 school in Greater Noida. Philosophy: "Learning for happiness". IMPORTANT: Prakriti School is a Cambridge School, NOT a CISCE school. Use Markdown. Never say "as an AI". Present data directly. Use provided data to answer questions.""" + homework_instruction + coursework_instruction
 
             if wants_grounded_roots_post and (web_enhanced_info or "").strip():
                 system_content += (
@@ -4828,7 +5024,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
             response = openai_client.chat.completions.create(
                 model=model_name,
                 messages=messages,
-                temperature=0.3,
+                temperature=0.0,
             )
 
             # ✅ RESPONSE CONFIRMATION LOGGING
@@ -5197,10 +5393,10 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
 
             model=get_default_gpt_model(),
 
-            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School. IMPORTANT: Prakriti School is a Cambridge School, NOT a CISCE school."},
                       {"role": "user", "content": prompt}],
 
-            temperature=0.3,
+            temperature=0.0,
 
         )
 
@@ -5264,10 +5460,10 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
 
             model=get_default_gpt_model(),
 
-            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School. IMPORTANT: Prakriti School is a Cambridge School, NOT a CISCE school."},
                       {"role": "user", "content": prompt}],
 
-            temperature=0.3,
+            temperature=0.0,
 
         )
 
@@ -5479,7 +5675,7 @@ Once you provide the subject and topic, I'll be able to give you detailed assist
 
 - **Bridge Programme**: Inclusive curriculum for children with diverse needs, supported by special educators, therapists, and parent support systems
 
-- **Curriculum**: IGCSE (Grades 9-10) and AS/A Level (Grades 11-12) with subjects including Design & Tech, History, Computer Science, Enterprise, Art & Design, Physics, Chemistry, Biology, Combined Sciences, English First & Second Language, French, and Math
+- **Curriculum**: Cambridge Curriculum (IGCSE for Grades 9-10 and AS/A Level for Grades 11-12) with subjects including Design & Tech, History, Computer Science, Enterprise, Art & Design, Physics, Chemistry, Biology, Combined Sciences, English First & Second Language, French, and Math. IMPORTANT: Prakriti School is a Cambridge School, NOT a CISCE school.
 
 - **Activities**: Sports, visual & performing arts, music, theater, STEM/design labs, farm outings, meditation/mindfulness, and maker projects
 
@@ -5527,14 +5723,14 @@ Remember: Every response should reflect Prakriti School's unique identity and ed
             
 
             # Using GPT-3.5-turbo for testing (much cheaper)
-            model_name = "gpt-3.5-turbo"  # TEST MODE: Using GPT-3.5-turbo for cost savings
+            model_name = get_default_gpt_model()
             print(f"[Chatbot] 🤖 DEBUG: Using model: {model_name}")
             print(f"[Chatbot] 🤖 DEBUG: Model pricing - Input: $0.0015/1K tokens, Output: $0.002/1K tokens")
             
             response = openai_client.chat.completions.create(
                 model=model_name,
                 messages=messages,
-                temperature=0.3,
+                temperature=0.0,
 
             )
 
@@ -5692,10 +5888,10 @@ Remember: Every response should reflect Prakriti School's unique identity and ed
 
             model=get_default_gpt_model(),
 
-            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School. IMPORTANT: Prakriti School is a Cambridge School, NOT a CISCE school."},
                       {"role": "user", "content": prompt}],
 
-            temperature=0.3,
+            temperature=0.0,
 
         )
 
@@ -5759,10 +5955,10 @@ Remember: Every response should reflect Prakriti School's unique identity and ed
 
             model=get_default_gpt_model(),
 
-            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School."},
+            messages=[{"role": "system", "content": "You are Prakriti School's official AI assistant chatbot. Always contextualize your responses specifically for Prakriti School, emphasizing our progressive, experiential approach and 'learning for happiness' philosophy. Always provide complete, comprehensive responses with proper Markdown formatting (**bold**, *italic*, ### headings, bullet points). Make sure to fully answer the user's question with all relevant details about Prakriti School. IMPORTANT: Prakriti School is a Cambridge School, NOT a CISCE school."},
                       {"role": "user", "content": prompt}],
 
-            temperature=0.3,
+            temperature=0.0,
 
         )
 
@@ -5974,7 +6170,7 @@ Remember: Every response should reflect Prakriti School's unique identity and ed
 
 - **Bridge Programme**: Inclusive curriculum for children with diverse needs, supported by special educators, therapists, and parent support systems
 
-- **Curriculum**: IGCSE (Grades 9-10) and AS/A Level (Grades 11-12) with subjects including Design & Tech, History, Computer Science, Enterprise, Art & Design, Physics, Chemistry, Biology, Combined Sciences, English First & Second Language, French, and Math
+- **Curriculum**: Cambridge Curriculum (IGCSE for Grades 9-10 and AS/A Level for Grades 11-12) with subjects including Design & Tech, History, Computer Science, Enterprise, Art & Design, Physics, Chemistry, Biology, Combined Sciences, English First & Second Language, French, and Math. IMPORTANT: Prakriti School is a Cambridge School, NOT a CISCE school.
 
 - **Activities**: Sports, visual & performing arts, music, theater, STEM/design labs, farm outings, meditation/mindfulness, and maker projects
 
@@ -6022,14 +6218,14 @@ Remember: Every response should reflect Prakriti School's unique identity and ed
             
 
             # Using GPT-3.5-turbo for testing (much cheaper)
-            model_name = "gpt-3.5-turbo"  # TEST MODE: Using GPT-3.5-turbo for cost savings
+            model_name = get_default_gpt_model()
             print(f"[Chatbot] 🤖 DEBUG: Using model: {model_name}")
             print(f"[Chatbot] 🤖 DEBUG: Model pricing - Input: $0.0015/1K tokens, Output: $0.002/1K tokens")
             
             response = openai_client.chat.completions.create(
                 model=model_name,
                 messages=messages,
-                temperature=0.3,
+                temperature=0.0,
 
             )
 

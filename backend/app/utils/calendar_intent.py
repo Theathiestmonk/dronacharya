@@ -168,6 +168,7 @@ def is_public_school_website_calendar_query(query_lower: str) -> bool:
             "school calendar",
             "prakriti calendar",
             "events.prakriti",
+            "event.prakriti",
             "year flow",
             "upcoming school event",
             "upcoming events at school",
