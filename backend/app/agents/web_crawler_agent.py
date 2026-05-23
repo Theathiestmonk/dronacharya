@@ -999,7 +999,8 @@ class WebCrawlerAgent:
         """Check if the query is about contact/location"""
         contact_keywords = [
             'contact', 'location', 'address', 'phone', 'email', 'where',
-            'directions', 'map', 'visit', 'office', 'reach', 'get in touch'
+            'directions', 'map', 'visit', 'office', 'reach', 'get in touch',
+            'campus', 'campuses'
         ]
         
         query_lower = query.lower()
@@ -3273,6 +3274,10 @@ class WebCrawlerAgent:
                             matched_keywords = sum(1 for word in query_words if any(kw in word or word in kw for kw in page_keywords))
                             score += matched_keywords * 2
                         
+                        # Boost score if page matches the query's classified content type
+                        if content_type and page.get('content_type') == content_type:
+                            score += 15
+                        
                         if score > 0:
                             scored_pages.append({
                                 'url': page.get('url'),
@@ -3557,13 +3562,23 @@ class WebCrawlerAgent:
                                 main_content = main_content[:8000] + "..."
                             info_parts.append(main_content)
                     else:
-                        # For other queries, extract ONLY 1 sentence that contains query words
-                        sentences = content['main_content'].split('.')
-                        for sentence in sentences:
-                            sentence_lower = sentence.lower()
-                            if any(word in sentence_lower for word in query_words):
-                                info_parts.append(sentence.strip()[:120])
-                                break  # Only 1 sentence
+                        # Special case: for contact/location queries or contact pages, return the first 1000 characters to ensure we include full address/phone/email
+                        is_contact = ('contact' in content.get('url', '').lower() or 
+                                      content.get('content_type') == 'contact' or
+                                      self.is_contact_related(query))
+                        if is_contact:
+                            main_content = content['main_content'].strip()
+                            if len(main_content) > 1000:
+                                main_content = main_content[:1000] + "..."
+                            info_parts.append(main_content)
+                        else:
+                            # For other queries, extract ONLY 1 sentence that contains query words
+                            sentences = content['main_content'].split('.')
+                            for sentence in sentences:
+                                sentence_lower = sentence.lower()
+                                if any(word in sentence_lower for word in query_words):
+                                    info_parts.append(sentence.strip()[:120])
+                                    break  # Only 1 sentence
                 
                 if info_parts:
                     relevant_info.append({
@@ -5499,6 +5514,10 @@ We're continuously updating our team profiles, so please check back later or con
                         if is_article_query and page.get('main_content') and len(page.get('main_content', '')) > 500:
                             score += 5  # Bonus for having substantial content
                         
+                        # Boost score if page matches the query's classified content type
+                        if content_type and page.get('content_type') == content_type:
+                            score += 15
+                        
                         # Only include pages with minimum relevance threshold
                         if score >= min_threshold:
                             scored_pages.append({
@@ -5546,21 +5565,31 @@ We're continuously updating our team profiles, so please check back later or con
                                         first_paragraph = first_paragraph[:1500] + "..."
                                     relevant_text_parts.append(first_paragraph)
                             else:
-                                # For other queries, extract ONLY sentences with query words (max 2 sentences)
-                                sentences = top_page['main_content'].split('.')
-                                relevant_sentences = []
-                                for sentence in sentences:
-                                    sentence_clean = sentence.strip()
-                                    if sentence_clean and len(sentence_clean) > 20:  # Skip very short sentences
-                                        sentence_lower = sentence_clean.lower()
-                                        # Check if sentence contains any query word
-                                        if any(word in sentence_lower for word in query_words):
-                                            relevant_sentences.append(sentence_clean[:150])  # Max 150 chars per sentence
-                                            if len(relevant_sentences) >= 2:  # Max 2 sentences
-                                                break
-                            
-                            if relevant_sentences:
-                                relevant_text_parts.extend(relevant_sentences)
+                                # Special case: for contact/location queries or contact pages, return the first 1000 characters to ensure we include full address/phone/email
+                                is_contact = ('contact' in top_page.get('url', '').lower() or 
+                                              top_page.get('content_type') == 'contact' or
+                                              self.is_contact_related(query))
+                                if is_contact:
+                                    main_content = top_page['main_content'].strip()
+                                    if len(main_content) > 1000:
+                                        main_content = main_content[:1000] + "..."
+                                    relevant_text_parts.append(main_content)
+                                else:
+                                    # For other queries, extract ONLY sentences with query words (max 2 sentences)
+                                    sentences = top_page['main_content'].split('.')
+                                    relevant_sentences = []
+                                    for sentence in sentences:
+                                        sentence_clean = sentence.strip()
+                                        if sentence_clean and len(sentence_clean) > 20:  # Skip very short sentences
+                                            sentence_lower = sentence_clean.lower()
+                                            # Check if sentence contains any query word
+                                            if any(word in sentence_lower for word in query_words):
+                                                relevant_sentences.append(sentence_clean[:150])  # Max 150 chars per sentence
+                                                if len(relevant_sentences) >= 2:  # Max 2 sentences
+                                                    break
+                                    
+                                    if relevant_sentences:
+                                        relevant_text_parts.extend(relevant_sentences)
                         
                         # Combine content
                         if relevant_text_parts:
