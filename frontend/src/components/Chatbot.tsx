@@ -1921,6 +1921,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                 isChatOnlyRoute ? 'pt-16 sm:pt-14 pb-4' : 'pt-8 sm:pt-12 pb-4'
               }`}
               data-chat-scroll-region
+              style={{ marginBottom: inputDockKeyboardMargin }}
             >
               <div className="relative flex w-full max-w-2xl flex-col items-center text-center">
                 {!isChatOnlyRoute && (
@@ -1929,7 +1930,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                     alt="Prakriti School"
                     width={180}
                     height={180}
-                    className="mb-[clamp(1rem,4vmin,1.75rem)] h-[clamp(3rem,12vmin,5rem)] w-auto object-contain drop-shadow-sm"
+                    className="hidden lg:block mb-[clamp(1rem,4vmin,1.75rem)] h-[clamp(3rem,12vmin,5rem)] w-auto object-contain drop-shadow-sm"
                     priority
                   />
                 )}
@@ -1940,18 +1941,16 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                   Ask about learning, programmes, admissions, and school life—right here.
                 </p>
               </div>
-            </div>
 
-            {/* Input docked to bottom; marginBottom = visual viewport keyboard overlap (see useVisualViewportKeyboardInset) */}
-            <div
-              className="relative z-20 flex-shrink-0 w-full mx-auto px-3 sm:px-4 md:px-6 pt-2 sm:pt-3 bg-transparent"
-              style={{
-                marginBottom: inputDockKeyboardMargin,
-                paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))',
-              }}
-            >
-              <div className="relative w-full">
-                <div className="relative">
+              {/* Input centered directly beneath the heading, ChatGPT-style */}
+              <div
+                className="relative z-20 w-full max-w-2xl mx-auto px-3 sm:px-4 md:px-6 mt-[clamp(1.5rem,4vmin,2.5rem)] bg-transparent"
+                style={{
+                  paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))',
+                }}
+              >
+                <div className="relative w-full">
+                  <div className="relative">
                   <textarea
                     ref={inputRef}
                     className="w-full border rounded-[20px] px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 pr-16 sm:pr-20 md:pr-24 bg-transparent focus:outline-none resize-none font-normal text-sm sm:text-base border-gray-300 text-gray-900 placeholder-gray-400 overflow-hidden"
@@ -2020,6 +2019,7 @@ const Chatbot = React.forwardRef<{ clearChat: () => void }, ChatbotProps>(({ cle
                 </button>
                 </div>
               </div>
+            </div>
             </div>
           </div>
         </>

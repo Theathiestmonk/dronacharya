@@ -469,6 +469,23 @@ const ChatAppShellInner: React.FC<{
         </button>
       )}
 
+      {!chatOnly && !user && isDesktop && (
+        <button
+          type="button"
+          onClick={handleLoginRedirect}
+          className="fixed top-4 right-4 z-50 rounded-lg px-4 py-2 text-sm font-medium text-white shadow-md transition-colors duration-150"
+          style={{ backgroundColor: "var(--brand-primary)" }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = "var(--brand-primary-700)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "var(--brand-primary)";
+          }}
+        >
+          Login
+        </button>
+      )}
+
       {!chatOnly && !isSidebarOpen && (
         <div className="lg:hidden fixed top-4 left-0 right-0 z-50 flex items-center justify-between px-4 pointer-events-none">
           <Image
